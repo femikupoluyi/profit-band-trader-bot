@@ -40,36 +40,36 @@ const TradingDashboard = () => {
 
     try {
       // Get trading config
-      const { data: config } = await supabase
+      const { data: config } = await (supabase as any)
         .from('trading_configs')
         .select('is_active')
         .eq('user_id', user.id)
         .single();
 
       // Get total trades
-      const { count: totalTrades } = await supabase
+      const { count: totalTrades } = await (supabase as any)
         .from('trades')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
 
       // Get total profit/loss
-      const { data: profitData } = await supabase
+      const { data: profitData } = await (supabase as any)
         .from('trades')
         .select('profit_loss')
         .eq('user_id', user.id)
         .eq('status', 'filled');
 
-      const totalProfit = profitData?.reduce((sum, trade) => 
+      const totalProfit = profitData?.reduce((sum: number, trade: any) => 
         sum + (parseFloat(trade.profit_loss || '0')), 0) || 0;
 
       // Get active pairs (unique symbols with pending orders)
-      const { data: activePairsData } = await supabase
+      const { data: activePairsData } = await (supabase as any)
         .from('trades')
         .select('symbol')
         .eq('user_id', user.id)
         .eq('status', 'pending');
 
-      const activePairs = new Set(activePairsData?.map(trade => trade.symbol)).size;
+      const activePairs = new Set(activePairsData?.map((trade: any) => trade.symbol)).size;
 
       setStats({
         totalTrades: totalTrades || 0,

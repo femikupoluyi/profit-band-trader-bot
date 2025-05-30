@@ -34,7 +34,7 @@ const TradeHistory = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('trades')
         .select('*')
         .eq('user_id', user.id)

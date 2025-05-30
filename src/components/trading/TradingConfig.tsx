@@ -55,7 +55,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('trading_configs')
         .select('*')
         .eq('user_id', user.id)
@@ -94,7 +94,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
 
     setIsLoading(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('trading_configs')
         .upsert({
           user_id: user.id,
