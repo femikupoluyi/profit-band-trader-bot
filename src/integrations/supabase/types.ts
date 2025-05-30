@@ -789,6 +789,129 @@ export type Database = {
           },
         ]
       }
+      trades: {
+        Row: {
+          bybit_order_id: string | null
+          created_at: string | null
+          id: string
+          order_type: string
+          price: number
+          profit_loss: number | null
+          quantity: number
+          side: string
+          status: string
+          symbol: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          bybit_order_id?: string | null
+          created_at?: string | null
+          id?: string
+          order_type: string
+          price: number
+          profit_loss?: number | null
+          quantity: number
+          side: string
+          status: string
+          symbol: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          bybit_order_id?: string | null
+          created_at?: string | null
+          id?: string
+          order_type?: string
+          price?: number
+          profit_loss?: number | null
+          quantity?: number
+          side?: string
+          status?: string
+          symbol?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      trading_configs: {
+        Row: {
+          buy_range_lower_offset: number | null
+          buy_range_upper_offset: number | null
+          chart_timeframe: string | null
+          created_at: string | null
+          daily_reset_time: string | null
+          id: string
+          is_active: boolean | null
+          max_active_pairs: number | null
+          max_order_amount_usd: number | null
+          max_portfolio_exposure_percent: number | null
+          min_profit_percent: number | null
+          sell_range_offset: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          buy_range_lower_offset?: number | null
+          buy_range_upper_offset?: number | null
+          chart_timeframe?: string | null
+          created_at?: string | null
+          daily_reset_time?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_active_pairs?: number | null
+          max_order_amount_usd?: number | null
+          max_portfolio_exposure_percent?: number | null
+          min_profit_percent?: number | null
+          sell_range_offset?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          buy_range_lower_offset?: number | null
+          buy_range_upper_offset?: number | null
+          chart_timeframe?: string | null
+          created_at?: string | null
+          daily_reset_time?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_active_pairs?: number | null
+          max_order_amount_usd?: number | null
+          max_portfolio_exposure_percent?: number | null
+          min_profit_percent?: number | null
+          sell_range_offset?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      trading_logs: {
+        Row: {
+          created_at: string | null
+          data: Json | null
+          id: string
+          log_type: string
+          message: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data?: Json | null
+          id?: string
+          log_type: string
+          message: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json | null
+          id?: string
+          log_type?: string
+          message?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

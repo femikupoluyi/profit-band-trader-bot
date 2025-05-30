@@ -67,16 +67,16 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
 
       if (data) {
         setConfig({
-          min_profit_percent: parseFloat(data.min_profit_percent),
-          max_active_pairs: data.max_active_pairs,
-          max_order_amount_usd: parseFloat(data.max_order_amount_usd),
-          max_portfolio_exposure_percent: parseFloat(data.max_portfolio_exposure_percent),
-          daily_reset_time: data.daily_reset_time,
-          chart_timeframe: data.chart_timeframe,
-          buy_range_lower_offset: parseFloat(data.buy_range_lower_offset),
-          buy_range_upper_offset: parseFloat(data.buy_range_upper_offset),
-          sell_range_offset: parseFloat(data.sell_range_offset),
-          is_active: data.is_active,
+          min_profit_percent: parseFloat(data.min_profit_percent) || 5.0,
+          max_active_pairs: data.max_active_pairs || 5,
+          max_order_amount_usd: parseFloat(data.max_order_amount_usd) || 100.0,
+          max_portfolio_exposure_percent: parseFloat(data.max_portfolio_exposure_percent) || 25.0,
+          daily_reset_time: data.daily_reset_time || '00:00:00',
+          chart_timeframe: data.chart_timeframe || '4h',
+          buy_range_lower_offset: parseFloat(data.buy_range_lower_offset) || -1.5,
+          buy_range_upper_offset: parseFloat(data.buy_range_upper_offset) || 1.0,
+          sell_range_offset: parseFloat(data.sell_range_offset) || 5.5,
+          is_active: data.is_active || false,
         });
       }
     } catch (error) {
@@ -131,6 +131,26 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
     }));
   };
 
+  const handleNumberInput = (field: keyof TradingConfigData, value: string) => {
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue)) {
+      handleInputChange(field, numValue);
+    } else if (value === '') {
+      // Allow empty string temporarily while user is typing
+      handleInputChange(field, 0);
+    }
+  };
+
+  const handleIntegerInput = (field: keyof TradingConfigData, value: string) => {
+    const intValue = parseInt(value);
+    if (!isNaN(intValue)) {
+      handleInputChange(field, intValue);
+    } else if (value === '') {
+      // Allow empty string temporarily while user is typing
+      handleInputChange(field, 0);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -163,7 +183,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               type="number"
               step="0.1"
               value={config.min_profit_percent}
-              onChange={(e) => handleInputChange('min_profit_percent', parseFloat(e.target.value))}
+              onChange={(e) => handleNumberInput('min_profit_percent', e.target.value)}
             />
           </div>
 
@@ -174,7 +194,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               id="max_active_pairs"
               type="number"
               value={config.max_active_pairs}
-              onChange={(e) => handleInputChange('max_active_pairs', parseInt(e.target.value))}
+              onChange={(e) => handleIntegerInput('max_active_pairs', e.target.value)}
             />
           </div>
 
@@ -186,7 +206,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               type="number"
               step="0.01"
               value={config.max_order_amount_usd}
-              onChange={(e) => handleInputChange('max_order_amount_usd', parseFloat(e.target.value))}
+              onChange={(e) => handleNumberInput('max_order_amount_usd', e.target.value)}
             />
           </div>
 
@@ -198,7 +218,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               type="number"
               step="0.1"
               value={config.max_portfolio_exposure_percent}
-              onChange={(e) => handleInputChange('max_portfolio_exposure_percent', parseFloat(e.target.value))}
+              onChange={(e) => handleNumberInput('max_portfolio_exposure_percent', e.target.value)}
             />
           </div>
 
@@ -242,7 +262,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               type="number"
               step="0.1"
               value={config.buy_range_lower_offset}
-              onChange={(e) => handleInputChange('buy_range_lower_offset', parseFloat(e.target.value))}
+              onChange={(e) => handleNumberInput('buy_range_lower_offset', e.target.value)}
             />
           </div>
 
@@ -254,7 +274,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               type="number"
               step="0.1"
               value={config.buy_range_upper_offset}
-              onChange={(e) => handleInputChange('buy_range_upper_offset', parseFloat(e.target.value))}
+              onChange={(e) => handleNumberInput('buy_range_upper_offset', e.target.value)}
             />
           </div>
 
@@ -266,7 +286,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
               type="number"
               step="0.1"
               value={config.sell_range_offset}
-              onChange={(e) => handleInputChange('sell_range_offset', parseFloat(e.target.value))}
+              onChange={(e) => handleNumberInput('sell_range_offset', e.target.value)}
             />
           </div>
         </div>
