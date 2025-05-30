@@ -32,6 +32,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [hasExistingConfig, setHasExistingConfig] = useState(false);
   const [config, setConfig] = useState<TradingConfigData>({
     min_profit_percent: 5.0,
     max_active_pairs: 5,
@@ -66,6 +67,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
       }
 
       if (data) {
+        setHasExistingConfig(true);
         setConfig({
           min_profit_percent: parseFloat(data.min_profit_percent) || 5.0,
           max_active_pairs: data.max_active_pairs || 5,
@@ -78,6 +80,8 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
           sell_range_offset: parseFloat(data.sell_range_offset) || 5.5,
           is_active: data.is_active || false,
         });
+      } else {
+        setHasExistingConfig(false);
       }
     } catch (error) {
       console.error('Error fetching config:', error);
@@ -94,15 +98,30 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
 
     setIsLoading(true);
     try {
-      const { error } = await (supabase as any)
-        .from('trading_configs')
-        .upsert({
-          user_id: user.id,
-          ...config,
-          updated_at: new Date().toISOString(),
-        });
+      if (hasExistingConfig) {
+        // Update existing config
+        const { error } = await (supabase as any)
+          .from('trading_configs')
+          .update({
+            ...config,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        // Insert new config
+        const { error } = await (supabase as any)
+          .from('trading_configs')
+          .insert({
+            user_id: user.id,
+            ...config,
+            updated_at: new Date().toISOString(),
+          });
+
+        if (error) throw error;
+        setHasExistingConfig(true);
+      }
 
       toast({
         title: "Success",
