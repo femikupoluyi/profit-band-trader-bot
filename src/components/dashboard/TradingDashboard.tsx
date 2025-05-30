@@ -6,10 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { LogOut, Settings, TrendingUp, DollarSign, Activity, BarChart3 } from 'lucide-react';
+import { LogOut, Settings, TrendingUp, DollarSign, Activity, BarChart3, Key } from 'lucide-react';
 import TradingConfig from '@/components/trading/TradingConfig';
 import TradeHistory from '@/components/trading/TradeHistory';
 import TradingLogs from '@/components/trading/TradingLogs';
+import ApiCredentials from '@/components/trading/ApiCredentials';
+import TradingStatus from '@/components/trading/TradingStatus';
 import { useToast } from '@/hooks/use-toast';
 
 interface TradingStats {
@@ -166,6 +168,14 @@ const TradingDashboard = () => {
               <Settings className="h-4 w-4 mr-2" />
               Configuration
             </TabsTrigger>
+            <TabsTrigger value="api">
+              <Key className="h-4 w-4 mr-2" />
+              API Setup
+            </TabsTrigger>
+            <TabsTrigger value="status">
+              <Activity className="h-4 w-4 mr-2" />
+              Trading Status
+            </TabsTrigger>
             <TabsTrigger value="trades">
               <BarChart3 className="h-4 w-4 mr-2" />
               Trade History
@@ -178,6 +188,14 @@ const TradingDashboard = () => {
 
           <TabsContent value="config">
             <TradingConfig onConfigUpdate={fetchTradingStats} />
+          </TabsContent>
+
+          <TabsContent value="api">
+            <ApiCredentials />
+          </TabsContent>
+
+          <TabsContent value="status">
+            <TradingStatus />
           </TabsContent>
 
           <TabsContent value="trades">
