@@ -16,6 +16,9 @@ interface TradingConfigData {
   chart_timeframe: string;
   entry_offset_percent: number;
   take_profit_percent: number;
+  support_candle_count: number;
+  max_positions_per_pair: number;
+  new_support_threshold_percent: number;
   trading_pairs: string[];
   is_active: boolean;
 }
@@ -74,6 +77,18 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
           />
         </div>
 
+        {/* Max Positions Per Pair */}
+        <div className="space-y-2">
+          <Label htmlFor="max_positions_per_pair">Max Positions Per Pair</Label>
+          <Input
+            id="max_positions_per_pair"
+            type="number"
+            value={config.max_positions_per_pair}
+            onChange={(e) => onIntegerInput('max_positions_per_pair', e.target.value)}
+          />
+          <p className="text-xs text-gray-500">Maximum open positions allowed per trading pair</p>
+        </div>
+
         {/* Max Order Amount */}
         <div className="space-y-2">
           <Label htmlFor="max_order_amount_usd">Maximum Order Amount (USD)</Label>
@@ -119,6 +134,18 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
           </Select>
         </div>
 
+        {/* Support Candle Count */}
+        <div className="space-y-2">
+          <Label htmlFor="support_candle_count">Support Analysis Candles</Label>
+          <Input
+            id="support_candle_count"
+            type="number"
+            value={config.support_candle_count}
+            onChange={(e) => onIntegerInput('support_candle_count', e.target.value)}
+          />
+          <p className="text-xs text-gray-500">Number of candles for support level analysis</p>
+        </div>
+
         {/* Daily Reset Time */}
         <div className="space-y-2">
           <Label htmlFor="daily_reset_time">Daily Reset Time</Label>
@@ -138,11 +165,11 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
             type="number"
             step="0.1"
             min="0.1"
-            max="2.0"
+            max="5.0"
             value={config.entry_offset_percent}
             onChange={(e) => onNumberInput('entry_offset_percent', e.target.value)}
           />
-          <p className="text-xs text-gray-500">Entry price: 0.5-1% above support line</p>
+          <p className="text-xs text-gray-500">Entry price: percentage above support line</p>
         </div>
 
         {/* Take Profit Percentage */}
@@ -153,11 +180,26 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
             type="number"
             step="0.1"
             min="1.0"
-            max="10.0"
+            max="20.0"
             value={config.take_profit_percent}
             onChange={(e) => onNumberInput('take_profit_percent', e.target.value)}
           />
           <p className="text-xs text-gray-500">Profit target above entry price</p>
+        </div>
+
+        {/* New Support Threshold */}
+        <div className="space-y-2">
+          <Label htmlFor="new_support_threshold_percent">New Support Threshold (%)</Label>
+          <Input
+            id="new_support_threshold_percent"
+            type="number"
+            step="0.1"
+            min="1.0"
+            max="10.0"
+            value={config.new_support_threshold_percent}
+            onChange={(e) => onNumberInput('new_support_threshold_percent', e.target.value)}
+          />
+          <p className="text-xs text-gray-500">Min % drop from entry to allow new position</p>
         </div>
       </div>
 

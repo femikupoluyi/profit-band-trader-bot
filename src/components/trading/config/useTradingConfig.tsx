@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +13,8 @@ export interface TradingConfigData {
   entry_offset_percent: number;
   take_profit_percent: number;
   support_candle_count: number;
+  max_positions_per_pair: number;
+  new_support_threshold_percent: number;
   trading_pairs: string[];
   is_active: boolean;
 }
@@ -30,6 +33,8 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
     entry_offset_percent: 1.0,
     take_profit_percent: 2.0,
     support_candle_count: 20,
+    max_positions_per_pair: 2,
+    new_support_threshold_percent: 2.0,
     trading_pairs: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
     is_active: false,
   });
@@ -44,7 +49,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
     if (!user) return;
 
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('trading_configs')
         .select('*')
         .eq('user_id', user.id)
@@ -65,6 +70,8 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           entry_offset_percent: parseFloat(data.buy_range_upper_offset) || 1.0,
           take_profit_percent: parseFloat(data.sell_range_offset) || 2.0,
           support_candle_count: data.support_candle_count || 20,
+          max_positions_per_pair: data.max_positions_per_pair || 2,
+          new_support_threshold_percent: parseFloat(data.new_support_threshold_percent) || 2.0,
           trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
           is_active: data.is_active || false,
         });
@@ -95,20 +102,22 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         buy_range_upper_offset: config.entry_offset_percent,
         sell_range_offset: config.take_profit_percent,
         support_candle_count: config.support_candle_count,
+        max_positions_per_pair: config.max_positions_per_pair,
+        new_support_threshold_percent: config.new_support_threshold_percent,
         trading_pairs: config.trading_pairs,
         is_active: config.is_active,
         updated_at: new Date().toISOString(),
       };
 
       if (hasExistingConfig) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('trading_configs')
           .update(configData)
           .eq('user_id', user.id);
 
         if (error) throw error;
       } else {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('trading_configs')
           .insert({
             user_id: user.id,
@@ -121,7 +130,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
 
       toast({
         title: "Success",
-        description: "Trading configuration saved successfully. Automatic position closing will now use the configured take profit percentage.",
+        description: "Trading configuration saved successfully.",
       });
 
       if (onConfigUpdate) {

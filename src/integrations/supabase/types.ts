@@ -909,8 +909,11 @@ export type Database = {
           max_active_pairs: number | null
           max_order_amount_usd: number | null
           max_portfolio_exposure_percent: number | null
+          max_positions_per_pair: number | null
           min_profit_percent: number | null
+          new_support_threshold_percent: number | null
           sell_range_offset: number | null
+          support_candle_count: number | null
           trading_pairs: string[] | null
           updated_at: string | null
           user_id: string
@@ -926,8 +929,11 @@ export type Database = {
           max_active_pairs?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
+          max_positions_per_pair?: number | null
           min_profit_percent?: number | null
+          new_support_threshold_percent?: number | null
           sell_range_offset?: number | null
+          support_candle_count?: number | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id: string
@@ -943,8 +949,11 @@ export type Database = {
           max_active_pairs?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
+          max_positions_per_pair?: number | null
           min_profit_percent?: number | null
+          new_support_threshold_percent?: number | null
           sell_range_offset?: number | null
+          support_candle_count?: number | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id?: string

@@ -15,32 +15,25 @@ export class PositionMonitor {
   }
 
   async monitorPositions(): Promise<void> {
+    console.log('🔍 Starting position monitoring...');
+    console.log(`Using take profit percentage: ${this.config.take_profit_percent}%`);
+    
     try {
-      // Get all active trades for the user
-      const { data: activeTrades, error } = await supabase
+      const { data: activeTrades } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
         .in('status', ['pending', 'filled']);
-
-      if (error) {
-        console.error('Error fetching active trades:', error);
-        return;
-      }
 
       if (!activeTrades || activeTrades.length === 0) {
         console.log('No active trades to monitor');
         return;
       }
 
-      console.log(`Monitoring ${activeTrades.length} active positions using config take profit: ${this.config.take_profit_percent}%`);
+      console.log(`Monitoring ${activeTrades.length} active trades...`);
 
       for (const trade of activeTrades) {
-        try {
-          await this.checkTakeProfitCondition(trade);
-        } catch (error) {
-          console.error(`Error monitoring trade ${trade.id}:`, error);
-        }
+        await this.checkTradeForClosure(trade);
       }
     } catch (error) {
       console.error('Error in position monitoring:', error);
@@ -48,99 +41,90 @@ export class PositionMonitor {
     }
   }
 
-  private async checkTakeProfitCondition(trade: any): Promise<void> {
+  private async checkTradeForClosure(trade: any): Promise<void> {
     try {
-      // Get current market price
-      const { data: currentPriceData } = await supabase
-        .from('market_data')
-        .select('price')
-        .eq('symbol', trade.symbol)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
+      console.log(`\n📊 Checking trade ${trade.id} for ${trade.symbol}:`);
+      console.log(`  Entry Price: $${trade.price}`);
+      console.log(`  Side: ${trade.side}`);
+      console.log(`  Status: ${trade.status}`);
 
-      if (!currentPriceData) {
-        console.log(`No current price data for ${trade.symbol}`);
-        return;
+      // Get current market price
+      const marketData = await this.bybitService.getMarketPrice(trade.symbol);
+      const currentPrice = marketData.price;
+      
+      console.log(`  Current Price: $${currentPrice}`);
+
+      // Calculate profit/loss percentage
+      const entryPrice = parseFloat(trade.price.toString());
+      let profitPercent = 0;
+
+      if (trade.side === 'buy') {
+        profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+      } else {
+        profitPercent = ((entryPrice - currentPrice) / entryPrice) * 100;
       }
 
-      const currentPrice = Number(currentPriceData.price);
-      const entryPrice = Number(trade.price);
-      
-      // Use take profit percentage from config
-      const takeProfitPercent = this.config.take_profit_percent || 2.0;
-      const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
-      
-      // Calculate current profit percentage
-      const currentProfitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
-      
-      console.log(`Checking ${trade.symbol}: Entry ${entryPrice}, Current ${currentPrice}, Current P&L: ${currentProfitPercent.toFixed(2)}%, TP Target: ${takeProfitPercent}%`);
+      console.log(`  Profit/Loss: ${profitPercent.toFixed(2)}%`);
+      console.log(`  Take Profit Target: ${this.config.take_profit_percent}%`);
 
-      // Check if take profit condition is met
-      if (currentProfitPercent >= takeProfitPercent) {
-        console.log(`🚀 TAKE PROFIT TRIGGERED for ${trade.symbol}! Current: ${currentProfitPercent.toFixed(2)}% >= Target: ${takeProfitPercent}%`);
-        await this.executeTakeProfit(trade, currentPrice, currentProfitPercent);
+      // Check if profit target is reached
+      if (profitPercent >= this.config.take_profit_percent) {
+        console.log(`🎯 PROFIT TARGET REACHED! Closing position for ${trade.symbol}`);
+        await this.closePosition(trade, currentPrice, profitPercent);
       } else {
-        const remainingPercent = (takeProfitPercent - currentProfitPercent).toFixed(2);
-        console.log(`${trade.symbol} needs ${remainingPercent}% more to reach TP target (Current: ${currentProfitPercent.toFixed(2)}%)`);
+        console.log(`  📈 Position still under target (${profitPercent.toFixed(2)}% < ${this.config.take_profit_percent}%)`);
       }
     } catch (error) {
-      console.error(`Error checking take profit for trade ${trade.id}:`, error);
+      console.error(`Error checking trade ${trade.id}:`, error);
+      await this.logActivity('error', `Failed to check trade ${trade.id}`, { 
+        error: error.message, 
+        tradeId: trade.id,
+        symbol: trade.symbol 
+      });
     }
   }
 
-  private async executeTakeProfit(trade: any, currentPrice: number, currentProfitPercent: number): Promise<void> {
+  private async closePosition(trade: any, currentPrice: number, profitPercent: number): Promise<void> {
     try {
-      // Calculate profit/loss
-      const entryPrice = Number(trade.price);
-      const quantity = Number(trade.quantity);
-      const profitLoss = (currentPrice - entryPrice) * quantity;
+      const entryPrice = parseFloat(trade.price.toString());
+      const profitLoss = ((currentPrice - entryPrice) / entryPrice) * 100;
+      
+      console.log(`💰 Closing position for ${trade.symbol}:`);
+      console.log(`  Entry: $${entryPrice}`);
+      console.log(`  Exit: $${currentPrice}`);
+      console.log(`  Profit: ${profitLoss.toFixed(2)}%`);
 
-      console.log(`🎯 Executing take profit for ${trade.symbol}: P&L ${profitLoss.toFixed(4)} USD (${currentProfitPercent.toFixed(2)}%)`);
+      // Update trade status to closed
+      const { error } = await supabase
+        .from('trades')
+        .update({
+          status: 'closed',
+          profit_loss: profitLoss,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', trade.id);
 
-      // Place sell order (mock for now)
-      const sellOrder = await this.bybitService.placeOrder({
+      if (error) {
+        throw error;
+      }
+
+      console.log(`✅ Position closed successfully for ${trade.symbol}`);
+      
+      await this.logActivity('position_closed', `Position closed for ${trade.symbol}`, {
         symbol: trade.symbol,
-        side: 'Sell',
-        orderType: 'Market',
-        qty: trade.quantity.toString(),
+        entryPrice,
+        exitPrice: currentPrice,
+        profitPercent: profitLoss,
+        takeProfitTarget: this.config.take_profit_percent,
+        tradeId: trade.id
       });
 
-      if (sellOrder.retCode === 0) {
-        // Update trade status to closed
-        const { error: updateError } = await supabase
-          .from('trades')
-          .update({
-            status: 'closed',
-            profit_loss: profitLoss,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', trade.id);
-
-        if (updateError) {
-          console.error('Error updating trade status:', updateError);
-        } else {
-          console.log(`✅ Trade ${trade.id} closed automatically with profit: ${profitLoss.toFixed(4)} USD (${currentProfitPercent.toFixed(2)}%)`);
-          await this.logActivity('trade', `Automatic take profit executed for ${trade.symbol}`, {
-            tradeId: trade.id,
-            entryPrice,
-            exitPrice: currentPrice,
-            profitLoss,
-            profitPercent: currentProfitPercent,
-            configTakeProfitPercent: this.config.take_profit_percent,
-            executionType: 'automatic'
-          });
-        }
-      } else {
-        console.error(`Failed to execute automatic take profit sell order for ${trade.symbol}:`, sellOrder);
-        await this.logActivity('error', `Automatic take profit sell order failed for ${trade.symbol}`, { sellOrder });
-      }
     } catch (error) {
-      console.error(`Error executing automatic take profit for trade ${trade.id}:`, error);
-      await this.logActivity('error', `Automatic take profit execution failed for ${trade.symbol}`, { 
+      console.error(`Error closing position for ${trade.symbol}:`, error);
+      await this.logActivity('error', `Failed to close position for ${trade.symbol}`, { 
         error: error.message,
         tradeId: trade.id,
-        configTakeProfitPercent: this.config.take_profit_percent
+        symbol: trade.symbol 
       });
     }
   }

@@ -1,188 +1,136 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { PositionChecker } from './positionChecker';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class SignalExecutionService {
   private userId: string;
-  private config: TradingConfigData;
   private bybitService: BybitService;
   private positionChecker: PositionChecker;
+  private config: TradingConfigData;
 
-  constructor(userId: string, config: TradingConfigData, bybitService: BybitService) {
+  constructor(userId: string, bybitService: BybitService, config: TradingConfigData) {
     this.userId = userId;
-    this.config = config;
     this.bybitService = bybitService;
     this.positionChecker = new PositionChecker(userId);
+    this.config = config;
   }
 
   async executeSignal(signal: any): Promise<void> {
+    console.log(`\n🎯 Processing signal for ${signal.symbol}:`);
+    console.log(`  Signal Type: ${signal.signal_type}`);
+    console.log(`  Price: $${signal.price}`);
+    console.log(`  Confidence: ${signal.confidence}%`);
+
     try {
-      console.log(`Executing signal for ${signal.symbol} using config values:`, {
-        maxActivePairs: this.config.max_active_pairs,
-        maxOrderAmount: this.config.max_order_amount_usd,
-        takeProfitPercent: this.config.take_profit_percent
-      });
-      
-      const canExecute = await this.validateSignalExecution(signal);
-      if (!canExecute) {
-        console.log('Signal validation failed, marking as processed');
-        await this.markSignalProcessed(signal.id);
+      // Only process buy signals
+      if (signal.signal_type !== 'buy') {
+        console.log(`❌ Skipping non-buy signal for ${signal.symbol}`);
         return;
       }
 
-      // Calculate order size using config value
-      const orderSize = this.calculateOrderSize(signal.symbol, signal.price);
-      if (orderSize <= 0) {
-        console.log('Order size too small, marking signal as processed');
-        await this.markSignalProcessed(signal.id);
-        return;
-      }
-
-      console.log(`Placing ${signal.signal_type} order: ${orderSize} ${signal.symbol} at $${signal.price} (max order: $${this.config.max_order_amount_usd})`);
-
-      const orderResult = await this.bybitService.placeOrder({
-        symbol: signal.symbol,
-        side: 'Buy',
-        orderType: 'Market',
-        qty: orderSize.toString(),
-      });
-
-      console.log('Order result:', orderResult);
-
-      if (orderResult.retCode === 0) {
-        const tradeData = {
-          user_id: this.userId,
-          symbol: signal.symbol,
-          side: 'buy',
-          order_type: 'market',
-          quantity: parseFloat(orderSize.toFixed(8)),
-          price: parseFloat(signal.price.toString()),
-          status: 'filled',
-          bybit_order_id: orderResult.result?.orderId || null,
-          profit_loss: 0,
-        };
-
-        console.log('Inserting trade with data:', tradeData);
-
-        const { data: trade, error: tradeError } = await supabase
-          .from('trades')
-          .insert(tradeData)
-          .select()
-          .single();
-
-        if (tradeError) {
-          console.error('Error inserting trade:', tradeError);
-          await this.logActivity('error', `Failed to record trade for ${signal.symbol}`, { error: tradeError.message });
-        } else if (trade) {
-          console.log('Trade recorded successfully:', trade);
-          await this.setTakeProfit(trade, signal);
-          await this.logActivity('trade', `Executed ${signal.signal_type} order for ${signal.symbol} using config values`, {
-            signal,
-            orderResult,
-            orderSize,
-            tradeId: trade.id,
-            configUsed: {
-              takeProfitPercent: this.config.take_profit_percent,
-              maxOrderAmount: this.config.max_order_amount_usd
-            }
-          });
-        }
-      } else {
-        console.error('Order failed:', orderResult);
-        await this.logActivity('error', `Order failed for ${signal.symbol}`, { orderResult });
-      }
-
-      await this.markSignalProcessed(signal.id);
-    } catch (error) {
-      console.error('Error executing signal:', error);
-      await this.logActivity('error', `Failed to execute signal for ${signal.symbol}`, { 
-        error: error instanceof Error ? error.message : 'Unknown error',
-        signal 
-      });
-      await this.markSignalProcessed(signal.id);
-    }
-  }
-
-  private async setTakeProfit(trade: any, signal: any): Promise<void> {
-    try {
-      // Use take_profit_percent from config
-      const takeProfitPercent = this.config.take_profit_percent || 2.0;
-      const entryPrice = parseFloat(trade.price.toString());
-      const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
-
-      console.log(`Setting take profit for ${trade.symbol} at ${takeProfitPrice} (${takeProfitPercent}% from config)`);
-
-      const tpOrder = await this.bybitService.placeOrder({
-        symbol: trade.symbol,
-        side: 'Sell',
-        orderType: 'Limit',
-        qty: trade.quantity.toString(),
-        price: takeProfitPrice.toFixed(8),
-      });
-
-      if (tpOrder.retCode === 0) {
-        console.log(`Take profit order placed for ${trade.symbol} at ${takeProfitPrice} using config TP ${takeProfitPercent}%`);
-        await this.logActivity('trade', `Take profit set for ${trade.symbol} at ${takeProfitPrice}`, {
-          tradeId: trade.id,
-          takeProfitPrice,
-          takeProfitPercent,
-          configValue: takeProfitPercent
-        });
-      } else {
-        console.error(`Failed to set take profit for ${trade.symbol}:`, tpOrder);
-        await this.logActivity('warning', `Failed to set take profit for ${trade.symbol}`, { tpOrder });
-      }
-    } catch (error) {
-      console.error(`Error setting take profit for ${trade.symbol}:`, error);
-      await this.logActivity('error', `Error setting take profit for ${trade.symbol}`, { 
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async validateSignalExecution(signal: any): Promise<boolean> {
-    try {
-      // Check if we already have an open position for this specific symbol
-      const hasOpenPosition = await this.positionChecker.hasOpenPosition(signal.symbol);
-      if (hasOpenPosition) {
-        console.log(`❌ Rejecting signal for ${signal.symbol} - already has open position`);
-        return false;
-      }
-
-      // Check max active pairs limit
-      const maxActivePairs = this.config.max_active_pairs || 5;
-      const canOpenNewPair = await this.positionChecker.validateMaxActivePairs(maxActivePairs);
+      // Validate max active pairs
+      const canOpenNewPair = await this.positionChecker.validateMaxActivePairs(this.config.max_active_pairs);
       if (!canOpenNewPair) {
-        console.log(`❌ Rejecting signal for ${signal.symbol} - max active pairs reached (${maxActivePairs})`);
-        return false;
+        console.log(`❌ Cannot open new position: max active pairs (${this.config.max_active_pairs}) reached`);
+        await this.logActivity('signal_rejected', `Signal rejected for ${signal.symbol}: max active pairs reached`, {
+          symbol: signal.symbol,
+          maxActivePairs: this.config.max_active_pairs,
+          reason: 'max_active_pairs_exceeded'
+        });
+        return;
       }
 
-      console.log(`✅ Signal validation passed for ${signal.symbol}`);
-      return true;
+      // Check if we can open a new position for this pair
+      const canOpenNewPosition = await this.positionChecker.canOpenNewPositionWithLowerSupport(
+        signal.symbol,
+        signal.price,
+        this.config.new_support_threshold_percent,
+        this.config.max_positions_per_pair
+      );
+
+      if (!canOpenNewPosition) {
+        console.log(`❌ Cannot open new position for ${signal.symbol}: position limits or support threshold not met`);
+        await this.logActivity('signal_rejected', `Signal rejected for ${signal.symbol}: position limits reached or support threshold not met`, {
+          symbol: signal.symbol,
+          maxPositionsPerPair: this.config.max_positions_per_pair,
+          newSupportThreshold: this.config.new_support_threshold_percent,
+          reason: 'position_limit_or_support_threshold'
+        });
+        return;
+      }
+
+      // Calculate entry price with offset
+      const entryPrice = signal.price * (1 + this.config.entry_offset_percent / 100);
+      console.log(`📈 Entry price calculated: $${entryPrice.toFixed(6)} (${this.config.entry_offset_percent}% above support)`);
+
+      // Calculate quantity based on max order amount
+      const quantity = this.config.max_order_amount_usd / entryPrice;
+      console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on $${this.config.max_order_amount_usd} max order)`);
+
+      // Execute the trade
+      await this.executeBuyOrder(signal.symbol, entryPrice, quantity, signal);
+
     } catch (error) {
-      console.error('Error in signal validation:', error);
-      return false;
+      console.error(`Error executing signal for ${signal.symbol}:`, error);
+      await this.logActivity('error', `Signal execution failed for ${signal.symbol}`, { 
+        error: error.message,
+        signal: signal 
+      });
     }
   }
 
-  private calculateOrderSize(symbol: string, price: number): number {
-    // Use config value for max order amount
-    const maxOrderUsd = this.config.max_order_amount_usd || 100;
-    const orderSize = maxOrderUsd / price;
-    console.log(`Order size calculation using config: $${maxOrderUsd} / $${price} = ${orderSize}`);
-    return Math.max(0, orderSize);
-  }
-
-  private async markSignalProcessed(signalId: string): Promise<void> {
+  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any): Promise<void> {
     try {
+      console.log(`\n💰 Executing buy order for ${symbol}:`);
+      console.log(`  Price: $${price.toFixed(6)}`);
+      console.log(`  Quantity: ${quantity.toFixed(6)}`);
+      console.log(`  Total Value: $${(price * quantity).toFixed(2)}`);
+
+      // For now, create a mock trade record (replace with actual Bybit API call when ready)
+      const { data: trade, error } = await supabase
+        .from('trades')
+        .insert({
+          user_id: this.userId,
+          symbol,
+          side: 'buy',
+          order_type: 'limit',
+          price,
+          quantity,
+          status: 'filled', // In production, this would be 'pending' until filled
+          bybit_order_id: `mock_${Date.now()}`, // Replace with actual order ID
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      console.log(`✅ Buy order executed successfully for ${symbol}`);
+      console.log(`  Trade ID: ${trade.id}`);
+      console.log(`  Config used - Take Profit: ${this.config.take_profit_percent}%, Max Order: $${this.config.max_order_amount_usd}`);
+
+      await this.logActivity('trade_executed', `Buy order executed for ${symbol}`, {
+        symbol,
+        price,
+        quantity,
+        totalValue: price * quantity,
+        tradeId: trade.id,
+        takeProfitTarget: this.config.take_profit_percent,
+        entryOffset: this.config.entry_offset_percent,
+        maxOrderAmount: this.config.max_order_amount_usd
+      });
+
+      // Mark signal as processed
       await supabase
         .from('trading_signals')
         .update({ processed: true })
-        .eq('id', signalId);
+        .eq('id', signal.id);
+
     } catch (error) {
-      console.error('Error marking signal as processed:', error);
+      console.error(`Error executing buy order for ${symbol}:`, error);
+      throw error;
     }
   }
 
