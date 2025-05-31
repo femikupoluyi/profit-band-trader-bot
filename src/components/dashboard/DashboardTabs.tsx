@@ -1,12 +1,13 @@
 
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Key, Activity, BarChart3 } from 'lucide-react';
+import { Settings, Key, Activity, BarChart3, FileText } from 'lucide-react';
 import TradingConfig from '@/components/trading/TradingConfig';
 import TradeHistory from '@/components/trading/TradeHistory';
 import TradingLogs from '@/components/trading/TradingLogs';
 import ApiCredentials from '@/components/trading/ApiCredentials';
 import TradingStatus from '@/components/trading/TradingStatus';
+import TradesReport from '@/components/trading/TradesReport';
 
 interface DashboardTabsProps {
   onConfigUpdate: () => void;
@@ -15,7 +16,7 @@ interface DashboardTabsProps {
 const DashboardTabs = ({ onConfigUpdate }: DashboardTabsProps) => {
   return (
     <Tabs defaultValue="config" className="space-y-6">
-      <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 h-auto">
+      <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto">
         <TabsTrigger value="config" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
           <Settings className="h-3 w-3 sm:h-4 sm:w-4" />
           <span className="text-xs sm:text-sm">Config</span>
@@ -31,6 +32,10 @@ const DashboardTabs = ({ onConfigUpdate }: DashboardTabsProps) => {
         <TabsTrigger value="trades" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
           <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
           <span className="text-xs sm:text-sm">Trades</span>
+        </TabsTrigger>
+        <TabsTrigger value="reports" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
+          <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
+          <span className="text-xs sm:text-sm">Reports</span>
         </TabsTrigger>
         <TabsTrigger value="logs" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
           <Activity className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -52,6 +57,10 @@ const DashboardTabs = ({ onConfigUpdate }: DashboardTabsProps) => {
 
       <TabsContent value="trades">
         <TradeHistory />
+      </TabsContent>
+
+      <TabsContent value="reports">
+        <TradesReport />
       </TabsContent>
 
       <TabsContent value="logs">
