@@ -93,21 +93,24 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
 
     setIsLoading(true);
     try {
+      // Convert all numeric values properly
       const configData = {
         max_active_pairs: config.max_active_pairs,
-        max_order_amount_usd: config.max_order_amount_usd.toString(),
-        max_portfolio_exposure_percent: config.max_portfolio_exposure_percent.toString(),
+        max_order_amount_usd: config.max_order_amount_usd,
+        max_portfolio_exposure_percent: config.max_portfolio_exposure_percent,
         daily_reset_time: config.daily_reset_time,
         chart_timeframe: config.chart_timeframe,
-        buy_range_upper_offset: config.entry_offset_percent.toString(),
-        sell_range_offset: config.take_profit_percent.toString(),
+        buy_range_upper_offset: config.entry_offset_percent,
+        sell_range_offset: config.take_profit_percent,
         support_candle_count: config.support_candle_count,
         max_positions_per_pair: config.max_positions_per_pair,
-        new_support_threshold_percent: config.new_support_threshold_percent.toString(),
+        new_support_threshold_percent: config.new_support_threshold_percent,
         trading_pairs: config.trading_pairs,
         is_active: config.is_active,
         updated_at: new Date().toISOString(),
       };
+
+      console.log('Saving config data:', configData);
 
       if (hasExistingConfig) {
         const { error } = await supabase
