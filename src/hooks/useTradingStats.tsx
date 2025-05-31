@@ -60,7 +60,7 @@ export const useTradingStats = (userId?: string) => {
         console.error('Error fetching config:', configError);
       }
 
-      // Get trades within time range
+      // Get trades within time range for time-based metrics
       const { data: tradesInRange, error: tradesError } = await supabase
         .from('trades')
         .select('*')
@@ -73,12 +73,27 @@ export const useTradingStats = (userId?: string) => {
         return;
       }
 
+      // Get ALL active trades (not limited by time range) for active pairs and total active count
+      const { data: allActiveTrades, error: activeTradesError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('user_id', userId)
+        .in('status', ['pending', 'filled']);
+
+      if (activeTradesError) {
+        console.error('Error fetching active trades:', activeTradesError);
+        return;
+      }
+
       const trades = tradesInRange || [];
-      console.log('Fetched trades:', trades.length, trades);
+      const activeTrades = allActiveTrades || [];
+      
+      console.log('Fetched trades in range:', trades.length, trades);
+      console.log('Fetched all active trades:', activeTrades.length, activeTrades);
 
       // Calculate metrics with proper validation
       const totalTrades = trades.length;
-      const activeTrades = trades.filter(t => ['pending', 'filled'].includes(t.status));
+      const activeTradesInRange = trades.filter(t => ['pending', 'filled'].includes(t.status));
       // Include both 'closed' and 'cancelled' as closed trades since manual close sets status to 'cancelled'
       const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status));
       
@@ -107,15 +122,16 @@ export const useTradingStats = (userId?: string) => {
       // Calculate profit percentage based on closed trades only
       const profitPercentage = closedTrades.length > 0 ? (profitableClosedCount / closedTrades.length) * 100 : 0;
 
-      // Get unique active trading pairs
+      // Get unique active trading pairs from ALL active trades (not time-limited)
       const activePairs = new Set(activeTrades.map(trade => trade.symbol)).size;
+      const totalActiveCount = activeTrades.length;
 
       const newStats = {
         totalTrades,
-        activePairs,
+        activePairs, // Now calculated from all active trades
         totalProfit: Math.round(totalProfit * 100) / 100, // Round to 2 decimal places
         isActive: config?.is_active || false,
-        totalActive: activeTrades.length,
+        totalActive: totalActiveCount, // Now calculated from all active trades
         totalClosed: closedTrades.length,
         totalProfitableClosed: profitableClosedCount,
         totalVolume: Math.round(totalVolume * 100) / 100, // Round to 2 decimal places
