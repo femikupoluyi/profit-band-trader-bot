@@ -42,6 +42,56 @@ export const useTradingStats = (userId?: string) => {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  const calculateActualPL = async (trade: any) => {
+    try {
+      const entryPrice = parseFloat(trade.price.toString());
+      const quantity = parseFloat(trade.quantity.toString());
+
+      // For closed trades, use the stored profit_loss if it exists and is reasonable
+      if (['closed', 'cancelled'].includes(trade.status)) {
+        if (trade.profit_loss) {
+          const storedPL = parseFloat(trade.profit_loss.toString());
+          const volume = entryPrice * quantity;
+          
+          // Validate stored P&L is reasonable (not more than 50% of volume)
+          if (Math.abs(storedPL) <= volume * 0.5) {
+            return storedPL;
+          }
+          
+          // If stored P&L is unrealistic, assume minimal loss for cancelled, zero for closed
+          console.warn(`Unrealistic stored P&L for ${trade.symbol}: $${storedPL}, using fallback`);
+          return trade.status === 'cancelled' ? -0.50 : 0;
+        }
+        return 0;
+      }
+
+      // For active trades, calculate real-time P&L using current market price
+      const { data: marketData } = await supabase
+        .from('market_data')
+        .select('price')
+        .eq('symbol', trade.symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (marketData) {
+        const currentPrice = parseFloat(marketData.price.toString());
+        
+        // Calculate actual P&L based on trade side
+        if (trade.side === 'buy') {
+          return (currentPrice - entryPrice) * quantity;
+        } else {
+          return (entryPrice - currentPrice) * quantity;
+        }
+      }
+
+      return 0;
+    } catch (error) {
+      console.error(`Error calculating P&L for trade ${trade.id}:`, error);
+      return 0;
+    }
+  };
+
   const fetchTradingStats = async () => {
     if (!userId) return;
 
@@ -88,45 +138,38 @@ export const useTradingStats = (userId?: string) => {
       const trades = tradesInRange || [];
       const activeTrades = allActiveTrades || [];
       
-      console.log('Fetched trades in range:', trades.length, trades);
-      console.log('Fetched all active trades:', activeTrades.length, activeTrades);
+      console.log('Fetched trades in range:', trades.length);
+      console.log('Fetched all active trades:', activeTrades.length);
 
-      // Calculate metrics with proper validation
-      const totalTrades = trades.length;
-      const activeTradesInRange = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status));
-      const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status));
+      // Calculate actual P&L for all trades
+      const tradesWithActualPL = await Promise.all(
+        trades.map(async (trade) => {
+          const actualPL = await calculateActualPL(trade);
+          return { ...trade, actualPL };
+        })
+      );
+
+      // Calculate metrics with actual P&L
+      const totalTrades = tradesWithActualPL.length;
+      const closedTrades = tradesWithActualPL.filter(t => ['closed', 'cancelled'].includes(t.status));
       
       let totalProfit = 0;
       let totalVolume = 0;
       let profitableClosedCount = 0;
 
-      trades.forEach(trade => {
-        const price = trade.price ? parseFloat(trade.price.toString()) : 0;
-        const quantity = trade.quantity ? parseFloat(trade.quantity.toString()) : 0;
+      tradesWithActualPL.forEach(trade => {
+        const price = parseFloat(trade.price.toString());
+        const quantity = parseFloat(trade.quantity.toString());
         const volume = price * quantity;
+        const actualPL = trade.actualPL || 0;
         
-        // Only count profit/loss for closed trades, and ensure it's a reasonable value
-        let profitLoss = 0;
-        if (['closed', 'cancelled'].includes(trade.status) && trade.profit_loss) {
-          const rawPL = parseFloat(trade.profit_loss.toString());
-          
-          // Validate P&L is reasonable (should not exceed the original investment by more than 100%)
-          if (Math.abs(rawPL) <= volume * 2) {
-            profitLoss = rawPL;
-          } else {
-            console.warn(`Unrealistic P&L detected for trade ${trade.symbol}: $${rawPL}, volume: $${volume}`);
-            // For cancelled trades with unrealistic P&L, assume small loss
-            profitLoss = ['cancelled'].includes(trade.status) ? -1 : 0;
-          }
-        }
+        console.log(`Trade ${trade.symbol}: Entry=$${price.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
         
-        console.log(`Trade ${trade.symbol}: Entry=$${price}, Qty=${quantity}, Volume=$${volume.toFixed(2)}, P&L=$${profitLoss.toFixed(2)}, Status=${trade.status}`);
-        
-        totalProfit += profitLoss;
+        totalProfit += actualPL;
         totalVolume += volume;
         
-        // Count closed and cancelled trades with positive P&L as profitable
-        if (['closed', 'cancelled'].includes(trade.status) && profitLoss > 0) {
+        // Count closed and cancelled trades with positive actual P&L as profitable
+        if (['closed', 'cancelled'].includes(trade.status) && actualPL > 0) {
           profitableClosedCount++;
         }
       });
@@ -150,7 +193,7 @@ export const useTradingStats = (userId?: string) => {
         profitPercentage: Math.round(profitPercentage * 100) / 100
       };
 
-      console.log('Calculated stats with P&L validation:', newStats);
+      console.log('Calculated stats with actual P&L:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);

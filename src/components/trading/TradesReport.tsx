@@ -22,6 +22,7 @@ interface Trade {
   status: string;
   order_type: string;
   profit_loss?: number;
+  actualPL?: number;
   created_at: string;
   updated_at: string;
   bybit_order_id?: string;
@@ -49,6 +50,54 @@ const TradesReport = () => {
       fetchTrades();
     }
   }, [user, timeRange, statusFilter]);
+
+  const calculateActualPL = async (trade: any) => {
+    try {
+      const entryPrice = parseFloat(trade.price.toString());
+      const quantity = parseFloat(trade.quantity.toString());
+
+      // For closed trades, use stored P&L if reasonable, otherwise use fallback
+      if (['closed', 'cancelled'].includes(trade.status)) {
+        if (trade.profit_loss) {
+          const storedPL = parseFloat(trade.profit_loss.toString());
+          const volume = entryPrice * quantity;
+          
+          // Validate stored P&L is reasonable (not more than 50% of volume)
+          if (Math.abs(storedPL) <= volume * 0.5) {
+            return storedPL;
+          }
+          
+          console.warn(`Unrealistic stored P&L for ${trade.symbol}: $${storedPL}, using fallback`);
+          return trade.status === 'cancelled' ? -0.50 : 0;
+        }
+        return 0;
+      }
+
+      // For active trades, calculate real-time P&L using current market price
+      const { data: marketData } = await supabase
+        .from('market_data')
+        .select('price')
+        .eq('symbol', trade.symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (marketData) {
+        const currentPrice = parseFloat(marketData.price.toString());
+        
+        if (trade.side === 'buy') {
+          return (currentPrice - entryPrice) * quantity;
+        } else {
+          return (entryPrice - currentPrice) * quantity;
+        }
+      }
+
+      return 0;
+    } catch (error) {
+      console.error(`Error calculating actual P&L for trade ${trade.id}:`, error);
+      return 0;
+    }
+  };
 
   const handleQuickSelect = (period: string) => {
     setQuickSelect(period);
@@ -103,40 +152,26 @@ const TradesReport = () => {
 
       console.log('Fetched trades:', data?.length || 0, 'trades');
       
-      // Convert the data to match our Trade interface with P&L validation
-      const formattedTrades: Trade[] = (data || []).map(trade => {
-        const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
-        const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
-        const volume = price * quantity;
-        
-        // Validate and fix P&L values
-        let profitLoss = 0;
-        if (trade.profit_loss) {
-          const rawPL = typeof trade.profit_loss === 'string' ? parseFloat(trade.profit_loss) : trade.profit_loss;
+      // Calculate actual P&L for each trade
+      const tradesWithActualPL = await Promise.all(
+        (data || []).map(async (trade) => {
+          const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
+          const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
           
-          // For closed/cancelled trades, validate P&L is realistic
-          if (['closed', 'cancelled'].includes(trade.status)) {
-            if (Math.abs(rawPL) <= volume * 2) {
-              profitLoss = rawPL;
-            } else {
-              console.warn(`Fixing unrealistic P&L for ${trade.symbol}: was $${rawPL}, volume: $${volume}`);
-              // For cancelled trades, assume small loss
-              profitLoss = trade.status === 'cancelled' ? -1 : 0;
-            }
-          }
-        }
-        
-        console.log(`Processing trade ${trade.symbol}: Price=$${price}, Qty=${quantity}, Volume=$${volume.toFixed(2)}, P&L=$${profitLoss.toFixed(2)}, Status=${trade.status}`);
-        
-        return {
-          ...trade,
-          quantity,
-          price,
-          profit_loss: profitLoss
-        };
-      });
+          const actualPL = await calculateActualPL(trade);
+          
+          console.log(`Processing trade ${trade.symbol}: Price=$${price}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+          
+          return {
+            ...trade,
+            quantity,
+            price,
+            actualPL
+          };
+        })
+      );
       
-      setTrades(formattedTrades);
+      setTrades(tradesWithActualPL);
     } catch (error) {
       console.error('Error fetching trades:', error);
     } finally {
@@ -155,7 +190,7 @@ const TradesReport = () => {
       'Quantity',
       'Price',
       'Volume',
-      'P&L',
+      'Actual P&L',
       'Status',
       'Bybit Order ID'
     ];
@@ -164,7 +199,7 @@ const TradesReport = () => {
       const quantity = trade.quantity;
       const price = trade.price;
       const volume = quantity * price;
-      const profitLoss = trade.profit_loss || 0;
+      const actualPL = trade.actualPL || 0;
 
       return [
         format(new Date(trade.created_at), 'yyyy-MM-dd HH:mm:ss'),
@@ -174,7 +209,7 @@ const TradesReport = () => {
         quantity.toFixed(6),
         `$${price.toFixed(2)}`,
         `$${volume.toFixed(2)}`,
-        profitLoss !== 0 ? `$${profitLoss.toFixed(2)}` : '-',
+        actualPL !== 0 ? `$${actualPL.toFixed(2)}` : '-',
         trade.status,
         trade.bybit_order_id || '-'
       ];
@@ -214,7 +249,7 @@ const TradesReport = () => {
     );
   };
 
-  // Calculate summary statistics with validated P&L
+  // Calculate summary statistics with actual P&L
   const totalTrades = trades.length;
   const totalVolume = trades.reduce((sum, trade) => {
     const price = trade.price;
@@ -222,12 +257,12 @@ const TradesReport = () => {
     return sum + (price * quantity);
   }, 0);
   const totalPL = trades.reduce((sum, trade) => {
-    return sum + (trade.profit_loss || 0);
+    return sum + (trade.actualPL || 0);
   }, 0);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
   const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
 
-  console.log('Summary calculations with validated P&L:', {
+  console.log('Summary calculations with actual P&L:', {
     totalTrades,
     totalVolume: totalVolume.toFixed(2),
     totalPL: totalPL.toFixed(2),
@@ -365,7 +400,7 @@ const TradesReport = () => {
             <div className="text-2xl font-bold">{formatCurrency(totalVolume)}</div>
           </div>
           <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Total P&L</div>
+            <div className="text-sm text-muted-foreground">Actual P&L</div>
             <div className={`text-2xl font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(totalPL)}
             </div>
@@ -393,7 +428,7 @@ const TradesReport = () => {
                   <TableHead>Quantity</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Volume</TableHead>
-                  <TableHead>P&L</TableHead>
+                  <TableHead>Actual P&L</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -402,7 +437,7 @@ const TradesReport = () => {
                   const quantity = trade.quantity;
                   const price = trade.price;
                   const volume = quantity * price;
-                  const profitLoss = trade.profit_loss || 0;
+                  const actualPL = trade.actualPL || 0;
 
                   return (
                     <TableRow key={trade.id}>
@@ -416,9 +451,9 @@ const TradesReport = () => {
                       <TableCell>${price.toFixed(2)}</TableCell>
                       <TableCell>{formatCurrency(volume)}</TableCell>
                       <TableCell>
-                        {profitLoss !== 0 ? (
-                          <span className={profitLoss >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {formatCurrency(profitLoss)}
+                        {actualPL !== 0 ? (
+                          <span className={actualPL >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {formatCurrency(actualPL)}
                           </span>
                         ) : (
                           '-'
