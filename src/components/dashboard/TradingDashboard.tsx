@@ -6,6 +6,7 @@ import { useTradingStats } from '@/hooks/useTradingStats';
 import DashboardHeader from './DashboardHeader';
 import TradingStats from './TradingStats';
 import DashboardTabs from './DashboardTabs';
+import ActivePairsTable from './ActivePairsTable';
 
 const TradingDashboard = () => {
   const { user, signOut } = useAuth();
@@ -31,6 +32,11 @@ const TradingDashboard = () => {
           timeRange={timeRange}
           onTimeRangeChange={setTimeRange}
         />
+        
+        <div className="mt-8">
+          <ActivePairsTable />
+        </div>
+        
         <div className="mt-8">
           <DashboardTabs onConfigUpdate={refetch} />
         </div>
