@@ -94,7 +94,6 @@ export const useTradingStats = (userId?: string) => {
       // Calculate metrics with proper validation
       const totalTrades = trades.length;
       const activeTradesInRange = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status));
-      // Include both 'closed' and 'cancelled' as closed trades
       const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status));
       
       let totalProfit = 0;
@@ -102,13 +101,24 @@ export const useTradingStats = (userId?: string) => {
       let profitableClosedCount = 0;
 
       trades.forEach(trade => {
-        // Ensure proper number conversion and validation for P&L calculation
         const price = trade.price ? parseFloat(trade.price.toString()) : 0;
         const quantity = trade.quantity ? parseFloat(trade.quantity.toString()) : 0;
         const volume = price * quantity;
         
-        // Use the stored profit_loss value directly (already calculated correctly)
-        const profitLoss = trade.profit_loss ? parseFloat(trade.profit_loss.toString()) : 0;
+        // Only count profit/loss for closed trades, and ensure it's a reasonable value
+        let profitLoss = 0;
+        if (['closed', 'cancelled'].includes(trade.status) && trade.profit_loss) {
+          const rawPL = parseFloat(trade.profit_loss.toString());
+          
+          // Validate P&L is reasonable (should not exceed the original investment by more than 100%)
+          if (Math.abs(rawPL) <= volume * 2) {
+            profitLoss = rawPL;
+          } else {
+            console.warn(`Unrealistic P&L detected for trade ${trade.symbol}: $${rawPL}, volume: $${volume}`);
+            // For cancelled trades with unrealistic P&L, assume small loss
+            profitLoss = ['cancelled'].includes(trade.status) ? -1 : 0;
+          }
+        }
         
         console.log(`Trade ${trade.symbol}: Entry=$${price}, Qty=${quantity}, Volume=$${volume.toFixed(2)}, P&L=$${profitLoss.toFixed(2)}, Status=${trade.status}`);
         
@@ -140,7 +150,7 @@ export const useTradingStats = (userId?: string) => {
         profitPercentage: Math.round(profitPercentage * 100) / 100
       };
 
-      console.log('Calculated stats:', newStats);
+      console.log('Calculated stats with P&L validation:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);

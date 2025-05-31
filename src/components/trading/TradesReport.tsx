@@ -103,18 +103,30 @@ const TradesReport = () => {
 
       console.log('Fetched trades:', data?.length || 0, 'trades');
       
-      // Convert the data to match our Trade interface with proper P&L calculation
+      // Convert the data to match our Trade interface with P&L validation
       const formattedTrades: Trade[] = (data || []).map(trade => {
         const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
         const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
+        const volume = price * quantity;
         
-        // Use stored profit_loss value if available, otherwise calculate as 0 for active trades
+        // Validate and fix P&L values
         let profitLoss = 0;
         if (trade.profit_loss) {
-          profitLoss = typeof trade.profit_loss === 'string' ? parseFloat(trade.profit_loss) : trade.profit_loss;
+          const rawPL = typeof trade.profit_loss === 'string' ? parseFloat(trade.profit_loss) : trade.profit_loss;
+          
+          // For closed/cancelled trades, validate P&L is realistic
+          if (['closed', 'cancelled'].includes(trade.status)) {
+            if (Math.abs(rawPL) <= volume * 2) {
+              profitLoss = rawPL;
+            } else {
+              console.warn(`Fixing unrealistic P&L for ${trade.symbol}: was $${rawPL}, volume: $${volume}`);
+              // For cancelled trades, assume small loss
+              profitLoss = trade.status === 'cancelled' ? -1 : 0;
+            }
+          }
         }
         
-        console.log(`Processing trade ${trade.symbol}: Price=$${price}, Qty=${quantity}, P&L=$${profitLoss}, Status=${trade.status}`);
+        console.log(`Processing trade ${trade.symbol}: Price=$${price}, Qty=${quantity}, Volume=$${volume.toFixed(2)}, P&L=$${profitLoss.toFixed(2)}, Status=${trade.status}`);
         
         return {
           ...trade,
@@ -189,6 +201,7 @@ const TradesReport = () => {
       pending: "secondary",
       cancelled: "outline",
       partial_filled: "secondary",
+      closed: "default"
     };
     return <Badge variant={variants[status] || "outline"}>{status.replace('_', ' ')}</Badge>;
   };
@@ -201,7 +214,7 @@ const TradesReport = () => {
     );
   };
 
-  // Calculate summary statistics with corrected P&L
+  // Calculate summary statistics with validated P&L
   const totalTrades = trades.length;
   const totalVolume = trades.reduce((sum, trade) => {
     const price = trade.price;
@@ -214,7 +227,7 @@ const TradesReport = () => {
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
   const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
 
-  console.log('Summary calculations:', {
+  console.log('Summary calculations with validated P&L:', {
     totalTrades,
     totalVolume: totalVolume.toFixed(2),
     totalPL: totalPL.toFixed(2),
@@ -327,6 +340,7 @@ const TradesReport = () => {
                 <SelectItem value="filled">Filled</SelectItem>
                 <SelectItem value="partial_filled">Partial Filled</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
               </SelectContent>
             </Select>
           </div>
