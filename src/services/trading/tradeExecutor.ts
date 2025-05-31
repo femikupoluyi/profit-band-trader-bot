@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -56,7 +57,6 @@ export class TradeExecutor {
 
       for (const trade of openTrades) {
         try {
-          // Get current market price
           const { data: currentPrice } = await (supabase as any)
             .from('market_data')
             .select('price')
@@ -73,7 +73,6 @@ export class TradeExecutor {
 
           console.log(`${trade.symbol}: Entry ${entryPrice}, Current ${marketPrice}, P&L ${profitPercent.toFixed(2)}%`);
 
-          // Close if profitable
           if (profitPercent > 0) {
             console.log(`Closing profitable trade for ${trade.symbol}`);
             
@@ -112,7 +111,6 @@ export class TradeExecutor {
     try {
       console.log(`Executing signal for ${signal.symbol}:`, signal);
       
-      // Check if we can execute this signal based on config
       const canExecute = await this.validateSignalExecution(signal);
       if (!canExecute) {
         console.log('Signal validation failed, marking as processed');
@@ -120,7 +118,6 @@ export class TradeExecutor {
         return;
       }
 
-      // Calculate order size
       const orderSize = this.calculateOrderSize(signal.symbol, signal.price);
       if (orderSize <= 0) {
         console.log('Order size too small, marking signal as processed');
@@ -130,7 +127,6 @@ export class TradeExecutor {
 
       console.log(`Placing ${signal.signal_type} order: ${orderSize} ${signal.symbol} at $${signal.price}`);
 
-      // Place buy order
       const orderResult = await this.bybitService.placeOrder({
         symbol: signal.symbol,
         side: 'Buy',
@@ -141,23 +137,22 @@ export class TradeExecutor {
       console.log('Order result:', orderResult);
 
       if (orderResult.retCode === 0) {
-        // Record trade
+        // Use correct status values that match the database constraint
         const { data: trade } = await (supabase as any)
           .from('trades')
           .insert({
             user_id: this.userId,
             symbol: signal.symbol,
-            side: signal.signal_type,
-            order_type: 'market',
+            side: 'buy', // Use lowercase to match constraint
+            order_type: 'market', // Use lowercase to match constraint
             quantity: orderSize,
             price: signal.price,
-            status: 'filled',
+            status: 'filled', // Use valid status value
             bybit_order_id: orderResult.result?.orderId,
           })
           .select()
           .single();
 
-        // Set take profit order
         if (trade) {
           await this.setTakeProfit(trade, signal);
         }
@@ -179,12 +174,12 @@ export class TradeExecutor {
 
   private async setTakeProfit(trade: any, signal: any): Promise<void> {
     try {
-      const takeProfitPercent = this.config.take_profit_percent || 2.0;
+      // Use a default take profit percent if not configured
+      const takeProfitPercent = this.config.min_profit_percent || 2.0;
       const takeProfitPrice = parseFloat(trade.price) * (1 + takeProfitPercent / 100);
 
       console.log(`Setting take profit for ${trade.symbol} at ${takeProfitPrice}`);
 
-      // Place take profit order
       const tpOrder = await this.bybitService.placeOrder({
         symbol: trade.symbol,
         side: 'Sell',
@@ -205,7 +200,6 @@ export class TradeExecutor {
   }
 
   private async validateSignalExecution(signal: any): Promise<boolean> {
-    // Check max active pairs
     const { count: activePairs } = await (supabase as any)
       .from('trades')
       .select('symbol', { count: 'exact', head: true })
@@ -223,7 +217,6 @@ export class TradeExecutor {
   }
 
   private calculateOrderSize(symbol: string, price: number): number {
-    // Simple calculation: use max order amount divided by price
     const maxOrderUsd = this.config.max_order_amount_usd;
     const orderSize = maxOrderUsd / price;
     console.log(`Order size calculation: $${maxOrderUsd} / $${price} = ${orderSize}`);

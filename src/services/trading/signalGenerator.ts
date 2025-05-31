@@ -18,15 +18,13 @@ export class SignalGenerator {
     supportLevel: SupportLevel
   ): Promise<TradingSignal | null> {
     try {
-      // More aggressive entry strategy - enter when price is within 2% of support
-      const entryOffsetPercent = 1.5; // Fixed 1.5% above support
+      const entryOffsetPercent = 1.5;
       const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
       
-      // Calculate take profit price (2% above entry)
-      const takeProfitPercent = this.config.take_profit_percent || 2.0;
+      // Use min_profit_percent instead of take_profit_percent
+      const takeProfitPercent = this.config.min_profit_percent || 2.0;
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
-      // More lenient entry conditions - allow entry when current price is near support
       const priceWithinRange = currentPrice <= entryPrice && currentPrice >= supportLevel.price * 0.98;
       
       console.log(`${symbol} signal check: Current ${currentPrice}, Support ${supportLevel.price.toFixed(4)}, Entry ${entryPrice.toFixed(4)}, InRange: ${priceWithinRange}`);
@@ -36,7 +34,7 @@ export class SignalGenerator {
           symbol,
           action: 'buy',
           price: currentPrice,
-          confidence: Math.max(supportLevel.strength, 0.6), // Minimum 60% confidence
+          confidence: Math.max(supportLevel.strength, 0.6),
           reasoning: `Support level at ${supportLevel.price.toFixed(4)}, entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)}`,
           supportLevel: supportLevel.price,
           takeProfitPrice: takeProfitPrice,
