@@ -5,6 +5,8 @@ export interface TradingSignal {
   price: number;
   confidence: number;
   reasoning: string;
+  supportLevel?: number;
+  takeProfitPrice?: number;
 }
 
 export interface ApiCredentials {
@@ -20,4 +22,19 @@ export interface OrderRequest {
   orderType: 'market' | 'limit';
   qty: string;
   price?: string;
+}
+
+export interface CandleData {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface SupportLevel {
+  price: number;
+  strength: number;
+  touchCount: number;
 }

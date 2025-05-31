@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -14,6 +13,7 @@ export class TradingEngine {
   private bybitService: BybitService | null = null;
   private isRunning = false;
   private loopCount = 0;
+  private lastEndOfDayCheck = '';
   
   // Service instances
   private marketScanner: MarketScanner | null = null;
@@ -98,8 +98,8 @@ export class TradingEngine {
     
     this.isRunning = true;
     this.loopCount = 0;
-    await this.logActivity('info', 'Trading engine started');
-    console.log('Trading engine started, beginning main loop...');
+    await this.logActivity('info', 'Trading engine started with new strategy');
+    console.log('Trading engine started with support line strategy, beginning main loop...');
     
     // Main trading loop
     this.tradingLoop();
@@ -124,10 +124,13 @@ export class TradingEngine {
           if (!this.bybitService) {
             console.log('Still no services initialized, waiting 60 seconds...');
             await this.logActivity('warning', 'No API credentials available. Please configure in API Setup tab. Retrying in 60 seconds...');
-            await this.sleep(60000); // Wait 1 minute before retrying
+            await this.sleep(60000);
             continue;
           }
         }
+
+        // Check for end-of-day processing
+        await this.checkEndOfDay();
 
         console.log('Scanning markets...');
         await this.marketScanner.scanMarkets();
@@ -151,6 +154,34 @@ export class TradingEngine {
         await this.logActivity('error', 'Trading loop error', { error: error.message, loopCount: this.loopCount });
         await this.sleep(60000); // Wait 1 minute on error
       }
+    }
+  }
+
+  private async checkEndOfDay(): Promise<void> {
+    try {
+      const now = new Date();
+      const resetTime = this.config.daily_reset_time || '00:00:00';
+      const [hours, minutes] = resetTime.split(':').map(Number);
+      
+      const resetDateTime = new Date(now);
+      resetDateTime.setHours(hours, minutes, 0, 0);
+      
+      // If we've passed the reset time today and haven't processed it yet
+      const todayKey = now.toDateString();
+      if (now >= resetDateTime && this.lastEndOfDayCheck !== todayKey) {
+        console.log('Performing end-of-day processing...');
+        await this.logActivity('info', 'Starting end-of-day processing');
+        
+        if (this.tradeExecutor) {
+          await this.tradeExecutor.closeEndOfDayTrades();
+        }
+        
+        this.lastEndOfDayCheck = todayKey;
+        await this.logActivity('info', 'End-of-day processing completed');
+      }
+    } catch (error) {
+      console.error('Error in end-of-day check:', error);
+      await this.logActivity('error', 'End-of-day processing failed', { error: error.message });
     }
   }
 
