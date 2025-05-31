@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingSignal, SupportLevel } from './types';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -17,16 +18,17 @@ export class SignalGenerator {
     supportLevel: SupportLevel
   ): Promise<TradingSignal | null> {
     try {
-      const entryOffsetPercent = 1.5;
-      const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
-      
-      // Use take_profit_percent from config
+      // Use config values for calculations
+      const entryOffsetPercent = this.config.entry_offset_percent || 1.5;
       const takeProfitPercent = this.config.take_profit_percent || 2.0;
+      
+      const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
       const priceWithinRange = currentPrice <= entryPrice && currentPrice >= supportLevel.price * 0.98;
       
-      console.log(`${symbol} signal check: Current ${currentPrice}, Support ${supportLevel.price.toFixed(4)}, Entry ${entryPrice.toFixed(4)}, InRange: ${priceWithinRange}`);
+      console.log(`${symbol} signal check using config - Entry offset: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%`);
+      console.log(`Current ${currentPrice}, Support ${supportLevel.price.toFixed(4)}, Entry ${entryPrice.toFixed(4)}, TP ${takeProfitPrice.toFixed(4)}, InRange: ${priceWithinRange}`);
 
       if (priceWithinRange) {
         const signal: TradingSignal = {
@@ -34,12 +36,12 @@ export class SignalGenerator {
           action: 'buy',
           price: currentPrice,
           confidence: Math.max(supportLevel.strength, 0.6),
-          reasoning: `Support level at ${supportLevel.price.toFixed(4)}, entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)}`,
+          reasoning: `Support level at ${supportLevel.price.toFixed(4)}, entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)} (Config: ${entryOffsetPercent}% entry, ${takeProfitPercent}% TP)`,
           supportLevel: supportLevel.price,
           takeProfitPrice: takeProfitPrice,
         };
 
-        console.log(`Generated buy signal for ${symbol}:`, signal);
+        console.log(`Generated buy signal for ${symbol} using config values:`, signal);
         await this.createSignal(signal);
         return signal;
       } else {

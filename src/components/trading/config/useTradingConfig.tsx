@@ -12,6 +12,7 @@ export interface TradingConfigData {
   chart_timeframe: string;
   entry_offset_percent: number;
   take_profit_percent: number;
+  support_candle_count: number;
   trading_pairs: string[];
   is_active: boolean;
 }
@@ -29,6 +30,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
     chart_timeframe: '4h',
     entry_offset_percent: 1.0,
     take_profit_percent: 2.0,
+    support_candle_count: 20,
     trading_pairs: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
     is_active: false,
   });
@@ -63,6 +65,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           chart_timeframe: data.chart_timeframe || '4h',
           entry_offset_percent: parseFloat(data.buy_range_upper_offset) || 1.0,
           take_profit_percent: parseFloat(data.sell_range_offset) || 2.0,
+          support_candle_count: data.support_candle_count || 20,
           trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
           is_active: data.is_active || false,
         });
@@ -92,6 +95,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         chart_timeframe: config.chart_timeframe,
         buy_range_upper_offset: config.entry_offset_percent,
         sell_range_offset: config.take_profit_percent,
+        support_candle_count: config.support_candle_count,
         trading_pairs: config.trading_pairs,
         is_active: config.is_active,
         updated_at: new Date().toISOString(),

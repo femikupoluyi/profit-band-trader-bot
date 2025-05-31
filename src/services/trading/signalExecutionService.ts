@@ -16,7 +16,11 @@ export class SignalExecutionService {
 
   async executeSignal(signal: any): Promise<void> {
     try {
-      console.log(`Executing signal for ${signal.symbol}:`, signal);
+      console.log(`Executing signal for ${signal.symbol} using config values:`, {
+        maxActivePairs: this.config.max_active_pairs,
+        maxOrderAmount: this.config.max_order_amount_usd,
+        takeProfitPercent: this.config.take_profit_percent
+      });
       
       const canExecute = await this.validateSignalExecution(signal);
       if (!canExecute) {
@@ -25,6 +29,7 @@ export class SignalExecutionService {
         return;
       }
 
+      // Calculate order size using config value
       const orderSize = this.calculateOrderSize(signal.symbol, signal.price);
       if (orderSize <= 0) {
         console.log('Order size too small, marking signal as processed');
@@ -32,7 +37,7 @@ export class SignalExecutionService {
         return;
       }
 
-      console.log(`Placing ${signal.signal_type} order: ${orderSize} ${signal.symbol} at $${signal.price}`);
+      console.log(`Placing ${signal.signal_type} order: ${orderSize} ${signal.symbol} at $${signal.price} (max order: $${this.config.max_order_amount_usd})`);
 
       const orderResult = await this.bybitService.placeOrder({
         symbol: signal.symbol,
@@ -44,17 +49,16 @@ export class SignalExecutionService {
       console.log('Order result:', orderResult);
 
       if (orderResult.retCode === 0) {
-        // Ensure proper data types for trade insertion
         const tradeData = {
           user_id: this.userId,
           symbol: signal.symbol,
           side: 'buy',
           order_type: 'market',
-          quantity: parseFloat(orderSize.toFixed(8)), // Ensure proper decimal precision
+          quantity: parseFloat(orderSize.toFixed(8)),
           price: parseFloat(signal.price.toString()),
-          status: 'filled', // Use consistent status values
+          status: 'filled',
           bybit_order_id: orderResult.result?.orderId || null,
-          profit_loss: 0, // Initialize with 0
+          profit_loss: 0,
         };
 
         console.log('Inserting trade with data:', tradeData);
@@ -71,11 +75,15 @@ export class SignalExecutionService {
         } else if (trade) {
           console.log('Trade recorded successfully:', trade);
           await this.setTakeProfit(trade, signal);
-          await this.logActivity('trade', `Executed ${signal.signal_type} order for ${signal.symbol}`, {
+          await this.logActivity('trade', `Executed ${signal.signal_type} order for ${signal.symbol} using config values`, {
             signal,
             orderResult,
             orderSize,
-            tradeId: trade.id
+            tradeId: trade.id,
+            configUsed: {
+              takeProfitPercent: this.config.take_profit_percent,
+              maxOrderAmount: this.config.max_order_amount_usd
+            }
           });
         }
       } else {
@@ -96,12 +104,12 @@ export class SignalExecutionService {
 
   private async setTakeProfit(trade: any, signal: any): Promise<void> {
     try {
-      // Use take_profit_percent from config with fallback
+      // Use take_profit_percent from config
       const takeProfitPercent = this.config.take_profit_percent || 2.0;
       const entryPrice = parseFloat(trade.price.toString());
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
-      console.log(`Setting take profit for ${trade.symbol} at ${takeProfitPrice}`);
+      console.log(`Setting take profit for ${trade.symbol} at ${takeProfitPrice} (${takeProfitPercent}% from config)`);
 
       const tpOrder = await this.bybitService.placeOrder({
         symbol: trade.symbol,
@@ -112,11 +120,12 @@ export class SignalExecutionService {
       });
 
       if (tpOrder.retCode === 0) {
-        console.log(`Take profit order placed for ${trade.symbol} at ${takeProfitPrice}`);
+        console.log(`Take profit order placed for ${trade.symbol} at ${takeProfitPrice} using config TP ${takeProfitPercent}%`);
         await this.logActivity('trade', `Take profit set for ${trade.symbol} at ${takeProfitPrice}`, {
           tradeId: trade.id,
           takeProfitPrice,
-          takeProfitPercent
+          takeProfitPercent,
+          configValue: takeProfitPercent
         });
       } else {
         console.error(`Failed to set take profit for ${trade.symbol}:`, tpOrder);
@@ -143,10 +152,11 @@ export class SignalExecutionService {
         return false;
       }
 
-      console.log(`Active pairs: ${activePairs}/${this.config.max_active_pairs}`);
+      const maxActivePairs = this.config.max_active_pairs || 5;
+      console.log(`Active pairs: ${activePairs}/${maxActivePairs} (from config)`);
       
-      if ((activePairs || 0) >= this.config.max_active_pairs) {
-        console.log('Max active pairs reached');
+      if ((activePairs || 0) >= maxActivePairs) {
+        console.log(`Max active pairs reached (${maxActivePairs} from config)`);
         return false;
       }
 
@@ -158,9 +168,10 @@ export class SignalExecutionService {
   }
 
   private calculateOrderSize(symbol: string, price: number): number {
+    // Use config value for max order amount
     const maxOrderUsd = this.config.max_order_amount_usd || 100;
     const orderSize = maxOrderUsd / price;
-    console.log(`Order size calculation: $${maxOrderUsd} / $${price} = ${orderSize}`);
+    console.log(`Order size calculation using config: $${maxOrderUsd} / $${price} = ${orderSize}`);
     return Math.max(0, orderSize);
   }
 

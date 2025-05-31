@@ -24,11 +24,15 @@ export class SignalAnalyzer {
   }
 
   async analyzeAndCreateSignals(): Promise<void> {
-    // Use valid trading pairs
-    const validSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT', 'LTCUSDT'];
-    const symbols = this.config.trading_pairs?.filter(symbol => validSymbols.includes(symbol)) || validSymbols.slice(0, 5);
+    // Use trading pairs from config
+    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
     console.log('Analyzing symbols for signals:', symbols);
+    console.log('Using config values:', {
+      candleCount: this.config.support_candle_count,
+      entryOffset: this.config.entry_offset_percent,
+      takeProfitPercent: this.config.take_profit_percent
+    });
     
     for (const symbol of symbols) {
       try {
@@ -39,17 +43,17 @@ export class SignalAnalyzer {
           continue;
         }
 
-        // Get available candle data (reduced requirement to work with what we have)
-        const candles = await this.candleDataService.getCandleData(symbol, 20);
-        if (!candles || candles.length < 10) {
+        // Get candle data using config value
+        const candleCount = this.config.support_candle_count || 20;
+        const candles = await this.candleDataService.getCandleData(symbol, candleCount);
+        
+        if (!candles || candles.length < Math.min(candleCount / 2, 10)) {
           console.log(`Not enough candle data for ${symbol} (${candles?.length || 0} candles), creating test signal anyway`);
-          
-          // Create a test signal even without full historical data
           await this.createTestSignal(symbol);
           continue;
         }
 
-        console.log(`Analyzing ${symbol} with ${candles.length} candles`);
+        console.log(`Analyzing ${symbol} with ${candles.length} candles using ${candleCount} candle requirement`);
 
         // Identify support level
         const supportLevel = this.supportLevelAnalyzer.identifySupportLevel(candles);
@@ -59,7 +63,7 @@ export class SignalAnalyzer {
           continue;
         }
 
-        // Get current price
+        // Get current price from latest market data
         const { data: latestPrice } = await (supabase as any)
           .from('market_data')
           .select('price')
@@ -75,7 +79,7 @@ export class SignalAnalyzer {
 
         const currentPrice = parseFloat(latestPrice.price);
         
-        // Generate signal if conditions are met
+        // Generate signal using config values
         await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
       } catch (error) {
         console.error(`Error analyzing ${symbol}:`, error);
@@ -99,14 +103,15 @@ export class SignalAnalyzer {
 
       const currentPrice = parseFloat(latestPrice.price);
       
-      // Create a simplified support level based on current price
+      // Create a simplified support level based on current price and config
+      const entryOffsetPercent = this.config.entry_offset_percent || 1.0;
       const supportLevel = {
-        price: currentPrice * 0.995, // 0.5% below current price
+        price: currentPrice * (1 - entryOffsetPercent / 100),
         strength: 0.7,
         touchCount: 3
       };
 
-      console.log(`Creating test signal for ${symbol} at price ${currentPrice}`);
+      console.log(`Creating test signal for ${symbol} at price ${currentPrice} with entry offset ${entryOffsetPercent}%`);
       await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
     } catch (error) {
       console.error(`Error creating test signal for ${symbol}:`, error);
