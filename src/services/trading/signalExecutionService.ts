@@ -94,7 +94,7 @@ export class SignalExecutionService {
       // Validate calculation results
       if (isNaN(entryPrice) || isNaN(quantity) || quantity <= 0 || entryPrice <= 0) {
         console.error(`❌ Invalid calculation results: entryPrice=${entryPrice}, quantity=${quantity}`);
-        await this.logActivity('error', `Invalid calculation for ${signal.symbol}`, {
+        await this.logActivity('calculation_error', `Invalid calculation for ${signal.symbol}`, {
           entryPrice,
           quantity,
           signal,
@@ -111,7 +111,7 @@ export class SignalExecutionService {
 
     } catch (error) {
       console.error(`Error executing signal for ${signal.symbol}:`, error);
-      await this.logActivity('error', `Signal execution failed for ${signal.symbol}`, { 
+      await this.logActivity('execution_error', `Signal execution failed for ${signal.symbol}`, { 
         error: error.message,
         signal: signal 
       });
@@ -132,7 +132,7 @@ export class SignalExecutionService {
       }
 
       // For now, create a mock trade record (replace with actual Bybit API call when ready)
-      // Using 'filled' status which should be allowed by the constraint
+      // Using 'pending' status which should be allowed by the constraint
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -142,7 +142,7 @@ export class SignalExecutionService {
           order_type: 'limit',
           price: price,
           quantity: quantity,
-          status: 'filled', // This should be a valid status according to constraint
+          status: 'pending', // Use allowed status value
           bybit_order_id: `mock_${Date.now()}`, // Replace with actual order ID
         })
         .select()
@@ -157,7 +157,7 @@ export class SignalExecutionService {
       console.log(`  Trade ID: ${trade.id}`);
       console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
 
-      await this.logActivity('trade_executed', `Buy order executed for ${symbol}`, {
+      await this.logActivity('trade_created', `Buy order executed for ${symbol}`, {
         symbol,
         price,
         quantity,

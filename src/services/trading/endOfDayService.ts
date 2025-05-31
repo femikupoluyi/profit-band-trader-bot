@@ -22,7 +22,7 @@ export class EndOfDayService {
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .eq('status', 'filled')
+        .in('status', ['pending', 'partial_filled', 'filled']) // Use allowed status values
         .eq('side', 'buy');
 
       if (error) {
@@ -73,9 +73,9 @@ export class EndOfDayService {
             });
 
             if (sellOrder.retCode === 0) {
-              // Update trade with proper data types
+              // Update trade with proper data types using allowed status
               const updateData = {
-                status: 'closed',
+                status: 'cancelled', // Use allowed status value
                 profit_loss: parseFloat(profitLoss.toFixed(8)),
                 updated_at: new Date().toISOString(),
               };
@@ -88,7 +88,7 @@ export class EndOfDayService {
               if (updateError) {
                 console.error(`Error updating trade ${trade.id}:`, updateError);
               } else {
-                await this.logActivity('trade', `Closed profitable position for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`, {
+                await this.logActivity('trade_closed', `Closed profitable position for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`, {
                   tradeId: trade.id,
                   profitLoss,
                   profitPercent,
@@ -98,21 +98,21 @@ export class EndOfDayService {
               }
             } else {
               console.error(`Failed to close position for ${trade.symbol}:`, sellOrder);
-              await this.logActivity('error', `Failed to close position for ${trade.symbol}`, { sellOrder });
+              await this.logActivity('execution_error', `Failed to close position for ${trade.symbol}`, { sellOrder });
             }
           } else {
             console.log(`Keeping ${trade.symbol} open (${profitPercent.toFixed(2)}% P&L)`);
           }
         } catch (error) {
           console.error(`Error processing end-of-day for ${trade.symbol}:`, error);
-          await this.logActivity('error', `Error processing end-of-day for ${trade.symbol}`, { 
+          await this.logActivity('system_error', `Error processing end-of-day for ${trade.symbol}`, { 
             error: error instanceof Error ? error.message : 'Unknown error'
           });
         }
       }
     } catch (error) {
       console.error('Error in end-of-day processing:', error);
-      await this.logActivity('error', 'Error in end-of-day processing', { 
+      await this.logActivity('system_error', 'Error in end-of-day processing', { 
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }

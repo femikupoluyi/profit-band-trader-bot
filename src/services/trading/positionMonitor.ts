@@ -38,21 +38,21 @@ export class PositionMonitor {
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .eq('status', 'filled'); // Only check filled trades, not pending ones
+        .in('status', ['pending', 'partial_filled', 'filled']); // Use database-allowed statuses
 
       if (!activeTrades || activeTrades.length === 0) {
-        console.log('No active filled trades to monitor');
+        console.log('No active trades to monitor');
         return;
       }
 
-      console.log(`Monitoring ${activeTrades.length} filled trades using config take profit: ${this.config.take_profit_percent}%...`);
+      console.log(`Monitoring ${activeTrades.length} active trades using config take profit: ${this.config.take_profit_percent}%...`);
 
       for (const trade of activeTrades) {
         await this.checkTradeForClosure(trade);
       }
     } catch (error) {
       console.error('Error in position monitoring:', error);
-      await this.logActivity('error', 'Position monitoring failed', { error: error.message });
+      await this.logActivity('system_error', 'Position monitoring failed', { error: error.message });
     }
   }
 
@@ -92,7 +92,7 @@ export class PositionMonitor {
       }
     } catch (error) {
       console.error(`Error checking trade ${trade.id}:`, error);
-      await this.logActivity('error', `Failed to check trade ${trade.id}`, { 
+      await this.logActivity('system_error', `Failed to check trade ${trade.id}`, { 
         error: error.message, 
         tradeId: trade.id,
         symbol: trade.symbol 
@@ -118,21 +118,21 @@ export class PositionMonitor {
         .eq('id', trade.id)
         .single();
 
-      if (currentTrade?.status === 'closed') {
+      if (currentTrade?.status === 'cancelled') {
         console.log(`Trade ${trade.id} is already closed, skipping`);
         return;
       }
 
-      // Update trade status to closed - using exact status value from database constraint
+      // Update trade status to cancelled (using allowed status value)
       const { error } = await supabase
         .from('trades')
         .update({
-          status: 'closed',
+          status: 'cancelled', // Use allowed status value instead of 'closed'
           profit_loss: profitLoss,
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .eq('status', 'filled'); // Only update if still filled
+        .in('status', ['pending', 'partial_filled', 'filled']); // Only update if still active
 
       if (error) {
         console.error(`Database error closing position:`, error);
@@ -141,7 +141,7 @@ export class PositionMonitor {
 
       console.log(`✅ Position closed successfully for ${trade.symbol}`);
       
-      await this.logActivity('position_closed', `Position closed for ${trade.symbol}`, {
+      await this.logActivity('trade_closed', `Position closed for ${trade.symbol}`, {
         symbol: trade.symbol,
         entryPrice,
         exitPrice: currentPrice,
@@ -156,7 +156,7 @@ export class PositionMonitor {
 
     } catch (error) {
       console.error(`Error closing position for ${trade.symbol}:`, error);
-      await this.logActivity('error', `Failed to close position for ${trade.symbol}`, { 
+      await this.logActivity('system_error', `Failed to close position for ${trade.symbol}`, { 
         error: error.message,
         tradeId: trade.id,
         symbol: trade.symbol 
