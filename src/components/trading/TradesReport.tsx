@@ -18,11 +18,11 @@ interface Trade {
   id: string;
   symbol: string;
   side: string;
-  quantity: string;
-  price: string;
+  quantity: number;
+  price: number;
   status: string;
   order_type: string;
-  profit_loss?: string;
+  profit_loss?: number;
   created_at: string;
   updated_at: string;
   bybit_order_id?: string;
@@ -103,7 +103,16 @@ const TradesReport = () => {
       if (error) throw error;
 
       console.log('Fetched trades:', data?.length || 0, 'trades');
-      setTrades(data || []);
+      
+      // Convert the data to match our Trade interface
+      const formattedTrades: Trade[] = (data || []).map(trade => ({
+        ...trade,
+        quantity: typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity,
+        price: typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price,
+        profit_loss: trade.profit_loss ? (typeof trade.profit_loss === 'string' ? parseFloat(trade.profit_loss) : trade.profit_loss) : undefined
+      }));
+      
+      setTrades(formattedTrades);
     } catch (error) {
       console.error('Error fetching trades:', error);
     } finally {
@@ -128,10 +137,10 @@ const TradesReport = () => {
     ];
 
     const csvData = trades.map(trade => {
-      const quantity = parseFloat(trade.quantity);
-      const price = parseFloat(trade.price);
+      const quantity = trade.quantity;
+      const price = trade.price;
       const volume = quantity * price;
-      const profitLoss = trade.profit_loss ? parseFloat(trade.profit_loss) : 0;
+      const profitLoss = trade.profit_loss || 0;
 
       return [
         format(new Date(trade.created_at), 'yyyy-MM-dd HH:mm:ss'),
@@ -183,12 +192,12 @@ const TradesReport = () => {
   // Calculate summary statistics
   const totalTrades = trades.length;
   const totalVolume = trades.reduce((sum, trade) => {
-    const price = parseFloat(trade.price);
-    const quantity = parseFloat(trade.quantity);
+    const price = trade.price;
+    const quantity = trade.quantity;
     return sum + (price * quantity);
   }, 0);
   const totalPL = trades.reduce((sum, trade) => {
-    return sum + (trade.profit_loss ? parseFloat(trade.profit_loss) : 0);
+    return sum + (trade.profit_loss || 0);
   }, 0);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
   const closedTrades = trades.filter(t => t.status === 'cancelled').length;
@@ -356,10 +365,10 @@ const TradesReport = () => {
               </TableHeader>
               <TableBody>
                 {trades.map((trade) => {
-                  const quantity = parseFloat(trade.quantity);
-                  const price = parseFloat(trade.price);
+                  const quantity = trade.quantity;
+                  const price = trade.price;
                   const volume = quantity * price;
-                  const profitLoss = trade.profit_loss ? parseFloat(trade.profit_loss) : 0;
+                  const profitLoss = trade.profit_loss || 0;
 
                   return (
                     <TableRow key={trade.id}>
