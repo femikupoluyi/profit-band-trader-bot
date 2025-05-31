@@ -911,6 +911,7 @@ export type Database = {
           max_portfolio_exposure_percent: number | null
           min_profit_percent: number | null
           sell_range_offset: number | null
+          trading_pairs: string[] | null
           updated_at: string | null
           user_id: string
         }
@@ -927,6 +928,7 @@ export type Database = {
           max_portfolio_exposure_percent?: number | null
           min_profit_percent?: number | null
           sell_range_offset?: number | null
+          trading_pairs?: string[] | null
           updated_at?: string | null
           user_id: string
         }
@@ -943,6 +945,7 @@ export type Database = {
           max_portfolio_exposure_percent?: number | null
           min_profit_percent?: number | null
           sell_range_offset?: number | null
+          trading_pairs?: string[] | null
           updated_at?: string | null
           user_id?: string
         }

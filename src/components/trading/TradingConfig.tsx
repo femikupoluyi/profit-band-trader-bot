@@ -20,6 +20,14 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
     handleIntegerInput
   } = useTradingConfig(onConfigUpdate);
 
+  // Ensure valid trading pairs are set
+  React.useEffect(() => {
+    if (config.trading_pairs && config.trading_pairs.length === 0) {
+      const validPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
+      handleInputChange('trading_pairs', validPairs);
+    }
+  }, [config.trading_pairs, handleInputChange]);
+
   return (
     <Card>
       <CardHeader>

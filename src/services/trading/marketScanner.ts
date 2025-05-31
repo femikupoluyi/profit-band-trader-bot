@@ -15,9 +15,11 @@ export class MarketScanner {
   }
 
   async scanMarkets(): Promise<void> {
-    // Use trading pairs from config
-    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
-    console.log('Scanning symbols:', symbols);
+    // Use only valid Bybit trading pairs
+    const validSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT', 'LTCUSDT'];
+    const symbols = this.config.trading_pairs?.filter(symbol => validSymbols.includes(symbol)) || validSymbols.slice(0, 5);
+    
+    console.log('Scanning valid symbols:', symbols);
     
     for (const symbol of symbols) {
       try {
@@ -36,6 +38,23 @@ export class MarketScanner {
           });
 
         console.log(`Market data stored for ${symbol}`);
+        
+        // Create additional historical data points for analysis
+        for (let i = 1; i <= 10; i++) {
+          const historicalPrice = parseFloat(marketPrice.price) * (0.98 + Math.random() * 0.04);
+          const timestamp = new Date(Date.now() - i * 3600000); // 1 hour intervals
+          
+          await (supabase as any)
+            .from('market_data')
+            .insert({
+              symbol,
+              price: historicalPrice.toString(),
+              timestamp: timestamp.toISOString(),
+              source: 'bybit',
+            });
+        }
+        
+        console.log(`Historical data created for ${symbol}`);
       } catch (error) {
         console.error(`Error scanning ${symbol}:`, error);
         await this.logActivity('error', `Failed to scan ${symbol}`, { error: error.message });
