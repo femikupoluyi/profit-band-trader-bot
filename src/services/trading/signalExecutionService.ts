@@ -2,16 +2,19 @@
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { PositionChecker } from './positionChecker';
 
 export class SignalExecutionService {
   private userId: string;
   private config: TradingConfigData;
   private bybitService: BybitService;
+  private positionChecker: PositionChecker;
 
   constructor(userId: string, config: TradingConfigData, bybitService: BybitService) {
     this.userId = userId;
     this.config = config;
     this.bybitService = bybitService;
+    this.positionChecker = new PositionChecker(userId);
   }
 
   async executeSignal(signal: any): Promise<void> {
@@ -141,25 +144,22 @@ export class SignalExecutionService {
 
   private async validateSignalExecution(signal: any): Promise<boolean> {
     try {
-      const { count: activePairs, error } = await supabase
-        .from('trades')
-        .select('symbol', { count: 'exact', head: true })
-        .eq('user_id', this.userId)
-        .in('status', ['pending', 'filled']);
-
-      if (error) {
-        console.error('Error validating signal execution:', error);
+      // Check if we already have an open position for this specific symbol
+      const hasOpenPosition = await this.positionChecker.hasOpenPosition(signal.symbol);
+      if (hasOpenPosition) {
+        console.log(`❌ Rejecting signal for ${signal.symbol} - already has open position`);
         return false;
       }
 
+      // Check max active pairs limit
       const maxActivePairs = this.config.max_active_pairs || 5;
-      console.log(`Active pairs: ${activePairs}/${maxActivePairs} (from config)`);
-      
-      if ((activePairs || 0) >= maxActivePairs) {
-        console.log(`Max active pairs reached (${maxActivePairs} from config)`);
+      const canOpenNewPair = await this.positionChecker.validateMaxActivePairs(maxActivePairs);
+      if (!canOpenNewPair) {
+        console.log(`❌ Rejecting signal for ${signal.symbol} - max active pairs reached (${maxActivePairs})`);
         return false;
       }
 
+      console.log(`✅ Signal validation passed for ${signal.symbol}`);
       return true;
     } catch (error) {
       console.error('Error in signal validation:', error);

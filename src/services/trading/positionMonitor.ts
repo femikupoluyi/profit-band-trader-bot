@@ -64,37 +64,39 @@ export class PositionMonitor {
         return;
       }
 
-      const currentPrice = parseFloat(currentPriceData.price);
-      const entryPrice = parseFloat(trade.price.toString());
+      const currentPrice = Number(currentPriceData.price);
+      const entryPrice = Number(trade.price);
       
       // Use take profit percentage from config
       const takeProfitPercent = this.config.take_profit_percent || 2.0;
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
       
-      console.log(`Checking ${trade.symbol}: Entry ${entryPrice}, Current ${currentPrice}, TP ${takeProfitPrice.toFixed(4)} (${takeProfitPercent}% from config)`);
+      // Calculate current profit percentage
+      const currentProfitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+      
+      console.log(`Checking ${trade.symbol}: Entry ${entryPrice}, Current ${currentPrice}, Current P&L: ${currentProfitPercent.toFixed(2)}%, TP Target: ${takeProfitPercent}%`);
 
       // Check if take profit condition is met
-      if (currentPrice >= takeProfitPrice) {
-        console.log(`Take profit triggered for ${trade.symbol} at ${currentPrice} (target: ${takeProfitPrice.toFixed(4)}) using config TP: ${takeProfitPercent}%`);
-        await this.executeTakeProfit(trade, currentPrice, takeProfitPercent);
+      if (currentProfitPercent >= takeProfitPercent) {
+        console.log(`🚀 TAKE PROFIT TRIGGERED for ${trade.symbol}! Current: ${currentProfitPercent.toFixed(2)}% >= Target: ${takeProfitPercent}%`);
+        await this.executeTakeProfit(trade, currentPrice, currentProfitPercent);
       } else {
-        const remainingPercent = ((takeProfitPrice - currentPrice) / entryPrice * 100).toFixed(2);
-        console.log(`${trade.symbol} needs ${remainingPercent}% more to reach TP target`);
+        const remainingPercent = (takeProfitPercent - currentProfitPercent).toFixed(2);
+        console.log(`${trade.symbol} needs ${remainingPercent}% more to reach TP target (Current: ${currentProfitPercent.toFixed(2)}%)`);
       }
     } catch (error) {
       console.error(`Error checking take profit for trade ${trade.id}:`, error);
     }
   }
 
-  private async executeTakeProfit(trade: any, currentPrice: number, takeProfitPercent: number): Promise<void> {
+  private async executeTakeProfit(trade: any, currentPrice: number, currentProfitPercent: number): Promise<void> {
     try {
       // Calculate profit/loss
-      const entryPrice = parseFloat(trade.price.toString());
-      const quantity = parseFloat(trade.quantity.toString());
+      const entryPrice = Number(trade.price);
+      const quantity = Number(trade.quantity);
       const profitLoss = (currentPrice - entryPrice) * quantity;
-      const profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
 
-      console.log(`Executing take profit for ${trade.symbol}: P&L ${profitLoss.toFixed(4)} USD (${profitPercent.toFixed(2)}%) using config TP: ${takeProfitPercent}%`);
+      console.log(`🎯 Executing take profit for ${trade.symbol}: P&L ${profitLoss.toFixed(4)} USD (${currentProfitPercent.toFixed(2)}%)`);
 
       // Place sell order (mock for now)
       const sellOrder = await this.bybitService.placeOrder({
@@ -118,14 +120,14 @@ export class PositionMonitor {
         if (updateError) {
           console.error('Error updating trade status:', updateError);
         } else {
-          console.log(`Trade ${trade.id} closed automatically with profit: ${profitLoss.toFixed(4)} USD using config TP: ${takeProfitPercent}%`);
-          await this.logActivity('trade', `Automatic take profit executed for ${trade.symbol} using config TP: ${takeProfitPercent}%`, {
+          console.log(`✅ Trade ${trade.id} closed automatically with profit: ${profitLoss.toFixed(4)} USD (${currentProfitPercent.toFixed(2)}%)`);
+          await this.logActivity('trade', `Automatic take profit executed for ${trade.symbol}`, {
             tradeId: trade.id,
             entryPrice,
             exitPrice: currentPrice,
             profitLoss,
-            profitPercent,
-            configTakeProfitPercent: takeProfitPercent,
+            profitPercent: currentProfitPercent,
+            configTakeProfitPercent: this.config.take_profit_percent,
             executionType: 'automatic'
           });
         }
