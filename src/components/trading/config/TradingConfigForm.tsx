@@ -163,8 +163,8 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
           <Input
             id="entry_offset_percent"
             type="number"
-            step="0.1"
-            min="0.1"
+            step="0.01"
+            min="0.01"
             max="5.0"
             value={config.entry_offset_percent}
             onChange={(e) => onNumberInput('entry_offset_percent', e.target.value)}
@@ -178,8 +178,8 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
           <Input
             id="take_profit_percent"
             type="number"
-            step="0.1"
-            min="1.0"
+            step="0.01"
+            min="0.01"
             max="20.0"
             value={config.take_profit_percent}
             onChange={(e) => onNumberInput('take_profit_percent', e.target.value)}
@@ -193,8 +193,8 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
           <Input
             id="new_support_threshold_percent"
             type="number"
-            step="0.1"
-            min="1.0"
+            step="0.01"
+            min="0.01"
             max="10.0"
             value={config.new_support_threshold_percent}
             onChange={(e) => onNumberInput('new_support_threshold_percent', e.target.value)}

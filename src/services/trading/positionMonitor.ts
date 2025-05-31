@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -12,6 +11,21 @@ export class PositionMonitor {
     this.userId = userId;
     this.bybitService = bybitService;
     this.config = config;
+    
+    // Validate config values with proper defaults
+    this.config = {
+      ...config,
+      take_profit_percent: config.take_profit_percent || 2.0,
+      entry_offset_percent: config.entry_offset_percent || 1.0,
+      max_positions_per_pair: config.max_positions_per_pair || 2,
+      new_support_threshold_percent: config.new_support_threshold_percent || 2.0
+    };
+    
+    console.log('PositionMonitor initialized with config:', {
+      takeProfitPercent: this.config.take_profit_percent,
+      entryOffsetPercent: this.config.entry_offset_percent,
+      maxPositionsPerPair: this.config.max_positions_per_pair
+    });
   }
 
   async monitorPositions(): Promise<void> {
@@ -47,6 +61,7 @@ export class PositionMonitor {
       console.log(`  Entry Price: $${trade.price}`);
       console.log(`  Side: ${trade.side}`);
       console.log(`  Status: ${trade.status}`);
+      console.log(`  Take Profit Target: ${this.config.take_profit_percent}%`);
 
       // Get current market price
       const marketData = await this.bybitService.getMarketPrice(trade.symbol);
