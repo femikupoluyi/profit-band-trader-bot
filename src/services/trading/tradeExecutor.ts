@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -180,7 +179,7 @@ export class TradeExecutor {
 
   private async setTakeProfit(trade: any, signal: any): Promise<void> {
     try {
-      const takeProfitPercent = this.config.sell_range_offset || 2.0;
+      const takeProfitPercent = this.config.take_profit_percent || 2.0;
       const takeProfitPrice = parseFloat(trade.price) * (1 + takeProfitPercent / 100);
 
       console.log(`Setting take profit for ${trade.symbol} at ${takeProfitPrice}`);

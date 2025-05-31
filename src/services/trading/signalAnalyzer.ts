@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingSignal, CandleData, SupportLevel } from './types';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -13,9 +12,8 @@ export class SignalAnalyzer {
   }
 
   async analyzeAndCreateSignals(): Promise<void> {
-    // Get trading pairs from config or use default
-    const defaultPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
-    const symbols = defaultPairs; // Will be configurable later
+    // Use trading pairs from config
+    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
     
     for (const symbol of symbols) {
       try {
@@ -54,11 +52,11 @@ export class SignalAnalyzer {
         const currentPrice = parseFloat(latestPrice.price);
         
         // Calculate entry price (0.5-1% above support)
-        const entryOffsetPercent = this.config.buy_range_upper_offset || 1.0;
+        const entryOffsetPercent = this.config.entry_offset_percent || 1.0;
         const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
         
         // Calculate take profit price (2% above entry)
-        const takeProfitPercent = this.config.sell_range_offset || 2.0;
+        const takeProfitPercent = this.config.take_profit_percent || 2.0;
         const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
         // Check if current price is near our entry level
