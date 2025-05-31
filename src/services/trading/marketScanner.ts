@@ -32,7 +32,7 @@ export class MarketScanner {
           .from('market_data')
           .insert({
             symbol,
-            price: marketPrice.price,
+            price: marketPrice.price.toString(),
             timestamp: new Date().toISOString(),
             source: 'bybit',
           });
@@ -41,7 +41,7 @@ export class MarketScanner {
         
         // Create additional historical data points for analysis
         for (let i = 1; i <= 10; i++) {
-          const historicalPrice = parseFloat(marketPrice.price) * (0.98 + Math.random() * 0.04);
+          const historicalPrice = parseFloat(marketPrice.price.toString()) * (0.98 + Math.random() * 0.04);
           const timestamp = new Date(Date.now() - i * 3600000); // 1 hour intervals
           
           await (supabase as any)
