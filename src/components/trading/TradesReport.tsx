@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -104,13 +103,26 @@ const TradesReport = () => {
 
       console.log('Fetched trades:', data?.length || 0, 'trades');
       
-      // Convert the data to match our Trade interface
-      const formattedTrades: Trade[] = (data || []).map(trade => ({
-        ...trade,
-        quantity: typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity,
-        price: typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price,
-        profit_loss: trade.profit_loss ? (typeof trade.profit_loss === 'string' ? parseFloat(trade.profit_loss) : trade.profit_loss) : undefined
-      }));
+      // Convert the data to match our Trade interface with proper P&L calculation
+      const formattedTrades: Trade[] = (data || []).map(trade => {
+        const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
+        const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
+        
+        // Use stored profit_loss value if available, otherwise calculate as 0 for active trades
+        let profitLoss = 0;
+        if (trade.profit_loss) {
+          profitLoss = typeof trade.profit_loss === 'string' ? parseFloat(trade.profit_loss) : trade.profit_loss;
+        }
+        
+        console.log(`Processing trade ${trade.symbol}: Price=$${price}, Qty=${quantity}, P&L=$${profitLoss}, Status=${trade.status}`);
+        
+        return {
+          ...trade,
+          quantity,
+          price,
+          profit_loss: profitLoss
+        };
+      });
       
       setTrades(formattedTrades);
     } catch (error) {
@@ -189,7 +201,7 @@ const TradesReport = () => {
     );
   };
 
-  // Calculate summary statistics
+  // Calculate summary statistics with corrected P&L
   const totalTrades = trades.length;
   const totalVolume = trades.reduce((sum, trade) => {
     const price = trade.price;
@@ -200,7 +212,15 @@ const TradesReport = () => {
     return sum + (trade.profit_loss || 0);
   }, 0);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
-  const closedTrades = trades.filter(t => t.status === 'cancelled').length;
+  const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
+
+  console.log('Summary calculations:', {
+    totalTrades,
+    totalVolume: totalVolume.toFixed(2),
+    totalPL: totalPL.toFixed(2),
+    activeTrades,
+    closedTrades
+  });
 
   return (
     <Card>

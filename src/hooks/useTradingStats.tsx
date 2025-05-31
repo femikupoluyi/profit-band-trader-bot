@@ -102,13 +102,15 @@ export const useTradingStats = (userId?: string) => {
       let profitableClosedCount = 0;
 
       trades.forEach(trade => {
-        // Ensure proper number conversion and validation
-        const profitLoss = trade.profit_loss ? parseFloat(trade.profit_loss.toString()) : 0;
+        // Ensure proper number conversion and validation for P&L calculation
         const price = trade.price ? parseFloat(trade.price.toString()) : 0;
         const quantity = trade.quantity ? parseFloat(trade.quantity.toString()) : 0;
         const volume = price * quantity;
         
-        console.log(`Trade ${trade.symbol}: P&L=${profitLoss}, Volume=${volume}, Status=${trade.status}`);
+        // Use the stored profit_loss value directly (already calculated correctly)
+        const profitLoss = trade.profit_loss ? parseFloat(trade.profit_loss.toString()) : 0;
+        
+        console.log(`Trade ${trade.symbol}: Entry=$${price}, Qty=${quantity}, Volume=$${volume.toFixed(2)}, P&L=$${profitLoss.toFixed(2)}, Status=${trade.status}`);
         
         totalProfit += profitLoss;
         totalVolume += volume;
