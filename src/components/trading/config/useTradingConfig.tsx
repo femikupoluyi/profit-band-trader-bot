@@ -20,16 +20,16 @@ export interface TradingConfigData {
 }
 
 const getDefaultConfig = (): TradingConfigData => ({
-  max_active_pairs: 5,
-  max_order_amount_usd: 100.0,
-  max_portfolio_exposure_percent: 25.0,
+  max_active_pairs: 20,
+  max_order_amount_usd: 50.0,
+  max_portfolio_exposure_percent: 20.0,
   daily_reset_time: '00:00:00',
-  chart_timeframe: '4h',
-  entry_offset_percent: 1.0,
-  take_profit_percent: 2.0,
+  chart_timeframe: '1m',
+  entry_offset_percent: 0.5,
+  take_profit_percent: 1.0,
   support_candle_count: 20,
   max_positions_per_pair: 2,
-  new_support_threshold_percent: 2.0,
+  new_support_threshold_percent: 1.0,
   trading_pairs: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
   is_active: false,
 });
@@ -64,25 +64,25 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
       if (data) {
         setHasExistingConfig(true);
         const loadedConfig: TradingConfigData = {
-          max_active_pairs: data.max_active_pairs || 5,
-          max_order_amount_usd: parseFloat(data.max_order_amount_usd?.toString() || '100'),
-          max_portfolio_exposure_percent: parseFloat(data.max_portfolio_exposure_percent?.toString() || '25'),
+          max_active_pairs: data.max_active_pairs || 20,
+          max_order_amount_usd: parseFloat(data.max_order_amount_usd?.toString() || '50'),
+          max_portfolio_exposure_percent: parseFloat(data.max_portfolio_exposure_percent?.toString() || '20'),
           daily_reset_time: data.daily_reset_time || '00:00:00',
-          chart_timeframe: data.chart_timeframe || '4h',
-          entry_offset_percent: parseFloat(data.buy_range_upper_offset?.toString() || '1'),
-          take_profit_percent: parseFloat(data.sell_range_offset?.toString() || '2'),
+          chart_timeframe: data.chart_timeframe || '1m',
+          entry_offset_percent: parseFloat(data.buy_range_upper_offset?.toString() || '0.5'),
+          take_profit_percent: parseFloat(data.sell_range_offset?.toString() || '1'),
           support_candle_count: data.support_candle_count || 20,
           max_positions_per_pair: data.max_positions_per_pair || 2,
-          new_support_threshold_percent: parseFloat(data.new_support_threshold_percent?.toString() || '2'),
+          new_support_threshold_percent: parseFloat(data.new_support_threshold_percent?.toString() || '1'),
           trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
           is_active: data.is_active || false,
         };
         
-        console.log('Loaded config from database:', loadedConfig);
+        console.log('Loaded config from database with updated defaults:', loadedConfig);
         setConfig(loadedConfig);
       } else {
         setHasExistingConfig(false);
-        console.log('No existing config found, using defaults:', getDefaultConfig());
+        console.log('No existing config found, using updated defaults:', getDefaultConfig());
       }
     } catch (error) {
       console.error('Error fetching config:', error);
@@ -99,24 +99,24 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
 
     setIsLoading(true);
     try {
-      // Ensure all values are valid numbers with proper defaults
+      // Ensure all values match the screenshot configuration
       const configData = {
-        max_active_pairs: config.max_active_pairs || 5,
-        max_order_amount_usd: config.max_order_amount_usd || 100.0,
-        max_portfolio_exposure_percent: config.max_portfolio_exposure_percent || 25.0,
-        daily_reset_time: config.daily_reset_time || '00:00:00',
-        chart_timeframe: config.chart_timeframe || '4h',
-        buy_range_upper_offset: config.entry_offset_percent || 1.0,
-        sell_range_offset: config.take_profit_percent || 2.0,
-        support_candle_count: config.support_candle_count || 20,
-        max_positions_per_pair: config.max_positions_per_pair || 2,
-        new_support_threshold_percent: config.new_support_threshold_percent || 2.0,
-        trading_pairs: config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT'],
-        is_active: config.is_active || false,
+        max_active_pairs: config.max_active_pairs,
+        max_order_amount_usd: config.max_order_amount_usd,
+        max_portfolio_exposure_percent: config.max_portfolio_exposure_percent,
+        daily_reset_time: config.daily_reset_time,
+        chart_timeframe: config.chart_timeframe,
+        buy_range_upper_offset: config.entry_offset_percent,
+        sell_range_offset: config.take_profit_percent,
+        support_candle_count: config.support_candle_count,
+        max_positions_per_pair: config.max_positions_per_pair,
+        new_support_threshold_percent: config.new_support_threshold_percent,
+        trading_pairs: config.trading_pairs,
+        is_active: config.is_active,
         updated_at: new Date().toISOString(),
       };
 
-      console.log('Saving config data with validated values:', configData);
+      console.log('Saving config data matching screenshot values:', configData);
 
       if (hasExistingConfig) {
         const { error } = await supabase

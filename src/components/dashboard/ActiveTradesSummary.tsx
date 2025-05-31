@@ -17,11 +17,14 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
   }, 0);
   const totalCount = trades.length;
   
-  // Calculate total unrealized percentage change based on total volume
+  // Calculate total unrealized percentage based on total volume invested
   const totalUnrealizedPercentage = totalVolume > 0 ? (totalUnrealizedPL / totalVolume) * 100 : 0;
 
+  // Calculate average entry vs current value percentage
+  const avgPriceChangePercentage = totalVolume > 0 ? ((totalPositionValue - totalVolume) / totalVolume) * 100 : 0;
+
   return (
-    <TableRow className="bg-muted/50 font-medium">
+    <TableRow className="bg-muted/50 font-medium border-t-2">
       <TableCell className="font-bold">Summary ({totalCount} positions)</TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>

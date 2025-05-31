@@ -15,7 +15,7 @@ export class PositionChecker {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
-        .in('status', ['pending', 'partial_filled', 'filled']); // Use allowed status values
+        .in('status', ['pending', 'partial_filled', 'filled']);
 
       const hasPosition = count > 0;
       console.log(`Position check for ${symbol}: ${hasPosition ? 'OPEN' : 'NONE'} (${count} positions)`);
@@ -32,7 +32,7 @@ export class PositionChecker {
         .from('trades')
         .select('symbol')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'partial_filled', 'filled']); // Use allowed status values
+        .in('status', ['pending', 'partial_filled', 'filled']);
 
       const uniquePairs = new Set(data?.map(trade => trade.symbol) || []);
       const activePairs = uniquePairs.size;
@@ -52,7 +52,7 @@ export class PositionChecker {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
-        .in('status', ['pending', 'partial_filled', 'filled']); // Use allowed status values
+        .in('status', ['pending', 'partial_filled', 'filled']);
 
       const currentPositions = count || 0;
       const canOpenNew = currentPositions < maxPositionsPerPair;
@@ -71,7 +71,7 @@ export class PositionChecker {
         .select('price')
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
-        .in('status', ['pending', 'partial_filled', 'filled']) // Use allowed status values
+        .in('status', ['pending', 'partial_filled', 'filled'])
         .order('price', { ascending: true })
         .limit(1);
 

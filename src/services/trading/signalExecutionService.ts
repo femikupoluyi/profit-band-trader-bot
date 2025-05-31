@@ -16,7 +16,6 @@ export class SignalExecutionService {
     this.positionChecker = new PositionChecker(userId);
     this.config = config;
     
-    // Validate config on construction
     console.log('SignalExecutionService config validation:', {
       entryOffset: this.config.entry_offset_percent,
       takeProfit: this.config.take_profit_percent,
@@ -40,13 +39,13 @@ export class SignalExecutionService {
         return;
       }
 
-      // Validate config values and provide defaults if needed
-      const entryOffsetPercent = this.config.entry_offset_percent || 1.0;
-      const takeProfitPercent = this.config.take_profit_percent || 2.0;
-      const maxOrderAmountUsd = this.config.max_order_amount_usd || 100.0;
-      const maxPositionsPerPair = this.config.max_positions_per_pair || 2;
-      const newSupportThresholdPercent = this.config.new_support_threshold_percent || 2.0;
-      const maxActivePairs = this.config.max_active_pairs || 5;
+      // Use config values directly
+      const entryOffsetPercent = this.config.entry_offset_percent;
+      const takeProfitPercent = this.config.take_profit_percent;
+      const maxOrderAmountUsd = this.config.max_order_amount_usd;
+      const maxPositionsPerPair = this.config.max_positions_per_pair;
+      const newSupportThresholdPercent = this.config.new_support_threshold_percent;
+      const maxActivePairs = this.config.max_active_pairs;
 
       console.log(`  Validated config values - Entry: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%, Max Order: $${maxOrderAmountUsd}`);
 
@@ -131,8 +130,7 @@ export class SignalExecutionService {
         throw new Error(`Invalid trade parameters: price=${price}, quantity=${quantity}`);
       }
 
-      // For now, create a mock trade record (replace with actual Bybit API call when ready)
-      // Using 'pending' status which should be allowed by the constraint
+      // Create trade record
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -142,8 +140,8 @@ export class SignalExecutionService {
           order_type: 'limit',
           price: price,
           quantity: quantity,
-          status: 'pending', // Use allowed status value
-          bybit_order_id: `mock_${Date.now()}`, // Replace with actual order ID
+          status: 'pending' as const,
+          bybit_order_id: `mock_${Date.now()}`,
         })
         .select()
         .single();

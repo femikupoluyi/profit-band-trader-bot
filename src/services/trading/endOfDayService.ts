@@ -22,7 +22,7 @@ export class EndOfDayService {
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'partial_filled', 'filled']) // Use allowed status values
+        .in('status', ['pending', 'partial_filled', 'filled'])
         .eq('side', 'buy');
 
       if (error) {
@@ -73,9 +73,8 @@ export class EndOfDayService {
             });
 
             if (sellOrder.retCode === 0) {
-              // Update trade with proper data types using allowed status
               const updateData = {
-                status: 'cancelled', // Use allowed status value
+                status: 'cancelled' as const,
                 profit_loss: parseFloat(profitLoss.toFixed(8)),
                 updated_at: new Date().toISOString(),
               };

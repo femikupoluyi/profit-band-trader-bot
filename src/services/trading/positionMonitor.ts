@@ -13,15 +13,6 @@ export class PositionMonitor {
     this.bybitService = bybitService;
     this.config = config;
     
-    // Validate config values with proper defaults
-    this.config = {
-      ...config,
-      take_profit_percent: config.take_profit_percent || 2.0,
-      entry_offset_percent: config.entry_offset_percent || 1.0,
-      max_positions_per_pair: config.max_positions_per_pair || 2,
-      new_support_threshold_percent: config.new_support_threshold_percent || 2.0
-    };
-    
     console.log('PositionMonitor initialized with config:', {
       takeProfitPercent: this.config.take_profit_percent,
       entryOffsetPercent: this.config.entry_offset_percent,
@@ -38,7 +29,7 @@ export class PositionMonitor {
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'partial_filled', 'filled']); // Use database-allowed statuses
+        .in('status', ['pending', 'partial_filled', 'filled']);
 
       if (!activeTrades || activeTrades.length === 0) {
         console.log('No active trades to monitor');
@@ -123,16 +114,16 @@ export class PositionMonitor {
         return;
       }
 
-      // Update trade status to cancelled (using allowed status value)
+      // Update trade status to cancelled
       const { error } = await supabase
         .from('trades')
         .update({
-          status: 'cancelled', // Use allowed status value instead of 'closed'
+          status: 'cancelled' as const,
           profit_loss: profitLoss,
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .in('status', ['pending', 'partial_filled', 'filled']); // Only update if still active
+        .in('status', ['pending', 'partial_filled', 'filled']);
 
       if (error) {
         console.error(`Database error closing position:`, error);
