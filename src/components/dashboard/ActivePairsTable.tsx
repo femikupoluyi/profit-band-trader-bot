@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,7 +16,11 @@ import { ActiveTrade } from '@/types/trading';
 import ActiveTradeRow from './ActiveTradeRow';
 import ActiveTradesSummary from './ActiveTradesSummary';
 
-const ActivePairsTable = () => {
+interface ActivePairsTableProps {
+  onTradeUpdate?: () => void;
+}
+
+const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
@@ -170,6 +173,11 @@ const ActivePairsTable = () => {
 
       // Refresh the trades list
       await fetchActiveTrades();
+      
+      // Notify parent component to refresh dashboard stats
+      if (onTradeUpdate) {
+        onTradeUpdate();
+      }
     } catch (error) {
       console.error('Error closing trade:', error);
       toast({

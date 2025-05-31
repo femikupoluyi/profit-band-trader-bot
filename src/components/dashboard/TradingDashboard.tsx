@@ -21,6 +21,11 @@ const TradingDashboard = () => {
     });
   };
 
+  // Function to refresh all dashboard data
+  const handleDataRefresh = () => {
+    refetch();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <DashboardHeader userEmail={user?.email} onSignOut={handleSignOut} />
@@ -34,7 +39,7 @@ const TradingDashboard = () => {
         />
         
         <div className="mt-8">
-          <ActivePairsTable />
+          <ActivePairsTable onTradeUpdate={handleDataRefresh} />
         </div>
         
         <div className="mt-8">

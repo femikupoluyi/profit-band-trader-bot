@@ -79,6 +79,7 @@ export const useTradingStats = (userId?: string) => {
       // Calculate metrics with proper validation
       const totalTrades = trades.length;
       const activeTrades = trades.filter(t => ['pending', 'filled'].includes(t.status));
+      // Include both 'closed' and 'cancelled' as closed trades since manual close sets status to 'cancelled'
       const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status));
       
       let totalProfit = 0;
@@ -97,8 +98,8 @@ export const useTradingStats = (userId?: string) => {
         totalProfit += profitLoss;
         totalVolume += volume;
         
-        // Only count closed trades as profitable if they have positive P&L
-        if (trade.status === 'closed' && profitLoss > 0) {
+        // Count both closed and cancelled trades as profitable if they have positive P&L
+        if (['closed', 'cancelled'].includes(trade.status) && profitLoss > 0) {
           profitableClosedCount++;
         }
       });
