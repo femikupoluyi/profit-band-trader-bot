@@ -18,12 +18,17 @@ export class EndOfDayService {
     try {
       console.log('Closing profitable trades at end of day...');
       
-      const { data: openTrades } = await (supabase as any)
+      const { data: openTrades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
         .eq('status', 'filled')
         .eq('side', 'buy');
+
+      if (error) {
+        console.error('Error fetching open trades:', error);
+        return;
+      }
 
       if (!openTrades || openTrades.length === 0) {
         console.log('No open trades to evaluate');
@@ -32,19 +37,28 @@ export class EndOfDayService {
 
       for (const trade of openTrades) {
         try {
-          const { data: currentPrice } = await (supabase as any)
+          const { data: currentPrice, error: priceError } = await supabase
             .from('market_data')
             .select('price')
             .eq('symbol', trade.symbol)
             .order('timestamp', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
 
-          if (!currentPrice) continue;
+          if (priceError) {
+            console.error(`Error fetching price for ${trade.symbol}:`, priceError);
+            continue;
+          }
 
-          const entryPrice = parseFloat(trade.price);
-          const marketPrice = parseFloat(currentPrice.price);
-          const profitPercent = ((marketPrice - entryPrice) / entryPrice) * 100;
+          if (!currentPrice) {
+            console.log(`No current price data for ${trade.symbol}`);
+            continue;
+          }
+
+          const entryPrice = parseFloat(trade.price.toString());
+          const marketPrice = parseFloat(currentPrice.price.toString());
+          const profitLoss = marketPrice - entryPrice;
+          const profitPercent = (profitLoss / entryPrice) * 100;
 
           console.log(`${trade.symbol}: Entry ${entryPrice}, Current ${marketPrice}, P&L ${profitPercent.toFixed(2)}%`);
 
@@ -59,32 +73,54 @@ export class EndOfDayService {
             });
 
             if (sellOrder.retCode === 0) {
-              await (supabase as any)
+              // Update trade with proper data types
+              const updateData = {
+                status: 'closed',
+                profit_loss: parseFloat(profitLoss.toFixed(8)),
+                updated_at: new Date().toISOString(),
+              };
+
+              const { error: updateError } = await supabase
                 .from('trades')
-                .update({
-                  status: 'closed',
-                  profit_loss: profitPercent,
-                  updated_at: new Date().toISOString(),
-                })
+                .update(updateData)
                 .eq('id', trade.id);
 
-              await this.logActivity('trade', `Closed profitable position for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`);
+              if (updateError) {
+                console.error(`Error updating trade ${trade.id}:`, updateError);
+              } else {
+                await this.logActivity('trade', `Closed profitable position for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`, {
+                  tradeId: trade.id,
+                  profitLoss,
+                  profitPercent,
+                  entryPrice,
+                  exitPrice: marketPrice
+                });
+              }
+            } else {
+              console.error(`Failed to close position for ${trade.symbol}:`, sellOrder);
+              await this.logActivity('error', `Failed to close position for ${trade.symbol}`, { sellOrder });
             }
           } else {
             console.log(`Keeping ${trade.symbol} open (${profitPercent.toFixed(2)}% P&L)`);
           }
         } catch (error) {
           console.error(`Error processing end-of-day for ${trade.symbol}:`, error);
+          await this.logActivity('error', `Error processing end-of-day for ${trade.symbol}`, { 
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
       }
     } catch (error) {
       console.error('Error in end-of-day processing:', error);
+      await this.logActivity('error', 'Error in end-of-day processing', { 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   }
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
-      await (supabase as any)
+      await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,

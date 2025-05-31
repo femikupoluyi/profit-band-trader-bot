@@ -74,8 +74,9 @@ export const useTradingStats = (userId?: string) => {
       }
 
       const trades = tradesInRange || [];
+      console.log('Fetched trades:', trades.length, trades);
 
-      // Calculate metrics
+      // Calculate metrics with proper validation
       const totalTrades = trades.length;
       const activeTrades = trades.filter(t => ['pending', 'filled'].includes(t.status));
       const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status));
@@ -85,18 +86,24 @@ export const useTradingStats = (userId?: string) => {
       let profitableClosedCount = 0;
 
       trades.forEach(trade => {
-        const profitLoss = parseFloat(trade.profit_loss?.toString() || '0');
-        const volume = parseFloat(trade.price) * parseFloat(trade.quantity);
+        // Ensure proper number conversion and validation
+        const profitLoss = trade.profit_loss ? parseFloat(trade.profit_loss.toString()) : 0;
+        const price = trade.price ? parseFloat(trade.price.toString()) : 0;
+        const quantity = trade.quantity ? parseFloat(trade.quantity.toString()) : 0;
+        const volume = price * quantity;
+        
+        console.log(`Trade ${trade.symbol}: P&L=${profitLoss}, Volume=${volume}, Status=${trade.status}`);
         
         totalProfit += profitLoss;
         totalVolume += volume;
         
-        if (['closed'].includes(trade.status) && profitLoss > 0) {
+        // Only count closed trades as profitable if they have positive P&L
+        if (trade.status === 'closed' && profitLoss > 0) {
           profitableClosedCount++;
         }
       });
 
-      // Calculate profit percentage
+      // Calculate profit percentage based on closed trades only
       const profitPercentage = closedTrades.length > 0 ? (profitableClosedCount / closedTrades.length) * 100 : 0;
 
       // Get unique active trading pairs
@@ -105,16 +112,16 @@ export const useTradingStats = (userId?: string) => {
       const newStats = {
         totalTrades,
         activePairs,
-        totalProfit,
+        totalProfit: Math.round(totalProfit * 100) / 100, // Round to 2 decimal places
         isActive: config?.is_active || false,
         totalActive: activeTrades.length,
         totalClosed: closedTrades.length,
         totalProfitableClosed: profitableClosedCount,
-        totalVolume,
-        profitPercentage
+        totalVolume: Math.round(totalVolume * 100) / 100, // Round to 2 decimal places
+        profitPercentage: Math.round(profitPercentage * 100) / 100 // Round to 2 decimal places
       };
 
-      console.log('Updated stats:', newStats);
+      console.log('Calculated stats:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);
