@@ -1,5 +1,5 @@
 
-import { TradingEngine } from './tradingEngine';
+import { TradingEngine } from './trading/tradingEngine';
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
