@@ -12,7 +12,19 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { TrendingUp, Loader2, X } from 'lucide-react';
 
 interface ActiveTrade {
   id: string;
@@ -32,6 +44,7 @@ const ActivePairsTable = () => {
   const { toast } = useToast();
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
 
   const fetchActiveTrades = async () => {
     if (!user?.id) return;
@@ -120,6 +133,73 @@ const ActivePairsTable = () => {
     }
   };
 
+  const handleCloseTrade = async (trade: ActiveTrade) => {
+    setClosingTrades(prev => new Set(prev).add(trade.id));
+    
+    try {
+      console.log('Manually closing trade:', trade.id);
+
+      // Calculate final P&L
+      const finalPL = trade.unrealizedPL || 0;
+
+      // Update trade status to closed with final P&L
+      const { error: updateError } = await supabase
+        .from('trades')
+        .update({
+          status: 'closed',
+          profit_loss: finalPL,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', trade.id);
+
+      if (updateError) {
+        console.error('Error closing trade:', updateError);
+        toast({
+          title: "Error",
+          description: "Failed to close trade.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Log the manual close action
+      await supabase
+        .from('trading_logs')
+        .insert({
+          user_id: user?.id,
+          log_type: 'trade',
+          message: `Manually closed ${trade.symbol} position`,
+          data: {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            finalPL,
+            closeType: 'manual'
+          },
+        });
+
+      toast({
+        title: "Trade Closed",
+        description: `Successfully closed ${trade.symbol} position with ${finalPL >= 0 ? 'profit' : 'loss'} of $${Math.abs(finalPL).toFixed(2)}`,
+      });
+
+      // Refresh the trades list
+      await fetchActiveTrades();
+    } catch (error) {
+      console.error('Error closing trade:', error);
+      toast({
+        title: "Error",
+        description: "Failed to close trade.",
+        variant: "destructive",
+      });
+    } finally {
+      setClosingTrades(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(trade.id);
+        return newSet;
+      });
+    }
+  };
+
   useEffect(() => {
     if (user?.id) {
       fetchActiveTrades();
@@ -171,6 +251,7 @@ const ActivePairsTable = () => {
                   <TableHead>Unrealized P&L</TableHead>
                   <TableHead>% Change</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -211,6 +292,48 @@ const ActivePairsTable = () => {
                       }`}>
                         {trade.status.toUpperCase()}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={closingTrades.has(trade.id)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {closingTrades.has(trade.id) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <X className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Close Trade</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to manually close this {trade.symbol} position?
+                              <br />
+                              <br />
+                              <strong>Current P&L:</strong> <span className={`font-medium ${
+                                (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {formatCurrency(trade.unrealizedPL || 0)}
+                              </span>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleCloseTrade(trade)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Close Position
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}
