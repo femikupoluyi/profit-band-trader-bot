@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,11 +8,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { ActiveTrade } from '@/types/trading';
 import ActiveTradeRow from './ActiveTradeRow';
+import ActiveTradesSummary from './ActiveTradesSummary';
 
 const ActivePairsTable = () => {
   const { user } = useAuth();
@@ -230,6 +231,9 @@ const ActivePairsTable = () => {
                   />
                 ))}
               </TableBody>
+              <TableFooter>
+                <ActiveTradesSummary trades={activeTrades} />
+              </TableFooter>
             </Table>
           </div>
         )}
