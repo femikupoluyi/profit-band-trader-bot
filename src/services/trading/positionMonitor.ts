@@ -16,7 +16,7 @@ export class PositionMonitor {
 
   async monitorPositions(): Promise<void> {
     console.log('🔍 Starting position monitoring...');
-    console.log(`Using take profit percentage: ${this.config.take_profit_percent}%`);
+    console.log(`Using take profit percentage from config: ${this.config.take_profit_percent}%`);
     
     try {
       const { data: activeTrades } = await supabase
@@ -30,7 +30,7 @@ export class PositionMonitor {
         return;
       }
 
-      console.log(`Monitoring ${activeTrades.length} active trades...`);
+      console.log(`Monitoring ${activeTrades.length} active trades using config take profit: ${this.config.take_profit_percent}%...`);
 
       for (const trade of activeTrades) {
         await this.checkTradeForClosure(trade);
@@ -65,11 +65,11 @@ export class PositionMonitor {
       }
 
       console.log(`  Profit/Loss: ${profitPercent.toFixed(2)}%`);
-      console.log(`  Take Profit Target: ${this.config.take_profit_percent}%`);
+      console.log(`  Take Profit Target from config: ${this.config.take_profit_percent}%`);
 
-      // Check if profit target is reached
+      // Check if profit target is reached using config value
       if (profitPercent >= this.config.take_profit_percent) {
-        console.log(`🎯 PROFIT TARGET REACHED! Closing position for ${trade.symbol}`);
+        console.log(`🎯 PROFIT TARGET REACHED! Closing position for ${trade.symbol} (${profitPercent.toFixed(2)}% >= ${this.config.take_profit_percent}%)`);
         await this.closePosition(trade, currentPrice, profitPercent);
       } else {
         console.log(`  📈 Position still under target (${profitPercent.toFixed(2)}% < ${this.config.take_profit_percent}%)`);
@@ -93,6 +93,7 @@ export class PositionMonitor {
       console.log(`  Entry: $${entryPrice}`);
       console.log(`  Exit: $${currentPrice}`);
       console.log(`  Profit: ${profitLoss.toFixed(2)}%`);
+      console.log(`  Config take profit target: ${this.config.take_profit_percent}%`);
 
       // Update trade status to closed
       const { error } = await supabase
@@ -116,7 +117,11 @@ export class PositionMonitor {
         exitPrice: currentPrice,
         profitPercent: profitLoss,
         takeProfitTarget: this.config.take_profit_percent,
-        tradeId: trade.id
+        tradeId: trade.id,
+        configUsed: {
+          takeProfitPercent: this.config.take_profit_percent,
+          maxPositionsPerPair: this.config.max_positions_per_pair
+        }
       });
 
     } catch (error) {

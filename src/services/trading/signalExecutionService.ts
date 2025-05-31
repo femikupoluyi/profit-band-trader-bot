@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PositionChecker } from './positionChecker';
@@ -9,7 +10,7 @@ export class SignalExecutionService {
   private positionChecker: PositionChecker;
   private config: TradingConfigData;
 
-  constructor(userId: string, bybitService: BybitService, config: TradingConfigData) {
+  constructor(userId: string, config: TradingConfigData, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.positionChecker = new PositionChecker(userId);
@@ -21,6 +22,7 @@ export class SignalExecutionService {
     console.log(`  Signal Type: ${signal.signal_type}`);
     console.log(`  Price: $${signal.price}`);
     console.log(`  Confidence: ${signal.confidence}%`);
+    console.log(`  Using config: Take Profit ${this.config.take_profit_percent}%, Max Positions per Pair: ${this.config.max_positions_per_pair}`);
 
     try {
       // Only process buy signals
@@ -41,7 +43,7 @@ export class SignalExecutionService {
         return;
       }
 
-      // Check if we can open a new position for this pair
+      // Check if we can open a new position for this pair using config values
       const canOpenNewPosition = await this.positionChecker.canOpenNewPositionWithLowerSupport(
         signal.symbol,
         signal.price,
@@ -50,7 +52,9 @@ export class SignalExecutionService {
       );
 
       if (!canOpenNewPosition) {
-        console.log(`❌ Cannot open new position for ${signal.symbol}: position limits or support threshold not met`);
+        console.log(`❌ Cannot open new position for ${signal.symbol}: position limits reached or support threshold not met`);
+        console.log(`  Max positions per pair: ${this.config.max_positions_per_pair}`);
+        console.log(`  New support threshold: ${this.config.new_support_threshold_percent}%`);
         await this.logActivity('signal_rejected', `Signal rejected for ${signal.symbol}: position limits reached or support threshold not met`, {
           symbol: signal.symbol,
           maxPositionsPerPair: this.config.max_positions_per_pair,
@@ -60,11 +64,11 @@ export class SignalExecutionService {
         return;
       }
 
-      // Calculate entry price with offset
+      // Calculate entry price with offset using config value
       const entryPrice = signal.price * (1 + this.config.entry_offset_percent / 100);
       console.log(`📈 Entry price calculated: $${entryPrice.toFixed(6)} (${this.config.entry_offset_percent}% above support)`);
 
-      // Calculate quantity based on max order amount
+      // Calculate quantity based on max order amount from config
       const quantity = this.config.max_order_amount_usd / entryPrice;
       console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on $${this.config.max_order_amount_usd} max order)`);
 
@@ -86,6 +90,7 @@ export class SignalExecutionService {
       console.log(`  Price: $${price.toFixed(6)}`);
       console.log(`  Quantity: ${quantity.toFixed(6)}`);
       console.log(`  Total Value: $${(price * quantity).toFixed(2)}`);
+      console.log(`  Take Profit Target: ${this.config.take_profit_percent}%`);
 
       // For now, create a mock trade record (replace with actual Bybit API call when ready)
       const { data: trade, error } = await supabase
@@ -119,7 +124,8 @@ export class SignalExecutionService {
         tradeId: trade.id,
         takeProfitTarget: this.config.take_profit_percent,
         entryOffset: this.config.entry_offset_percent,
-        maxOrderAmount: this.config.max_order_amount_usd
+        maxOrderAmount: this.config.max_order_amount_usd,
+        maxPositionsPerPair: this.config.max_positions_per_pair
       });
 
       // Mark signal as processed
