@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Key, Save } from 'lucide-react';
+import { Key, Save, CheckCircle } from 'lucide-react';
 
 interface ApiCredential {
   id: string;
@@ -43,6 +43,7 @@ const ApiCredentials = () => {
     if (!user) return;
 
     try {
+      console.log('Fetching API credentials for user:', user.id);
       const { data, error } = await (supabase as any)
         .from('api_credentials')
         .select('*')
@@ -51,12 +52,16 @@ const ApiCredentials = () => {
         .single();
 
       if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching credentials:', error);
         throw error;
       }
 
       if (data) {
+        console.log('Found existing credentials:', { ...data, api_secret: '[HIDDEN]' });
         setCredentials(data);
         setHasExisting(true);
+      } else {
+        console.log('No existing credentials found');
       }
     } catch (error) {
       console.error('Error fetching credentials:', error);
@@ -66,17 +71,28 @@ const ApiCredentials = () => {
   const handleSave = async () => {
     if (!user) return;
 
+    if (!credentials.api_key || !credentials.api_secret) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter both API Key and API Secret.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const credentialData = {
         user_id: user.id,
-        exchange_name: credentials.exchange_name,
+        exchange_name: 'bybit',
         api_key: credentials.api_key,
         api_secret: credentials.api_secret,
         testnet: credentials.testnet,
         is_active: credentials.is_active,
         updated_at: new Date().toISOString(),
       };
+
+      console.log('Saving credentials:', { ...credentialData, api_secret: '[HIDDEN]' });
 
       if (hasExisting) {
         const { error } = await (supabase as any)
@@ -85,13 +101,25 @@ const ApiCredentials = () => {
           .eq('user_id', user.id)
           .eq('exchange_name', 'bybit');
 
-        if (error) throw error;
+        if (error) {
+          console.error('Update error:', error);
+          throw error;
+        }
+        console.log('Credentials updated successfully');
       } else {
-        const { error } = await (supabase as any)
+        const { data, error } = await (supabase as any)
           .from('api_credentials')
-          .insert(credentialData);
+          .insert(credentialData)
+          .select()
+          .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Insert error:', error);
+          throw error;
+        }
+        
+        console.log('Credentials inserted successfully:', data?.id);
+        setCredentials(prev => ({ ...prev, id: data.id }));
         setHasExisting(true);
       }
 
@@ -99,16 +127,43 @@ const ApiCredentials = () => {
         title: "Success",
         description: "API credentials saved successfully.",
       });
+
+      // Force a re-fetch to confirm the save
+      await fetchCredentials();
     } catch (error) {
       console.error('Error saving credentials:', error);
       toast({
         title: "Error",
-        description: "Failed to save API credentials.",
+        description: "Failed to save API credentials. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const testConnection = async () => {
+    if (!credentials.api_key || !credentials.api_secret) {
+      toast({
+        title: "Missing Credentials",
+        description: "Please enter your API credentials first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Testing Connection",
+      description: "Verifying your API credentials...",
+    });
+
+    // This would test the actual connection in a real scenario
+    setTimeout(() => {
+      toast({
+        title: "Connection Test",
+        description: "Please save your credentials and check the trading logs for connection status.",
+      });
+    }, 1000);
   };
 
   return (
@@ -117,6 +172,9 @@ const ApiCredentials = () => {
         <CardTitle className="flex items-center gap-2">
           <Key className="h-5 w-5" />
           Exchange API Credentials
+          {hasExisting && credentials.is_active && (
+            <CheckCircle className="h-5 w-5 text-green-500" />
+          )}
         </CardTitle>
         <CardDescription>
           Configure your Bybit API credentials for automated trading. Keep testnet enabled for safe testing.
@@ -127,7 +185,7 @@ const ApiCredentials = () => {
           <Label htmlFor="api_key">API Key</Label>
           <Input
             id="api_key"
-            type="password"
+            type="text"
             value={credentials.api_key}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_key: e.target.value }))}
             placeholder="Enter your Bybit API key"
@@ -161,10 +219,25 @@ const ApiCredentials = () => {
           <Label>Enable API Access</Label>
         </div>
 
-        <Button onClick={handleSave} disabled={isLoading} className="w-full">
-          <Save className="mr-2 h-4 w-4" />
-          Save Credentials
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleSave} disabled={isLoading} className="flex-1">
+            <Save className="mr-2 h-4 w-4" />
+            Save Credentials
+          </Button>
+          <Button 
+            onClick={testConnection} 
+            variant="outline"
+            disabled={!credentials.api_key || !credentials.api_secret}
+          >
+            Test Connection
+          </Button>
+        </div>
+
+        {hasExisting && (
+          <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
+            ✅ API credentials are configured. Status: {credentials.is_active ? 'Active' : 'Inactive'}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -26,8 +26,8 @@ export class TradingEngine {
     try {
       console.log('Initializing trading engine for user:', this.userId);
       
-      // Fetch API credentials
-      const { data: credentials } = await (supabase as any)
+      // Fetch API credentials with better error handling
+      const { data: credentials, error } = await (supabase as any)
         .from('api_credentials')
         .select('*')
         .eq('user_id', this.userId)
@@ -35,8 +35,21 @@ export class TradingEngine {
         .eq('is_active', true)
         .single();
 
+      if (error) {
+        if (error.code === 'PGRST116') {
+          console.log('No active API credentials found for user:', this.userId);
+          await this.logActivity('error', 'No active API credentials found. Please configure your Bybit API credentials in the API Setup tab.');
+        } else {
+          console.error('Error fetching credentials:', error);
+          await this.logActivity('error', `Error fetching API credentials: ${error.message}`);
+        }
+        return;
+      }
+
       if (credentials) {
         console.log('Found API credentials for Bybit, testnet:', credentials.testnet);
+        await this.logActivity('info', `Found API credentials for Bybit (testnet: ${credentials.testnet})`);
+        
         this.bybitService = new BybitService({
           apiKey: credentials.api_key,
           apiSecret: credentials.api_secret,
@@ -46,15 +59,23 @@ export class TradingEngine {
         // Test the connection
         try {
           const balance = await this.bybitService.getAccountBalance();
-          console.log('API connection test successful:', balance.retCode === 0 ? 'Connected' : 'Error');
-          await this.logActivity('info', 'API connection established', { testnet: credentials.testnet });
+          if (balance.retCode === 0) {
+            console.log('API connection test successful');
+            await this.logActivity('info', 'API connection established successfully', { 
+              testnet: credentials.testnet,
+              balance: balance.result ? 'Available' : 'No balance data'
+            });
+          } else {
+            console.log('API connection test failed:', balance);
+            await this.logActivity('error', 'API connection test failed', { 
+              retCode: balance.retCode, 
+              retMsg: balance.retMsg 
+            });
+          }
         } catch (error) {
           console.log('API connection test failed:', error);
           await this.logActivity('error', 'API connection failed', { error: error.message });
         }
-      } else {
-        console.log('No active API credentials found');
-        await this.logActivity('error', 'No active API credentials found');
       }
     } catch (error) {
       console.error('Error initializing trading engine:', error);
@@ -88,9 +109,11 @@ export class TradingEngine {
 
         if (!this.bybitService) {
           console.log('No Bybit service, attempting to initialize...');
+          await this.logActivity('warning', 'Trading engine running without API connection. Attempting to reconnect...');
           await this.initialize();
           if (!this.bybitService) {
             console.log('Still no Bybit service, waiting 60 seconds...');
+            await this.logActivity('warning', 'No API credentials available. Please configure in API Setup tab. Retrying in 60 seconds...');
             await this.sleep(60000); // Wait 1 minute before retrying
             continue;
           }
@@ -106,6 +129,8 @@ export class TradingEngine {
         await this.monitorPositions();
         
         console.log(`Loop #${this.loopCount} complete, waiting 30 seconds...`);
+        await this.logActivity('info', `Trading loop #${this.loopCount} completed successfully`);
+        
         // Wait before next iteration
         await this.sleep(30000); // 30 seconds
       } catch (error) {
