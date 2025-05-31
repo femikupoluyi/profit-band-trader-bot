@@ -55,13 +55,13 @@ export class TradingEngine {
         await this.logActivity('info', `Found API credentials for Bybit (testnet: ${credentials.testnet})`);
         
         this.bybitService = new BybitService({
-          apiKey: credentials.api_key,
+          apiKey: credentials.apiKey,
           apiSecret: credentials.api_secret,
           testnet: credentials.testnet,
         });
 
-        // Initialize all services
-        this.marketScanner = new MarketScanner(this.userId, this.bybitService);
+        // Initialize all services with config
+        this.marketScanner = new MarketScanner(this.userId, this.bybitService, this.config);
         this.signalAnalyzer = new SignalAnalyzer(this.userId, this.config);
         this.tradeExecutor = new TradeExecutor(this.userId, this.config, this.bybitService);
         this.positionMonitor = new PositionMonitor(this.userId, this.bybitService);

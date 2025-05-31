@@ -1,19 +1,22 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
-import { TradingSignal } from './types';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class MarketScanner {
   private userId: string;
   private bybitService: BybitService;
+  private config: TradingConfigData;
 
-  constructor(userId: string, bybitService: BybitService) {
+  constructor(userId: string, bybitService: BybitService, config: TradingConfigData) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.config = config;
   }
 
   async scanMarkets(): Promise<void> {
-    const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'DOTUSDT'];
+    // Use trading pairs from config
+    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
     console.log('Scanning symbols:', symbols);
     
     for (const symbol of symbols) {
