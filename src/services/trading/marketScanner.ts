@@ -29,7 +29,7 @@ export class MarketScanner {
         const marketPrice = await this.getRealtimePrice(symbol);
         console.log(`${symbol} price: $${marketPrice.price}`);
         
-        // Store current market data
+        // Store current market data - fix type issue by converting price to string
         await supabase
           .from('market_data')
           .insert({
@@ -85,7 +85,7 @@ export class MarketScanner {
         .from('market_data')
         .insert({
           symbol,
-          price: historicalPrice.toString(),
+          price: historicalPrice.toString(), // Convert to string to match database type
           timestamp: timestamp.toISOString(),
           source: 'bybit',
         });

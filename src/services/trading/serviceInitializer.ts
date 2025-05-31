@@ -23,12 +23,17 @@ export class ServiceInitializer {
   }
 
   initializeServices(bybitService: BybitService): TradingServices {
-    console.log('Initializing trading services...');
+    console.log('Initializing trading services with config values:', {
+      takeProfitPercent: this.config.take_profit_percent,
+      supportCandleCount: this.config.support_candle_count,
+      maxActivePairs: this.config.max_active_pairs,
+      maxOrderAmount: this.config.max_order_amount_usd
+    });
     
     const marketScanner = new MarketScanner(this.userId, bybitService, this.config);
     const signalAnalyzer = new SignalAnalyzer(this.userId, this.config);
     const tradeExecutor = new TradeExecutor(this.userId, this.config, bybitService);
-    const positionMonitor = new PositionMonitor(this.userId, bybitService);
+    const positionMonitor = new PositionMonitor(this.userId, bybitService, this.config);
 
     return {
       marketScanner,

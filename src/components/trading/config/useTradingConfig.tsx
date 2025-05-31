@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -122,7 +121,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
 
       toast({
         title: "Success",
-        description: "Trading configuration saved successfully.",
+        description: "Trading configuration saved successfully. Automatic position closing will now use the configured take profit percentage.",
       });
 
       if (onConfigUpdate) {
