@@ -6,38 +6,14 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { TrendingUp, Loader2, X } from 'lucide-react';
-
-interface ActiveTrade {
-  id: string;
-  symbol: string;
-  price: number;
-  quantity: number;
-  side: string;
-  status: string;
-  created_at: string;
-  profit_loss: number;
-  currentPrice?: number;
-  unrealizedPL?: number;
-}
+import { TrendingUp, Loader2 } from 'lucide-react';
+import { ActiveTrade } from '@/types/trading';
+import ActiveTradeRow from './ActiveTradeRow';
 
 const ActivePairsTable = () => {
   const { user } = useAuth();
@@ -210,16 +186,6 @@ const ActivePairsTable = () => {
     }
   }, [user?.id]);
 
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-
-  const formatPercentage = (entry: number, current: number) => {
-    if (entry === 0) return '0.00%';
-    const percentage = ((current - entry) / entry) * 100;
-    return `${percentage > 0 ? '+' : ''}${percentage.toFixed(2)}%`;
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -256,86 +222,12 @@ const ActivePairsTable = () => {
               </TableHeader>
               <TableBody>
                 {activeTrades.map((trade) => (
-                  <TableRow key={trade.id}>
-                    <TableCell className="font-medium">{trade.symbol}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        trade.side === 'buy' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {trade.side.toUpperCase()}
-                      </span>
-                    </TableCell>
-                    <TableCell>{trade.quantity.toFixed(8)}</TableCell>
-                    <TableCell>{formatCurrency(trade.price)}</TableCell>
-                    <TableCell>{formatCurrency(trade.currentPrice || trade.price)}</TableCell>
-                    <TableCell>
-                      <span className={`font-medium ${
-                        (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatCurrency(trade.unrealizedPL || 0)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`font-medium ${
-                        (trade.currentPrice || trade.price) >= trade.price ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatPercentage(trade.price, trade.currentPrice || trade.price)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        trade.status === 'filled' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {trade.status.toUpperCase()}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={closingTrades.has(trade.id)}
-                            className="h-8 w-8 p-0"
-                          >
-                            {closingTrades.has(trade.id) ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <X className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Close Trade</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to manually close this {trade.symbol} position?
-                              <br />
-                              <br />
-                              <strong>Current P&L:</strong> <span className={`font-medium ${
-                                (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                {formatCurrency(trade.unrealizedPL || 0)}
-                              </span>
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleCloseTrade(trade)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              Close Position
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </TableCell>
-                  </TableRow>
+                  <ActiveTradeRow
+                    key={trade.id}
+                    trade={trade}
+                    isClosing={closingTrades.has(trade.id)}
+                    onClose={handleCloseTrade}
+                  />
                 ))}
               </TableBody>
             </Table>
