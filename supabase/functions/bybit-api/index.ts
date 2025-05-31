@@ -59,8 +59,8 @@ serve(async (req) => {
     // Create signature
     const signaturePayload = queryString + apiSecret;
     const encoder = new TextEncoder();
-    const data = encoder.encode(signaturePayload);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const signatureData = encoder.encode(signaturePayload);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', signatureData);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
@@ -86,11 +86,11 @@ serve(async (req) => {
       body: method !== 'GET' ? JSON.stringify(finalParams) : undefined,
     });
 
-    const data = await response.json();
-    console.log('Bybit response:', data);
+    const responseData = await response.json();
+    console.log('Bybit response:', responseData);
 
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify(responseData),
       { 
         status: response.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
