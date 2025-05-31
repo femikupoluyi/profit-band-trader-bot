@@ -9,6 +9,42 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      api_credentials: {
+        Row: {
+          api_key: string
+          api_secret: string
+          created_at: string | null
+          exchange_name: string
+          id: string
+          is_active: boolean | null
+          testnet: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          api_secret: string
+          created_at?: string | null
+          exchange_name?: string
+          id?: string
+          is_active?: boolean | null
+          testnet?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          api_secret?: string
+          created_at?: string | null
+          exchange_name?: string
+          id?: string
+          is_active?: boolean | null
+          testnet?: boolean | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       banks: {
         Row: {
           code: string
@@ -338,6 +374,33 @@ export type Database = {
           rating?: number | null
           specialties?: string[] | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      market_data: {
+        Row: {
+          id: string
+          price: number
+          source: string | null
+          symbol: string
+          timestamp: string | null
+          volume: number | null
+        }
+        Insert: {
+          id?: string
+          price: number
+          source?: string | null
+          symbol: string
+          timestamp?: string | null
+          volume?: number | null
+        }
+        Update: {
+          id?: string
+          price?: number
+          source?: string | null
+          symbol?: string
+          timestamp?: string | null
+          volume?: number | null
         }
         Relationships: []
       }
@@ -909,6 +972,42 @@ export type Database = {
           log_type?: string
           message?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      trading_signals: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          id: string
+          price: number
+          processed: boolean | null
+          reasoning: string | null
+          signal_type: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          price: number
+          processed?: boolean | null
+          reasoning?: string | null
+          signal_type: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          price?: number
+          processed?: boolean | null
+          reasoning?: string | null
+          signal_type?: string
+          symbol?: string
+          user_id?: string
         }
         Relationships: []
       }

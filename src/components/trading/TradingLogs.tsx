@@ -2,9 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { RefreshCw } from 'lucide-react';
 
 interface TradingLog {
   id: string;
@@ -18,12 +20,24 @@ const TradingLogs = () => {
   const { user } = useAuth();
   const [logs, setLogs] = useState<TradingLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   useEffect(() => {
     if (user) {
       fetchLogs();
     }
   }, [user]);
+
+  // Auto-refresh every 10 seconds when enabled
+  useEffect(() => {
+    if (!autoRefresh || !user) return;
+
+    const interval = setInterval(() => {
+      fetchLogs();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, user]);
 
   const fetchLogs = async () => {
     if (!user) return;
@@ -76,10 +90,27 @@ const TradingLogs = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>System Logs</CardTitle>
-        <CardDescription>
-          Monitor your trading bot's activity and system events.
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>System Logs</CardTitle>
+            <CardDescription>
+              Monitor your trading bot's activity and system events.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${autoRefresh ? 'animate-spin' : ''}`} />
+              {autoRefresh ? 'Auto' : 'Manual'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={fetchLogs}>
+              Refresh
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {logs.length === 0 ? (

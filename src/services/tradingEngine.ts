@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from './bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -16,6 +15,7 @@ export class TradingEngine {
   private config: TradingConfigData;
   private bybitService: BybitService | null = null;
   private isRunning = false;
+  private loopCount = 0;
 
   constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
@@ -24,6 +24,8 @@ export class TradingEngine {
 
   async initialize(): Promise<void> {
     try {
+      console.log('Initializing trading engine for user:', this.userId);
+      
       // Fetch API credentials
       const { data: credentials } = await (supabase as any)
         .from('api_credentials')
@@ -34,11 +36,25 @@ export class TradingEngine {
         .single();
 
       if (credentials) {
+        console.log('Found API credentials for Bybit, testnet:', credentials.testnet);
         this.bybitService = new BybitService({
           apiKey: credentials.api_key,
           apiSecret: credentials.api_secret,
           testnet: credentials.testnet,
         });
+        
+        // Test the connection
+        try {
+          const balance = await this.bybitService.getAccountBalance();
+          console.log('API connection test successful:', balance.retCode === 0 ? 'Connected' : 'Error');
+          await this.logActivity('info', 'API connection established', { testnet: credentials.testnet });
+        } catch (error) {
+          console.log('API connection test failed:', error);
+          await this.logActivity('error', 'API connection failed', { error: error.message });
+        }
+      } else {
+        console.log('No active API credentials found');
+        await this.logActivity('error', 'No active API credentials found');
       }
     } catch (error) {
       console.error('Error initializing trading engine:', error);
@@ -50,7 +66,9 @@ export class TradingEngine {
     if (this.isRunning) return;
     
     this.isRunning = true;
+    this.loopCount = 0;
     await this.logActivity('info', 'Trading engine started');
+    console.log('Trading engine started, beginning main loop...');
     
     // Main trading loop
     this.tradingLoop();
@@ -59,28 +77,40 @@ export class TradingEngine {
   async stop(): Promise<void> {
     this.isRunning = false;
     await this.logActivity('info', 'Trading engine stopped');
+    console.log('Trading engine stopped');
   }
 
   private async tradingLoop(): Promise<void> {
     while (this.isRunning) {
       try {
+        this.loopCount++;
+        console.log(`Trading loop iteration #${this.loopCount}`);
+
         if (!this.bybitService) {
+          console.log('No Bybit service, attempting to initialize...');
           await this.initialize();
           if (!this.bybitService) {
+            console.log('Still no Bybit service, waiting 60 seconds...');
             await this.sleep(60000); // Wait 1 minute before retrying
             continue;
           }
         }
 
+        console.log('Scanning markets...');
         await this.scanMarkets();
+        
+        console.log('Processing signals...');
         await this.processSignals();
+        
+        console.log('Monitoring positions...');
         await this.monitorPositions();
         
+        console.log(`Loop #${this.loopCount} complete, waiting 30 seconds...`);
         // Wait before next iteration
         await this.sleep(30000); // 30 seconds
       } catch (error) {
         console.error('Error in trading loop:', error);
-        await this.logActivity('error', 'Trading loop error', { error: error.message });
+        await this.logActivity('error', 'Trading loop error', { error: error.message, loopCount: this.loopCount });
         await this.sleep(60000); // Wait 1 minute on error
       }
     }
@@ -88,10 +118,13 @@ export class TradingEngine {
 
   private async scanMarkets(): Promise<void> {
     const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'DOTUSDT'];
+    console.log('Scanning symbols:', symbols);
     
     for (const symbol of symbols) {
       try {
+        console.log(`Getting price for ${symbol}...`);
         const marketPrice = await this.bybitService!.getMarketPrice(symbol);
+        console.log(`${symbol} price: $${marketPrice.price}`);
         
         // Store market data
         await (supabase as any)
@@ -106,16 +139,22 @@ export class TradingEngine {
         // Analyze for trading signals
         const signal = await this.analyzeMarket(symbol, marketPrice.price);
         if (signal) {
+          console.log(`Generated signal for ${symbol}:`, signal);
           await this.createSignal(signal);
+        } else {
+          console.log(`No signal generated for ${symbol}`);
         }
       } catch (error) {
         console.error(`Error scanning ${symbol}:`, error);
+        await this.logActivity('error', `Failed to scan ${symbol}`, { error: error.message });
       }
     }
   }
 
   private async analyzeMarket(symbol: string, currentPrice: number): Promise<TradingSignal | null> {
     try {
+      console.log(`Analyzing ${symbol} at price $${currentPrice}`);
+      
       // Get recent price data
       const { data: recentPrices } = await (supabase as any)
         .from('market_data')
@@ -124,35 +163,45 @@ export class TradingEngine {
         .order('timestamp', { ascending: false })
         .limit(20);
 
-      if (!recentPrices || recentPrices.length < 10) {
+      if (!recentPrices || recentPrices.length < 5) {
+        console.log(`Not enough price data for ${symbol} (${recentPrices?.length || 0} points)`);
         return null;
       }
 
       const prices = recentPrices.map(p => parseFloat(p.price));
       const avgPrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
       
+      console.log(`${symbol} analysis: current=$${currentPrice}, avg=$${avgPrice.toFixed(2)}`);
+      
       // Simple strategy: buy if price is below average minus lower offset, sell if above average plus upper offset
       const buyThreshold = avgPrice * (1 + this.config.buy_range_lower_offset / 100);
       const sellThreshold = avgPrice * (1 + this.config.sell_range_offset / 100);
 
+      console.log(`${symbol} thresholds: buy<=$${buyThreshold.toFixed(2)}, sell>=$${sellThreshold.toFixed(2)}`);
+
       if (currentPrice <= buyThreshold) {
-        return {
+        const signal = {
           symbol,
-          action: 'buy',
+          action: 'buy' as const,
           price: currentPrice,
           confidence: 0.7,
           reasoning: `Price ${currentPrice} is below buy threshold ${buyThreshold.toFixed(2)}`,
         };
+        console.log(`BUY signal for ${symbol}:`, signal);
+        return signal;
       } else if (currentPrice >= sellThreshold) {
-        return {
+        const signal = {
           symbol,
-          action: 'sell',
+          action: 'sell' as const,
           price: currentPrice,
           confidence: 0.7,
           reasoning: `Price ${currentPrice} is above sell threshold ${sellThreshold.toFixed(2)}`,
         };
+        console.log(`SELL signal for ${symbol}:`, signal);
+        return signal;
       }
 
+      console.log(`No signal for ${symbol} - price within normal range`);
       return null;
     } catch (error) {
       console.error(`Error analyzing market for ${symbol}:`, error);
@@ -175,6 +224,7 @@ export class TradingEngine {
         });
 
       await this.logActivity('scan', `Generated ${signal.action} signal for ${signal.symbol}`, signal);
+      console.log(`Signal created for ${signal.symbol}:`, signal);
     } catch (error) {
       console.error('Error creating signal:', error);
     }
@@ -190,9 +240,14 @@ export class TradingEngine {
         .order('created_at', { ascending: true })
         .limit(5);
 
-      if (!signals || signals.length === 0) return;
+      if (!signals || signals.length === 0) {
+        console.log('No unprocessed signals found');
+        return;
+      }
 
+      console.log(`Processing ${signals.length} signals...`);
       for (const signal of signals) {
+        console.log('Processing signal:', signal);
         await this.executeSignal(signal);
       }
     } catch (error) {
@@ -202,9 +257,12 @@ export class TradingEngine {
 
   private async executeSignal(signal: any): Promise<void> {
     try {
+      console.log(`Executing signal for ${signal.symbol}:`, signal);
+      
       // Check if we can execute this signal based on config
       const canExecute = await this.validateSignalExecution(signal);
       if (!canExecute) {
+        console.log('Signal validation failed, marking as processed');
         await this.markSignalProcessed(signal.id);
         return;
       }
@@ -212,9 +270,12 @@ export class TradingEngine {
       // Calculate order size
       const orderSize = this.calculateOrderSize(signal.symbol, signal.price);
       if (orderSize <= 0) {
+        console.log('Order size too small, marking signal as processed');
         await this.markSignalProcessed(signal.id);
         return;
       }
+
+      console.log(`Placing ${signal.signal_type} order: ${orderSize} ${signal.symbol} at $${signal.price}`);
 
       // Place order
       const orderResult = await this.bybitService!.placeOrder({
@@ -223,6 +284,8 @@ export class TradingEngine {
         orderType: 'Market',
         qty: orderSize.toString(),
       });
+
+      console.log('Order result:', orderResult);
 
       // Record trade
       await (supabase as any)
@@ -260,18 +323,22 @@ export class TradingEngine {
       .eq('user_id', this.userId)
       .eq('status', 'pending');
 
+    console.log(`Active pairs: ${activePairs}/${this.config.max_active_pairs}`);
+    
     if (activePairs >= this.config.max_active_pairs) {
+      console.log('Max active pairs reached');
       return false;
     }
 
-    // Add more validation logic here
     return true;
   }
 
   private calculateOrderSize(symbol: string, price: number): number {
     // Simple calculation: use max order amount divided by price
     const maxOrderUsd = this.config.max_order_amount_usd;
-    return maxOrderUsd / price;
+    const orderSize = maxOrderUsd / price;
+    console.log(`Order size calculation: $${maxOrderUsd} / $${price} = ${orderSize}`);
+    return orderSize;
   }
 
   private async monitorPositions(): Promise<void> {
@@ -282,7 +349,12 @@ export class TradingEngine {
         .eq('user_id', this.userId)
         .eq('status', 'pending');
 
-      if (!pendingTrades || pendingTrades.length === 0) return;
+      if (!pendingTrades || pendingTrades.length === 0) {
+        console.log('No pending trades to monitor');
+        return;
+      }
+
+      console.log(`Monitoring ${pendingTrades.length} pending trades...`);
 
       for (const trade of pendingTrades) {
         if (trade.bybit_order_id) {
@@ -291,6 +363,8 @@ export class TradingEngine {
           if (orderStatus.result && orderStatus.result.list && orderStatus.result.list.length > 0) {
             const order = orderStatus.result.list[0];
             const newStatus = this.mapOrderStatus(order.orderStatus);
+            
+            console.log(`Trade ${trade.id} status: ${order.orderStatus} -> ${newStatus}`);
             
             if (newStatus !== 'pending') {
               await (supabase as any)
