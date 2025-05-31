@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -137,17 +136,16 @@ export class TradeExecutor {
       console.log('Order result:', orderResult);
 
       if (orderResult.retCode === 0) {
-        // Use correct status values that match the database constraint
         const { data: trade } = await (supabase as any)
           .from('trades')
           .insert({
             user_id: this.userId,
             symbol: signal.symbol,
-            side: 'buy', // Use lowercase to match constraint
-            order_type: 'market', // Use lowercase to match constraint
+            side: 'buy',
+            order_type: 'market',
             quantity: orderSize,
             price: signal.price,
-            status: 'filled', // Use valid status value
+            status: 'filled',
             bybit_order_id: orderResult.result?.orderId,
           })
           .select()
@@ -174,8 +172,8 @@ export class TradeExecutor {
 
   private async setTakeProfit(trade: any, signal: any): Promise<void> {
     try {
-      // Use a default take profit percent if not configured
-      const takeProfitPercent = this.config.min_profit_percent || 2.0;
+      // Use take_profit_percent from config
+      const takeProfitPercent = this.config.take_profit_percent || 2.0;
       const takeProfitPrice = parseFloat(trade.price) * (1 + takeProfitPercent / 100);
 
       console.log(`Setting take profit for ${trade.symbol} at ${takeProfitPrice}`);

@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingSignal, SupportLevel } from './types';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -21,8 +20,8 @@ export class SignalGenerator {
       const entryOffsetPercent = 1.5;
       const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
       
-      // Use min_profit_percent instead of take_profit_percent
-      const takeProfitPercent = this.config.min_profit_percent || 2.0;
+      // Use take_profit_percent from config
+      const takeProfitPercent = this.config.take_profit_percent || 2.0;
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
       const priceWithinRange = currentPrice <= entryPrice && currentPrice >= supportLevel.price * 0.98;
