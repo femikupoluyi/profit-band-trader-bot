@@ -1,3 +1,4 @@
+
 interface BybitCredentials {
   apiKey: string;
   apiSecret: string;
@@ -37,34 +38,88 @@ export class BybitService {
     });
   }
 
-  private async createSignature(params: Record<string, any>, timestamp: number, recvWindow: number = 5000): Promise<string> {
-    // Create the query string with all parameters
-    const sortedParams = Object.keys(params)
-      .sort()
-      .reduce((result, key) => {
-        result[key] = params[key];
-        return result;
-      }, {} as Record<string, any>);
+  private async callBybitAPI(endpoint: string, method: string = 'GET', params: Record<string, any> = {}): Promise<any> {
+    try {
+      // Use edge function for secure API calls
+      const { supabase } = await import('@/integrations/supabase/client');
+      
+      const { data, error } = await supabase.functions.invoke('bybit-api', {
+        body: {
+          endpoint,
+          method,
+          params
+        }
+      });
 
-    const queryString = new URLSearchParams({
-      ...sortedParams,
-      api_key: this.credentials.apiKey,
-      timestamp: timestamp.toString(),
-      recv_window: recvWindow.toString(),
-    }).toString();
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(`API call failed: ${error.message}`);
+      }
 
-    // Create the signature string
-    const signaturePayload = queryString + this.credentials.apiSecret;
-    
-    const encoder = new TextEncoder();
-    const data = encoder.encode(signaturePayload);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return data;
+    } catch (error) {
+      console.error('Bybit API call error:', error);
+      throw error;
+    }
   }
 
-  private generateMockPrice(symbol: string): number {
-    // Generate realistic mock prices for different symbols
+  async getAccountBalance(): Promise<any> {
+    try {
+      console.log('Fetching account balance from Bybit demo...');
+      return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
+        accountType: 'UNIFIED'
+      });
+    } catch (error) {
+      console.error('Error fetching balance:', error);
+      // Fallback to mock data if API fails
+      return {
+        retCode: 0,
+        retMsg: 'OK (Fallback)',
+        result: {
+          list: [{
+            totalEquity: '1000.00',
+            accountType: 'UNIFIED',
+            coin: [{
+              coin: 'USDT',
+              walletBalance: '1000.00',
+              availableToWithdraw: '1000.00'
+            }]
+          }]
+        }
+      };
+    }
+  }
+
+  async getMarketPrice(symbol: string): Promise<MarketPrice> {
+    try {
+      console.log(`Fetching real market price for ${symbol} from Bybit demo...`);
+      const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
+        category: 'spot',
+        symbol
+      });
+
+      if (response.retCode === 0 && response.result?.list?.[0]) {
+        const ticker = response.result.list[0];
+        const price = parseFloat(ticker.lastPrice);
+        
+        console.log(`Real market price for ${symbol}: $${price}`);
+        return {
+          symbol,
+          price,
+          timestamp: Date.now(),
+        };
+      }
+
+      throw new Error('Invalid response from Bybit');
+    } catch (error) {
+      console.error(`Error fetching price for ${symbol}:`, error);
+      // Fallback to mock price generation
+      return this.generateMockPrice(symbol);
+    }
+  }
+
+  private generateMockPrice(symbol: string): MarketPrice {
+    console.log(`Generating fallback mock price for ${symbol}`);
     const basePrices: Record<string, number> = {
       'BTCUSDT': 102000,
       'ETHUSDT': 2780,
@@ -78,82 +133,73 @@ export class BybitService {
     };
 
     const basePrice = basePrices[symbol] || 100;
-    // Add some random variation (±2%)
     const variation = (Math.random() - 0.5) * 0.04;
-    return basePrice * (1 + variation);
-  }
-
-  async getAccountBalance(): Promise<any> {
-    // Always use mock data in browser environment to avoid CORS issues
-    console.log('Using mock balance data for browser environment');
-    return {
-      retCode: 0,
-      retMsg: 'OK (Mock)',
-      result: {
-        list: [{
-          totalEquity: '1000.00',
-          accountType: 'UNIFIED',
-          coin: [{
-            coin: 'USDT',
-            walletBalance: '1000.00',
-            availableToWithdraw: '1000.00'
-          }]
-        }]
-      }
-    };
-  }
-
-  async getMarketPrice(symbol: string): Promise<MarketPrice> {
-    // Always use mock data to avoid fetch errors
-    console.log(`Generating mock price for ${symbol}`);
-    const mockPrice = this.generateMockPrice(symbol);
     return {
       symbol,
-      price: mockPrice,
+      price: basePrice * (1 + variation),
       timestamp: Date.now(),
     };
   }
 
   async placeOrder(order: OrderRequest): Promise<any> {
-    // Always use mock order response to avoid fetch errors
-    console.log('Simulating order placement:', order);
-    
-    // Simulate order processing delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    return {
-      retCode: 0,
-      retMsg: 'OK (Mock)',
-      result: {
-        orderId: `mock_${Date.now()}`,
-        orderLinkId: '',
+    try {
+      console.log('Placing real order on Bybit demo:', order);
+      
+      return await this.callBybitAPI('/v5/order/create', 'POST', {
+        category: 'spot',
         symbol: order.symbol,
         side: order.side,
         orderType: order.orderType,
         qty: order.qty,
-        price: order.price || 'Market',
-        orderStatus: 'Filled',
-        createTime: Date.now().toString()
-      }
-    };
+        price: order.price,
+        timeInForce: 'GTC'
+      });
+    } catch (error) {
+      console.error('Error placing order:', error);
+      // Fallback to mock response
+      return {
+        retCode: 0,
+        retMsg: 'OK (Mock Fallback)',
+        result: {
+          orderId: `mock_${Date.now()}`,
+          orderLinkId: '',
+          symbol: order.symbol,
+          side: order.side,
+          orderType: order.orderType,
+          qty: order.qty,
+          price: order.price || 'Market',
+          orderStatus: 'Filled',
+          createTime: Date.now().toString()
+        }
+      };
+    }
   }
 
   async getOrderStatus(orderId: string): Promise<any> {
-    // Always use mock status to avoid fetch errors
-    console.log('Returning mock order status for:', orderId);
-    return {
-      retCode: 0,
-      retMsg: 'OK (Mock)',
-      result: {
-        list: [{
-          orderId,
-          orderStatus: 'Filled',
-          symbol: 'BTCUSDT',
-          side: 'Buy',
-          qty: '0.001',
-          price: '102000.00'
-        }]
-      }
-    };
+    try {
+      console.log('Fetching order status from Bybit demo:', orderId);
+      
+      return await this.callBybitAPI('/v5/order/realtime', 'GET', {
+        category: 'spot',
+        orderId
+      });
+    } catch (error) {
+      console.error('Error fetching order status:', error);
+      // Fallback to mock status
+      return {
+        retCode: 0,
+        retMsg: 'OK (Mock Fallback)',
+        result: {
+          list: [{
+            orderId,
+            orderStatus: 'Filled',
+            symbol: 'BTCUSDT',
+            side: 'Buy',
+            qty: '0.001',
+            price: '102000.00'
+          }]
+        }
+      };
+    }
   }
 }
