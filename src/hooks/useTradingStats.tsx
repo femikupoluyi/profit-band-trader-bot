@@ -8,15 +8,37 @@ interface TradingStats {
   activePairs: number;
   totalProfit: number;
   isActive: boolean;
+  totalActive: number;
+  totalClosed: number;
+  totalProfitableClosed: number;
+  totalVolume: number;
+  profitPercentage: number;
+}
+
+interface TimeRange {
+  from: Date;
+  to: Date;
 }
 
 export const useTradingStats = (userId?: string) => {
   const { toast } = useToast();
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(now.getDate() - 7);
+    return { from: sevenDaysAgo, to: now };
+  });
+
   const [stats, setStats] = useState<TradingStats>({
     totalTrades: 0,
     activePairs: 0,
     totalProfit: 0,
-    isActive: false
+    isActive: false,
+    totalActive: 0,
+    totalClosed: 0,
+    totalProfitableClosed: 0,
+    totalVolume: 0,
+    profitPercentage: 0
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -25,9 +47,9 @@ export const useTradingStats = (userId?: string) => {
 
     setIsLoading(true);
     try {
-      console.log('Fetching trading stats for user:', userId);
+      console.log('Fetching trading stats for user:', userId, 'Time range:', timeRange);
 
-      // Get trading config with proper error handling
+      // Get trading config
       const { data: config, error: configError } = await supabase
         .from('trading_configs')
         .select('is_active')
@@ -38,55 +60,58 @@ export const useTradingStats = (userId?: string) => {
         console.error('Error fetching config:', configError);
       }
 
-      // Get total trades count
-      const { count: totalTrades, error: tradesCountError } = await supabase
+      // Get trades within time range
+      const { data: tradesInRange, error: tradesError } = await supabase
         .from('trades')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
-
-      if (tradesCountError) {
-        console.error('Error fetching trades count:', tradesCountError);
-      }
-
-      // Get completed trades for profit calculation
-      const { data: completedTrades, error: profitError } = await supabase
-        .from('trades')
-        .select('profit_loss, price, quantity, side')
+        .select('*')
         .eq('user_id', userId)
-        .in('status', ['filled', 'closed']);
+        .gte('created_at', timeRange.from.toISOString())
+        .lte('created_at', timeRange.to.toISOString());
 
-      if (profitError) {
-        console.error('Error fetching profit data:', profitError);
+      if (tradesError) {
+        console.error('Error fetching trades:', tradesError);
+        return;
       }
 
-      // Calculate total profit/loss more accurately
+      const trades = tradesInRange || [];
+
+      // Calculate metrics
+      const totalTrades = trades.length;
+      const activeTrades = trades.filter(t => ['pending', 'filled'].includes(t.status));
+      const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status));
+      
       let totalProfit = 0;
-      if (completedTrades && completedTrades.length > 0) {
-        totalProfit = completedTrades.reduce((sum, trade) => {
-          const profitLoss = parseFloat(trade.profit_loss?.toString() || '0');
-          return sum + profitLoss;
-        }, 0);
-      }
+      let totalVolume = 0;
+      let profitableClosedCount = 0;
 
-      // Get active trading pairs (unique symbols with open positions)
-      const { data: activeTrades, error: activeError } = await supabase
-        .from('trades')
-        .select('symbol')
-        .eq('user_id', userId)
-        .in('status', ['pending', 'filled'])
-        .eq('side', 'buy'); // Only count buy positions as active pairs
+      trades.forEach(trade => {
+        const profitLoss = parseFloat(trade.profit_loss?.toString() || '0');
+        const volume = parseFloat(trade.price) * parseFloat(trade.quantity);
+        
+        totalProfit += profitLoss;
+        totalVolume += volume;
+        
+        if (['closed'].includes(trade.status) && profitLoss > 0) {
+          profitableClosedCount++;
+        }
+      });
 
-      if (activeError) {
-        console.error('Error fetching active trades:', activeError);
-      }
+      // Calculate profit percentage
+      const profitPercentage = closedTrades.length > 0 ? (profitableClosedCount / closedTrades.length) * 100 : 0;
 
-      const activePairs = activeTrades ? new Set(activeTrades.map(trade => trade.symbol)).size : 0;
+      // Get unique active trading pairs
+      const activePairs = new Set(activeTrades.map(trade => trade.symbol)).size;
 
       const newStats = {
-        totalTrades: totalTrades || 0,
+        totalTrades,
         activePairs,
         totalProfit,
-        isActive: config?.is_active || false
+        isActive: config?.is_active || false,
+        totalActive: activeTrades.length,
+        totalClosed: closedTrades.length,
+        totalProfitableClosed: profitableClosedCount,
+        totalVolume,
+        profitPercentage
       };
 
       console.log('Updated stats:', newStats);
@@ -107,11 +132,13 @@ export const useTradingStats = (userId?: string) => {
     if (userId) {
       fetchTradingStats();
     }
-  }, [userId]);
+  }, [userId, timeRange]);
 
   return {
     stats,
     isLoading,
+    timeRange,
+    setTimeRange,
     refetch: fetchTradingStats
   };
 };

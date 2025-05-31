@@ -10,7 +10,7 @@ import DashboardTabs from './DashboardTabs';
 const TradingDashboard = () => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
-  const { stats, isLoading, refetch } = useTradingStats(user?.id);
+  const { stats, isLoading, timeRange, setTimeRange, refetch } = useTradingStats(user?.id);
 
   const handleSignOut = async () => {
     await signOut();
@@ -25,8 +25,15 @@ const TradingDashboard = () => {
       <DashboardHeader userEmail={user?.email} onSignOut={handleSignOut} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-        <TradingStats stats={stats} isLoading={isLoading} />
-        <DashboardTabs onConfigUpdate={refetch} />
+        <TradingStats 
+          stats={stats} 
+          isLoading={isLoading} 
+          timeRange={timeRange}
+          onTimeRangeChange={setTimeRange}
+        />
+        <div className="mt-8">
+          <DashboardTabs onConfigUpdate={refetch} />
+        </div>
       </div>
     </div>
   );
