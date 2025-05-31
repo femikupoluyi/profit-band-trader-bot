@@ -92,7 +92,7 @@ export class SignalExecutionService {
       console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on $${maxOrderAmountUsd} max order)`);
 
       // Validate calculation results
-      if (isNaN(entryPrice) || isNaN(quantity) || quantity <= 0) {
+      if (isNaN(entryPrice) || isNaN(quantity) || quantity <= 0 || entryPrice <= 0) {
         console.error(`❌ Invalid calculation results: entryPrice=${entryPrice}, quantity=${quantity}`);
         await this.logActivity('error', `Invalid calculation for ${signal.symbol}`, {
           entryPrice,
@@ -132,6 +132,7 @@ export class SignalExecutionService {
       }
 
       // For now, create a mock trade record (replace with actual Bybit API call when ready)
+      // Using 'filled' status which should be allowed by the constraint
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -141,13 +142,14 @@ export class SignalExecutionService {
           order_type: 'limit',
           price: price,
           quantity: quantity,
-          status: 'filled', // In production, this would be 'pending' until filled
+          status: 'filled', // This should be a valid status according to constraint
           bybit_order_id: `mock_${Date.now()}`, // Replace with actual order ID
         })
         .select()
         .single();
 
       if (error) {
+        console.error('Database error inserting trade:', error);
         throw error;
       }
 

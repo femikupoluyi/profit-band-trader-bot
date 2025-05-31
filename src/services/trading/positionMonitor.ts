@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -37,14 +38,14 @@ export class PositionMonitor {
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'filled']);
+        .eq('status', 'filled'); // Only check filled trades, not pending ones
 
       if (!activeTrades || activeTrades.length === 0) {
-        console.log('No active trades to monitor');
+        console.log('No active filled trades to monitor');
         return;
       }
 
-      console.log(`Monitoring ${activeTrades.length} active trades using config take profit: ${this.config.take_profit_percent}%...`);
+      console.log(`Monitoring ${activeTrades.length} filled trades using config take profit: ${this.config.take_profit_percent}%...`);
 
       for (const trade of activeTrades) {
         await this.checkTradeForClosure(trade);
@@ -110,7 +111,19 @@ export class PositionMonitor {
       console.log(`  Profit: ${profitLoss.toFixed(2)}%`);
       console.log(`  Config take profit target: ${this.config.take_profit_percent}%`);
 
-      // Update trade status to closed
+      // First check if trade is already closed
+      const { data: currentTrade } = await supabase
+        .from('trades')
+        .select('status')
+        .eq('id', trade.id)
+        .single();
+
+      if (currentTrade?.status === 'closed') {
+        console.log(`Trade ${trade.id} is already closed, skipping`);
+        return;
+      }
+
+      // Update trade status to closed - using exact status value from database constraint
       const { error } = await supabase
         .from('trades')
         .update({
@@ -118,9 +131,11 @@ export class PositionMonitor {
           profit_loss: profitLoss,
           updated_at: new Date().toISOString()
         })
-        .eq('id', trade.id);
+        .eq('id', trade.id)
+        .eq('status', 'filled'); // Only update if still filled
 
       if (error) {
+        console.error(`Database error closing position:`, error);
         throw error;
       }
 
