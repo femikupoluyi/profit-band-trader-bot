@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -34,7 +35,7 @@ const ActivePairsTable = () => {
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
-        .in('status', ['pending', 'filled'])
+        .in('status', ['pending', 'filled']) // Removed 'cancelled' from active trades
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -127,11 +128,11 @@ const ActivePairsTable = () => {
       // Calculate final P&L
       const finalPL = trade.unrealizedPL || 0;
 
-      // Update trade status to closed with final P&L
+      // Update trade status to cancelled (which is a valid status) with final P&L
       const { error: updateError } = await supabase
         .from('trades')
         .update({
-          status: 'closed',
+          status: 'cancelled', // Changed from 'closed' to 'cancelled'
           profit_loss: finalPL,
           updated_at: new Date().toISOString(),
         })
