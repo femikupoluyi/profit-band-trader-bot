@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -64,18 +65,21 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
               .maybeSingle();
 
             let unrealizedPL = 0;
-            let currentPrice = trade.price;
+            let currentPrice = parseFloat(trade.price.toString());
 
             if (!priceError && marketData) {
               currentPrice = parseFloat(marketData.price.toString());
               const entryPrice = parseFloat(trade.price.toString());
               const quantity = parseFloat(trade.quantity.toString());
               
+              // Calculate P&L correctly based on trade side and price difference
               if (trade.side === 'buy') {
                 unrealizedPL = (currentPrice - entryPrice) * quantity;
               } else {
                 unrealizedPL = (entryPrice - currentPrice) * quantity;
               }
+              
+              console.log(`Trade ${trade.symbol}: Entry=$${entryPrice}, Current=$${currentPrice}, Qty=${quantity}, Unrealized P&L=$${unrealizedPL.toFixed(2)}`);
             }
 
             const entryPrice = parseFloat(trade.price.toString());
@@ -108,7 +112,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
         })
       );
 
-      console.log('Active trades with P&L:', tradesWithPL);
+      console.log('Active trades with corrected P&L:', tradesWithPL);
       setActiveTrades(tradesWithPL);
     } catch (error) {
       console.error('Error fetching active trades:', error);
@@ -128,14 +132,14 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
     try {
       console.log('Manually closing trade:', trade.id);
 
-      // Calculate final P&L
+      // Use the current unrealized P&L as the final P&L
       const finalPL = trade.unrealizedPL || 0;
 
-      // Update trade status to cancelled (which is a valid status) with final P&L
+      // Update trade status to closed with final P&L
       const { error: updateError } = await supabase
         .from('trades')
         .update({
-          status: 'cancelled', // Changed from 'closed' to 'cancelled'
+          status: 'closed',
           profit_loss: finalPL,
           updated_at: new Date().toISOString(),
         })
@@ -156,7 +160,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
         .from('trading_logs')
         .insert({
           user_id: user?.id,
-          log_type: 'trade',
+          log_type: 'trade_closed',
           message: `Manually closed ${trade.symbol} position`,
           data: {
             tradeId: trade.id,
