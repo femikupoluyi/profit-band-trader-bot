@@ -10,4 +10,5 @@ export interface ActiveTrade {
   profit_loss: number;
   currentPrice?: number;
   unrealizedPL?: number;
+  volume?: number;
 }

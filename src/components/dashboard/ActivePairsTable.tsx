@@ -74,23 +74,31 @@ const ActivePairsTable = () => {
               }
             }
 
+            const entryPrice = parseFloat(trade.price.toString());
+            const quantity = parseFloat(trade.quantity.toString());
+            const volume = entryPrice * quantity;
+
             return {
               ...trade,
-              price: parseFloat(trade.price.toString()),
-              quantity: parseFloat(trade.quantity.toString()),
+              price: entryPrice,
+              quantity,
               profit_loss: trade.profit_loss ? parseFloat(trade.profit_loss.toString()) : 0,
               currentPrice,
               unrealizedPL,
+              volume,
             };
           } catch (error) {
             console.error(`Error processing trade ${trade.id}:`, error);
+            const entryPrice = parseFloat(trade.price.toString());
+            const quantity = parseFloat(trade.quantity.toString());
             return {
               ...trade,
-              price: parseFloat(trade.price.toString()),
-              quantity: parseFloat(trade.quantity.toString()),
+              price: entryPrice,
+              quantity,
               profit_loss: trade.profit_loss ? parseFloat(trade.profit_loss.toString()) : 0,
-              currentPrice: parseFloat(trade.price.toString()),
+              currentPrice: entryPrice,
               unrealizedPL: 0,
+              volume: entryPrice * quantity,
             };
           }
         })
@@ -215,6 +223,7 @@ const ActivePairsTable = () => {
                   <TableHead>Quantity</TableHead>
                   <TableHead>Entry Price</TableHead>
                   <TableHead>Current Price</TableHead>
+                  <TableHead>Volume</TableHead>
                   <TableHead>Unrealized P&L</TableHead>
                   <TableHead>% Change</TableHead>
                   <TableHead>Status</TableHead>

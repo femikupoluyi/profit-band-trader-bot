@@ -10,11 +10,15 @@ interface ActiveTradesSummaryProps {
 
 const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
   const totalUnrealizedPL = trades.reduce((sum, trade) => sum + (trade.unrealizedPL || 0), 0);
+  const totalVolume = trades.reduce((sum, trade) => sum + (trade.volume || 0), 0);
   const totalPositionValue = trades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
     return sum + (currentPrice * trade.quantity);
   }, 0);
   const totalCount = trades.length;
+  
+  // Calculate total unrealized percentage change based on total volume
+  const totalUnrealizedPercentage = totalVolume > 0 ? (totalUnrealizedPL / totalVolume) * 100 : 0;
 
   return (
     <TableRow className="bg-muted/50 font-medium">
@@ -22,8 +26,9 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>
+      <TableCell>-</TableCell>
       <TableCell className="font-medium">
-        {formatCurrency(totalPositionValue)}
+        {formatCurrency(totalVolume)}
       </TableCell>
       <TableCell>
         <span className={`font-bold text-lg ${
@@ -32,7 +37,13 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
           {formatCurrency(totalUnrealizedPL)}
         </span>
       </TableCell>
-      <TableCell>-</TableCell>
+      <TableCell>
+        <span className={`font-bold ${
+          totalUnrealizedPercentage >= 0 ? 'text-green-600' : 'text-red-600'
+        }`}>
+          {totalUnrealizedPercentage > 0 ? '+' : ''}{totalUnrealizedPercentage.toFixed(2)}%
+        </span>
+      </TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>
     </TableRow>

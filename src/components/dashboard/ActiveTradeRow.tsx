@@ -27,6 +27,7 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
       <TableCell>{trade.quantity.toFixed(8)}</TableCell>
       <TableCell>{formatCurrency(trade.price)}</TableCell>
       <TableCell>{formatCurrency(trade.currentPrice || trade.price)}</TableCell>
+      <TableCell>{formatCurrency(trade.volume || 0)}</TableCell>
       <TableCell>
         <span className={`font-medium ${
           (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
