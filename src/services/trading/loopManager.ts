@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingServices } from './serviceInitializer';
@@ -18,6 +17,7 @@ export class LoopManager {
 
   setServices(services: TradingServices): void {
     this.services = services;
+    console.log('Trading services configured in loop manager');
   }
 
   start(): void {
@@ -45,7 +45,7 @@ export class LoopManager {
 
         if (!this.services) {
           console.log('Services not initialized, waiting 60 seconds...');
-          await this.logActivity('warning', 'Trading services not initialized. Please ensure API credentials are configured.');
+          await this.logActivity('warning', 'Trading services not initialized. Please ensure API credentials are configured and restart the trading engine.');
           await this.sleep(60000);
           continue;
         }

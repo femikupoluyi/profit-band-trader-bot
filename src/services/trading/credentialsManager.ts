@@ -34,11 +34,16 @@ export class CredentialsManager {
       }
 
       if (credentials) {
-        console.log('Found API credentials for Bybit, testnet:', credentials.testnet);
+        console.log('Found API credentials for Bybit:', {
+          testnet: credentials.testnet,
+          apiKey: credentials.api_key ? `${credentials.api_key.substring(0, 8)}...` : 'Missing',
+          apiSecret: credentials.api_secret ? 'Present' : 'Missing'
+        });
+        
         await this.logActivity('info', `Found API credentials for Bybit (testnet: ${credentials.testnet})`);
         
         const bybitService = new BybitService({
-          apiKey: credentials.apiKey,
+          apiKey: credentials.api_key,
           apiSecret: credentials.api_secret,
           testnet: credentials.testnet,
         });
