@@ -29,8 +29,8 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
     const btcPrice = parseFloat(priceResponse.result?.list?.[0]?.lastPrice || '0');
     console.log(`Current BTC price: $${btcPrice}`);
 
-    // Test with multiple order amounts: $5, $10, $20, $50
-    const testAmounts = [5, 10, 20, 50];
+    // Test with higher order amounts to meet minimum requirements: $100, $200, $500, $1000
+    const testAmounts = [100, 200, 500, 1000];
     const results = [];
 
     for (const amount of testAmounts) {
@@ -75,6 +75,8 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
         results.push(`⚠️ $${amount}: Unauthorized (${orderResponse.retMsg})`);
       } else if (orderResponse?.retCode === 170130) {
         results.push(`❌ $${amount}: Order value too small (${orderResponse.retMsg})`);
+      } else if (orderResponse?.retCode === 170140) {
+        results.push(`❌ $${amount}: Order value exceeded lower limit (${orderResponse.retMsg}) - Min may be higher than $${amount}`);
       } else if (orderResponse?.retCode === 170131) {
         results.push(`❌ $${amount}: Insufficient balance (${orderResponse.retMsg})`);
       } else {
@@ -88,7 +90,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
     // If we get here, no orders were successful
     const hasUnauthorized = results.some(r => r.includes('Unauthorized'));
     const hasInsufficientBalance = results.some(r => r.includes('Insufficient balance'));
-    const hasOrderTooSmall = results.some(r => r.includes('Order value too small'));
+    const hasOrderTooSmall = results.some(r => r.includes('Order value exceeded lower limit'));
     
     let status: 'error' | 'warning' = 'error';
     let summaryMessage = '';
@@ -101,7 +103,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
       summaryMessage = '⚠️ Insufficient demo account balance - check your USDT balance';
     } else if (hasOrderTooSmall) {
       status = 'warning';
-      summaryMessage = '⚠️ All test amounts below minimum order size';
+      summaryMessage = '⚠️ All test amounts below minimum order size - demo account may require $1000+ orders';
     } else {
       summaryMessage = '❌ All market order tests failed';
     }
@@ -109,7 +111,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
     return { 
       test: TEST_NAMES.MARKET_ORDER, 
       status, 
-      message: `${summaryMessage}\n\nDetailed Results:\n${results.join('\n')}` 
+      message: `${summaryMessage}\n\nDetailed Results:\n${results.join('\n')}\n\n💡 Tip: Demo accounts often have higher minimum order values than live accounts.` 
     };
     
   } catch (error) {
