@@ -21,7 +21,7 @@ export const useTradingSystemTests = () => {
     
     try {
       // Test 1: Check API credentials
-      results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit testnet API credentials...' });
+      results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit MAIN exchange API credentials...' });
       setTestResults([...results]);
       
       const { data: credentials } = await supabase
@@ -29,17 +29,18 @@ export const useTradingSystemTests = () => {
         .select('*')
         .eq('user_id', user.id)
         .eq('exchange_name', 'bybit')
+        .eq('is_active', true)
         .single();
       
       if (credentials && credentials.api_key && credentials.api_secret) {
-        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit testnet API credentials configured' };
+        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit MAIN exchange API credentials configured' };
       } else {
-        results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit testnet API credentials not found' };
+        results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit MAIN exchange API credentials not found. Please configure them in the API Setup tab.' };
       }
       setTestResults([...results]);
       
-      // Test 2: Test Bybit testnet API connection
-      results.push({ test: 'Bybit Testnet API', status: 'running', message: 'Testing Bybit testnet API connection...' });
+      // Test 2: Test Bybit MAIN API connection
+      results.push({ test: 'Bybit MAIN API', status: 'running', message: 'Testing Bybit MAIN exchange API connection...' });
       setTestResults([...results]);
       
       try {
@@ -51,20 +52,20 @@ export const useTradingSystemTests = () => {
               category: 'spot',
               symbol: 'BTCUSDT'
             },
-            isDemoTrading: true
+            isDemoTrading: false // MAIN exchange
           }
         });
         
         if (apiError) {
-          results[1] = { test: 'Bybit Testnet API', status: 'error', message: `❌ API Error: ${apiError.message}` };
+          results[1] = { test: 'Bybit MAIN API', status: 'error', message: `❌ API Error: ${apiError.message}` };
         } else if (apiResponse?.retCode === 0) {
           const price = apiResponse.result?.list?.[0]?.lastPrice;
-          results[1] = { test: 'Bybit Testnet API', status: 'success', message: `✅ Bybit testnet API working! BTC: $${price}` };
+          results[1] = { test: 'Bybit MAIN API', status: 'success', message: `✅ Bybit MAIN exchange API working! BTC: $${price}` };
         } else {
-          results[1] = { test: 'Bybit Testnet API', status: 'error', message: `❌ API returned error: ${apiResponse?.retMsg}` };
+          results[1] = { test: 'Bybit MAIN API', status: 'error', message: `❌ API returned error: ${apiResponse?.retMsg}` };
         }
       } catch (error) {
-        results[1] = { test: 'Bybit Testnet API', status: 'error', message: `❌ Connection failed: ${error}` };
+        results[1] = { test: 'Bybit MAIN API', status: 'error', message: `❌ Connection failed: ${error}` };
       }
       setTestResults([...results]);
       
@@ -121,37 +122,33 @@ export const useTradingSystemTests = () => {
       }
       setTestResults([...results]);
       
-      // Test 5: Test order placement on testnet
-      results.push({ test: 'Testnet Order Test', status: 'running', message: 'Testing order placement on Bybit testnet...' });
+      // Test 5: Test account balance check (instead of order placement)
+      results.push({ test: 'Account Balance Check', status: 'running', message: 'Testing account balance access on Bybit MAIN exchange...' });
       setTestResults([...results]);
       
       try {
-        const { data: testOrder, error: orderError } = await supabase.functions.invoke('bybit-api', {
+        const { data: balanceResponse, error: balanceError } = await supabase.functions.invoke('bybit-api', {
           body: {
-            endpoint: '/v5/order/create',
-            method: 'POST',
+            endpoint: '/v5/account/wallet-balance',
+            method: 'GET',
             params: {
-              category: 'spot',
-              symbol: 'BTCUSDT',
-              side: 'Buy',
-              orderType: 'Limit',
-              qty: '0.001',
-              price: '40000',
-              timeInForce: 'GTC'
+              accountType: 'UNIFIED'
             },
-            isDemoTrading: true
+            isDemoTrading: false // MAIN exchange
           }
         });
         
-        if (orderError) {
-          results[4] = { test: 'Testnet Order Test', status: 'error', message: `❌ Order test failed: ${orderError.message}` };
-        } else if (testOrder?.retCode === 0) {
-          results[4] = { test: 'Testnet Order Test', status: 'success', message: '✅ Testnet order placement working' };
+        if (balanceError) {
+          results[4] = { test: 'Account Balance Check', status: 'error', message: `❌ Balance check failed: ${balanceError.message}` };
+        } else if (balanceResponse?.retCode === 0) {
+          results[4] = { test: 'Account Balance Check', status: 'success', message: '✅ Account balance access working on MAIN exchange' };
+        } else if (balanceResponse?.retCode === 10003) {
+          results[4] = { test: 'Account Balance Check', status: 'warning', message: '⚠️ API credentials may need trading permissions enabled' };
         } else {
-          results[4] = { test: 'Testnet Order Test', status: 'warning', message: `⚠️ Order response: ${testOrder?.retMsg}` };
+          results[4] = { test: 'Account Balance Check', status: 'warning', message: `⚠️ Balance response: ${balanceResponse?.retMsg}` };
         }
       } catch (error) {
-        results[4] = { test: 'Testnet Order Test', status: 'error', message: `❌ Order test error: ${error}` };
+        results[4] = { test: 'Account Balance Check', status: 'error', message: `❌ Balance check error: ${error}` };
       }
       setTestResults([...results]);
       
@@ -162,7 +159,7 @@ export const useTradingSystemTests = () => {
       if (successCount === totalTests) {
         toast({
           title: "System Test Complete",
-          description: `All ${totalTests} tests passed! Bybit testnet trading system is ready.`,
+          description: `All ${totalTests} tests passed! Bybit MAIN exchange trading system is ready.`,
         });
       } else {
         toast({
