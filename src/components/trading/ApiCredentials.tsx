@@ -28,7 +28,7 @@ const ApiCredentials = () => {
     api_key: '',
     api_secret: '',
     testnet: true,
-    is_active: false,
+    is_active: true, // Default to active
   });
   const [isLoading, setIsLoading] = useState(false);
   const [hasExisting, setHasExisting] = useState(false);
@@ -44,7 +44,7 @@ const ApiCredentials = () => {
 
     try {
       console.log('Fetching API credentials for user:', user.id);
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('api_credentials')
         .select('*')
         .eq('user_id', user.id)
@@ -62,6 +62,12 @@ const ApiCredentials = () => {
         setHasExisting(true);
       } else {
         console.log('No existing credentials found');
+        // Set default values for new credentials
+        setCredentials(prev => ({
+          ...prev,
+          testnet: true,
+          is_active: true
+        }));
       }
     } catch (error) {
       console.error('Error fetching credentials:', error);
@@ -95,7 +101,7 @@ const ApiCredentials = () => {
       console.log('Saving credentials:', { ...credentialData, api_secret: '[HIDDEN]' });
 
       if (hasExisting) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('api_credentials')
           .update(credentialData)
           .eq('user_id', user.id)
@@ -107,7 +113,7 @@ const ApiCredentials = () => {
         }
         console.log('Credentials updated successfully');
       } else {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from('api_credentials')
           .insert(credentialData)
           .select()
@@ -125,7 +131,7 @@ const ApiCredentials = () => {
 
       toast({
         title: "Success",
-        description: "API credentials saved successfully.",
+        description: "Bybit testnet API credentials saved successfully.",
       });
 
       // Force a re-fetch to confirm the save
@@ -210,18 +216,18 @@ const ApiCredentials = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Key className="h-5 w-5" />
-          Exchange API Credentials
+          Bybit Testnet API Credentials
           {hasExisting && credentials.is_active && (
             <CheckCircle className="h-5 w-5 text-green-500" />
           )}
         </CardTitle>
         <CardDescription>
-          Configure your Bybit testnet API credentials for automated trading. Keep testnet mode enabled for safe testing.
+          Configure your Bybit testnet API credentials for automated trading. Always use testnet for safe testing.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="api_key">API Key</Label>
+          <Label htmlFor="api_key">Testnet API Key</Label>
           <Input
             id="api_key"
             type="text"
@@ -232,7 +238,7 @@ const ApiCredentials = () => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="api_secret">API Secret</Label>
+          <Label htmlFor="api_secret">Testnet API Secret</Label>
           <Input
             id="api_secret"
             type="password"
@@ -247,7 +253,7 @@ const ApiCredentials = () => {
             checked={credentials.testnet}
             onCheckedChange={(checked) => setCredentials(prev => ({ ...prev, testnet: checked }))}
           />
-          <Label>Use Testnet Trading (Recommended for testing)</Label>
+          <Label>Use Testnet (Recommended - Always keep enabled)</Label>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -274,23 +280,23 @@ const ApiCredentials = () => {
 
         {hasExisting && (
           <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-            ✅ API credentials are configured. Status: {credentials.is_active ? 'Active' : 'Inactive'}
+            ✅ Bybit testnet API credentials are configured and {credentials.is_active ? 'ACTIVE' : 'INACTIVE'}
             <br />
-            <small>Using Bybit {credentials.testnet ? 'Testnet' : 'Live'} environment</small>
+            <small>Using Bybit Testnet environment for safe trading</small>
           </div>
         )}
 
         <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
-          💡 <strong>Bybit Testnet:</strong> Get your testnet API credentials from{' '}
+          💡 <strong>Get Testnet Credentials:</strong> Visit{' '}
           <a 
             href="https://testnet.bybit.com" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="underline"
+            className="underline font-semibold"
           >
-            Bybit Testnet
+            testnet.bybit.com
           </a>
-          {' '}by creating an account and enabling API access in the API management section.
+          {' '}→ Create account → API Management → Create API Key with trading permissions
         </div>
       </CardContent>
     </Card>

@@ -14,7 +14,7 @@ export class CredentialsManager {
     try {
       console.log('Fetching API credentials for user:', this.userId);
       
-      const { data: credentials, error } = await (supabase as any)
+      const { data: credentials, error } = await supabase
         .from('api_credentials')
         .select('*')
         .eq('user_id', this.userId)
@@ -25,7 +25,7 @@ export class CredentialsManager {
       if (error) {
         if (error.code === 'PGRST116') {
           console.log('No active API credentials found for user:', this.userId);
-          await this.logActivity('error', 'No active API credentials found. Please configure your Bybit API credentials in the API Setup tab.');
+          await this.logActivity('error', 'No active API credentials found. Please configure your Bybit testnet API credentials in the API Setup tab.');
         } else {
           console.error('Error fetching credentials:', error);
           await this.logActivity('error', `Error fetching API credentials: ${error.message}`);
@@ -33,14 +33,15 @@ export class CredentialsManager {
         return null;
       }
 
-      if (credentials) {
-        console.log('Found API credentials for Bybit:', {
+      if (credentials && credentials.api_key && credentials.api_secret) {
+        console.log('Found valid API credentials for Bybit testnet:', {
           testnet: credentials.testnet,
           apiKey: credentials.api_key ? `${credentials.api_key.substring(0, 8)}...` : 'Missing',
-          apiSecret: credentials.api_secret ? 'Present' : 'Missing'
+          apiSecret: credentials.api_secret ? 'Present' : 'Missing',
+          isActive: credentials.is_active
         });
         
-        await this.logActivity('info', `Found API credentials for Bybit (testnet: ${credentials.testnet})`);
+        await this.logActivity('info', `Found API credentials for Bybit testnet (active: ${credentials.is_active})`);
         
         const bybitService = new BybitService({
           apiKey: credentials.api_key,
@@ -48,20 +49,39 @@ export class CredentialsManager {
           testnet: credentials.testnet,
         });
 
-        // Test the connection
+        // Test the connection to verify credentials work
         try {
-          const balance = await bybitService.getAccountBalance();
-          if (balance.retCode === 0) {
+          console.log('Testing API connection...');
+          const testResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/bybit-api`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabase.supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              endpoint: '/v5/market/tickers',
+              method: 'GET',
+              params: {
+                category: 'spot',
+                symbol: 'BTCUSDT'
+              },
+              isDemoTrading: true
+            })
+          });
+
+          const testResult = await testResponse.json();
+          
+          if (testResult.retCode === 0) {
             console.log('API connection test successful');
             await this.logActivity('info', 'API connection established successfully', { 
               testnet: credentials.testnet,
-              balance: balance.result ? 'Available' : 'No balance data'
+              response: 'Valid API response received'
             });
           } else {
-            console.log('API connection test failed:', balance);
+            console.log('API connection test failed:', testResult);
             await this.logActivity('error', 'API connection test failed', { 
-              retCode: balance.retCode, 
-              retMsg: balance.retMsg 
+              retCode: testResult.retCode, 
+              retMsg: testResult.retMsg 
             });
           }
         } catch (error) {
@@ -70,9 +90,11 @@ export class CredentialsManager {
         }
 
         return bybitService;
+      } else {
+        console.log('API credentials found but missing key or secret');
+        await this.logActivity('error', 'API credentials incomplete - missing key or secret');
+        return null;
       }
-
-      return null;
     } catch (error) {
       console.error('Error in credentials management:', error);
       await this.logActivity('error', 'Failed to fetch API credentials', { error: error.message });
@@ -82,7 +104,7 @@ export class CredentialsManager {
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
-      await (supabase as any)
+      await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
