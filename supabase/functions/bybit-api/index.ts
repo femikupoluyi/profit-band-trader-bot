@@ -48,7 +48,6 @@ serve(async (req) => {
     
     let finalUrl: string;
     let requestBody: string | undefined;
-    let signature: string;
 
     if (method === 'GET') {
       // For GET requests, create query string with proper signature
@@ -85,7 +84,7 @@ serve(async (req) => {
       );
       
       const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
-      signature = Array.from(new Uint8Array(signatureBuffer))
+      const signature = Array.from(new Uint8Array(signatureBuffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
@@ -94,7 +93,7 @@ serve(async (req) => {
       finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
       
     } else {
-      // For POST requests, create JSON body with signature
+      // For POST requests, create proper signature according to Bybit V5 API specs
       const requestParams = {
         ...params,
         api_key: apiKey,
@@ -102,7 +101,7 @@ serve(async (req) => {
         recv_window: recvWindow,
       };
 
-      // Create sorted query string for signature
+      // Create sorted query string for signature (V5 API requirement)
       const sortedKeys = Object.keys(requestParams).sort();
       const queryString = sortedKeys
         .map(key => `${key}=${requestParams[key]}`)
@@ -124,13 +123,14 @@ serve(async (req) => {
       );
       
       const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
-      signature = Array.from(new Uint8Array(signatureBuffer))
+      const signature = Array.from(new Uint8Array(signatureBuffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
       console.log('Generated POST signature:', signature);
-      requestParams.sign = signature;
-      requestBody = JSON.stringify(requestParams);
+      
+      // For V5 API, send as JSON body without signature in body
+      requestBody = JSON.stringify(params);
       finalUrl = `${baseUrl}${endpoint}`;
     }
 
@@ -139,14 +139,40 @@ serve(async (req) => {
       console.log('Request body:', requestBody);
     }
 
-    // Prepare headers with proper signature
+    // Prepare headers according to V5 API specs
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-BAPI-API-KEY': apiKey,
       'X-BAPI-TIMESTAMP': timestamp,
       'X-BAPI-RECV-WINDOW': recvWindow,
-      'X-BAPI-SIGN': signature, // Add signature to headers
     };
+
+    // Add signature to headers for both GET and POST
+    if (method === 'POST') {
+      // For POST, we need to sign timestamp + api_key + recv_window + request_body
+      const postSignString = timestamp + apiKey + recvWindow + (requestBody || '');
+      console.log('POST signature string:', postSignString);
+      
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(apiSecret);
+      const dataToSign = encoder.encode(postSignString);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
+      const signature = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      
+      headers['X-BAPI-SIGN'] = signature;
+      console.log('POST signature for headers:', signature);
+    }
 
     console.log('Request headers:', headers);
 
