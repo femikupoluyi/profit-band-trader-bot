@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -21,7 +20,7 @@ export const useTradingSystemTests = () => {
     
     try {
       // Test 1: Check API credentials
-      results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit MAIN exchange API credentials...' });
+      results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit DEMO account API credentials...' });
       setTestResults([...results]);
       
       const { data: credentials, error: credError } = await supabase
@@ -35,14 +34,14 @@ export const useTradingSystemTests = () => {
       if (credError) {
         results[0] = { test: 'API Credentials', status: 'error', message: `❌ Error fetching credentials: ${credError.message}` };
       } else if (credentials && credentials.api_key && credentials.api_secret) {
-        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit MAIN exchange API credentials found and active' };
+        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit DEMO account API credentials found and active' };
       } else {
-        results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit MAIN exchange API credentials not found. Please configure them in the API Setup tab.' };
+        results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit DEMO account API credentials not found. Please configure them in the API Setup tab.' };
       }
       setTestResults([...results]);
       
-      // Test 2: Test Bybit MAIN API connection
-      results.push({ test: 'Bybit MAIN API', status: 'running', message: 'Testing Bybit MAIN exchange API connection...' });
+      // Test 2: Test Bybit DEMO API connection
+      results.push({ test: 'Bybit DEMO API', status: 'running', message: 'Testing Bybit DEMO account API connection...' });
       setTestResults([...results]);
       
       try {
@@ -54,20 +53,20 @@ export const useTradingSystemTests = () => {
               category: 'spot',
               symbol: 'BTCUSDT'
             },
-            isDemoTrading: false // MAIN exchange
+            isDemoTrading: true // DEMO account
           }
         });
         
         if (apiError) {
-          results[1] = { test: 'Bybit MAIN API', status: 'error', message: `❌ API Error: ${apiError.message}` };
+          results[1] = { test: 'Bybit DEMO API', status: 'error', message: `❌ API Error: ${apiError.message}` };
         } else if (apiResponse?.retCode === 0) {
           const price = apiResponse.result?.list?.[0]?.lastPrice;
-          results[1] = { test: 'Bybit MAIN API', status: 'success', message: `✅ Bybit MAIN exchange API working! BTC: $${price}` };
+          results[1] = { test: 'Bybit DEMO API', status: 'success', message: `✅ Bybit DEMO account API working! BTC: $${price}` };
         } else {
-          results[1] = { test: 'Bybit MAIN API', status: 'error', message: `❌ API returned error: ${apiResponse?.retMsg}` };
+          results[1] = { test: 'Bybit DEMO API', status: 'error', message: `❌ API returned error: ${apiResponse?.retMsg}` };
         }
       } catch (error) {
-        results[1] = { test: 'Bybit MAIN API', status: 'error', message: `❌ Connection failed: ${error}` };
+        results[1] = { test: 'Bybit DEMO API', status: 'error', message: `❌ Connection failed: ${error}` };
       }
       setTestResults([...results]);
       
@@ -125,7 +124,7 @@ export const useTradingSystemTests = () => {
       setTestResults([...results]);
       
       // Test 5: Test account balance check with proper error handling
-      results.push({ test: 'Account Balance Check', status: 'running', message: 'Testing account balance access on Bybit MAIN exchange...' });
+      results.push({ test: 'Account Balance Check', status: 'running', message: 'Testing account balance access on Bybit DEMO account...' });
       setTestResults([...results]);
       
       try {
@@ -136,14 +135,14 @@ export const useTradingSystemTests = () => {
             params: {
               accountType: 'UNIFIED'
             },
-            isDemoTrading: false // MAIN exchange
+            isDemoTrading: true // DEMO account
           }
         });
         
         if (balanceError) {
           results[4] = { test: 'Account Balance Check', status: 'error', message: `❌ Balance check failed: ${balanceError.message}` };
         } else if (balanceResponse?.retCode === 0) {
-          results[4] = { test: 'Account Balance Check', status: 'success', message: '✅ Account balance access working on MAIN exchange' };
+          results[4] = { test: 'Account Balance Check', status: 'success', message: '✅ Account balance access working on DEMO account' };
         } else if (balanceResponse?.retCode === 10001) {
           results[4] = { test: 'Account Balance Check', status: 'error', message: '❌ API signature error - check your API credentials setup' };
         } else if (balanceResponse?.retCode === 10003) {
@@ -157,7 +156,7 @@ export const useTradingSystemTests = () => {
       setTestResults([...results]);
       
       // Test 6: Test $20 market order placement
-      results.push({ test: 'Market Order Test ($20)', status: 'running', message: 'Testing $20 market order placement...' });
+      results.push({ test: 'Market Order Test ($20)', status: 'running', message: 'Testing $20 market order placement on DEMO account...' });
       setTestResults([...results]);
       
       try {
@@ -170,7 +169,7 @@ export const useTradingSystemTests = () => {
               category: 'spot',
               symbol: 'BTCUSDT'
             },
-            isDemoTrading: false
+            isDemoTrading: true
           }
         });
         
@@ -190,7 +189,7 @@ export const useTradingSystemTests = () => {
                 qty: quantity,
                 timeInForce: 'IOC'
               },
-              isDemoTrading: false
+              isDemoTrading: true
             }
           });
           
@@ -198,7 +197,7 @@ export const useTradingSystemTests = () => {
             results[5] = { test: 'Market Order Test ($20)', status: 'error', message: `❌ Order placement failed: ${orderError.message}` };
           } else if (orderResponse?.retCode === 0) {
             const orderId = orderResponse.result?.orderId;
-            results[5] = { test: 'Market Order Test ($20)', status: 'success', message: `✅ $20 market order placed successfully! Order ID: ${orderId}` };
+            results[5] = { test: 'Market Order Test ($20)', status: 'success', message: `✅ $20 market order placed successfully on DEMO! Order ID: ${orderId}` };
             
             // Test 7: Check order status
             results.push({ test: 'Order Status Check', status: 'running', message: 'Checking order placement status...' });
@@ -216,7 +215,7 @@ export const useTradingSystemTests = () => {
                     category: 'spot',
                     orderId: orderId
                   },
-                  isDemoTrading: false
+                  isDemoTrading: true
                 }
               });
               
@@ -249,7 +248,7 @@ export const useTradingSystemTests = () => {
       if (successCount === totalTests) {
         toast({
           title: "System Test Complete",
-          description: `All ${totalTests} tests passed! Bybit MAIN exchange trading system is ready.`,
+          description: `All ${totalTests} tests passed! Bybit DEMO account trading system is ready.`,
         });
       } else {
         toast({

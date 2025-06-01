@@ -1,5 +1,4 @@
 
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -31,54 +30,56 @@ serve(async (req) => {
 
     const { endpoint, method = 'GET', params = {}, isDemoTrading = false }: BybitRequest = await req.json();
 
-    // Get API credentials from secrets - now using MAIN exchange credentials
+    // Get API credentials from secrets
     const apiKey = Deno.env.get('BYBIT_API_KEY');
     const apiSecret = Deno.env.get('BYBIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
-      console.error('Missing Bybit MAIN API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
+      console.error('Missing Bybit API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
       return new Response(
-        JSON.stringify({ error: 'Bybit MAIN API credentials not configured. Please add BYBIT_API_KEY and BYBIT_API_SECRET to Supabase secrets.' }),
+        JSON.stringify({ error: 'Bybit API credentials not configured. Please add BYBIT_API_KEY and BYBIT_API_SECRET to Supabase secrets.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Using Bybit MAIN exchange credentials for API call');
+    console.log(`Using Bybit API credentials for ${isDemoTrading ? 'DEMO' : 'MAIN'} exchange`);
 
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
     
-    // Always use MAIN exchange environment
+    // Use main exchange URL (demo trading is handled via API parameters)
     const baseUrl = 'https://api.bybit.com';
     
     let finalUrl: string;
     let requestBody: string | undefined;
 
     if (method === 'GET') {
-      // For GET requests, create query string with proper signature
-      const queryParams = new URLSearchParams();
-      queryParams.append('api_key', apiKey);
-      queryParams.append('timestamp', timestamp);
-      queryParams.append('recv_window', recvWindow);
+      // For GET requests, build query parameters with consistent ordering
+      const queryParams: Record<string, string> = {
+        api_key: apiKey,
+        timestamp: timestamp,
+        recv_window: recvWindow,
+      };
       
-      // Add all other params (excluding cache busting params from signature)
+      // Add endpoint-specific params (excluding cache busting params from signature)
       Object.keys(params).forEach(key => {
         if (params[key] !== undefined && params[key] !== null && 
             !key.startsWith('_') && key !== 'cacheBust') {
-          queryParams.append(key, params[key].toString());
+          queryParams[key] = params[key].toString();
         }
       });
 
-      // Sort parameters for signature - this is crucial for Bybit API
-      const sortedParams = Array.from(queryParams.entries()).sort();
-      const sortedQueryParams = new URLSearchParams();
-      sortedParams.forEach(([key, value]) => {
-        sortedQueryParams.append(key, value);
-      });
+      // Sort parameters alphabetically for consistent signature generation
+      const sortedKeys = Object.keys(queryParams).sort();
+      const sortedParams = new URLSearchParams();
       
-      // Create signature - sign the sorted query string
-      const queryString = sortedQueryParams.toString();
-      console.log('GET query string for signature:', queryString);
+      for (const key of sortedKeys) {
+        sortedParams.append(key, queryParams[key]);
+      }
+      
+      // Create signature using sorted query string
+      const queryString = sortedParams.toString();
+      console.log(`GET query string for signature: ${queryString}`);
       
       // Generate HMAC SHA256 signature
       const encoder = new TextEncoder();
@@ -98,13 +99,16 @@ serve(async (req) => {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
-      console.log('Generated GET signature for MAIN exchange:', signature);
-      sortedQueryParams.append('sign', signature);
-      finalUrl = `${baseUrl}${endpoint}?${sortedQueryParams.toString()}`;
+      console.log(`Generated GET signature: ${signature}`);
+      
+      // Add signature to URL
+      sortedParams.append('sign', signature);
+      finalUrl = `${baseUrl}${endpoint}?${sortedParams.toString()}`;
       
     } else {
       // For POST requests, use V5 signature method
       const cleanParams = { ...params };
+      
       // Remove cache busting parameters from the actual request
       delete cleanParams._t;
       delete cleanParams._cache_bust;
@@ -118,12 +122,12 @@ serve(async (req) => {
       finalUrl = `${baseUrl}${endpoint}`;
     }
 
-    console.log(`Making ${method} request to Bybit MAIN exchange:`, finalUrl);
+    console.log(`Making ${method} request to Bybit ${isDemoTrading ? 'DEMO' : 'MAIN'} exchange: ${finalUrl}`);
     if (requestBody) {
       console.log('Request body:', requestBody);
     }
 
-    // Prepare headers for MAIN exchange
+    // Prepare headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-BAPI-API-KEY': apiKey,
@@ -160,17 +164,17 @@ serve(async (req) => {
       console.log('POST signature for headers:', signature);
     }
 
-    console.log('Request headers for MAIN exchange:', headers);
+    console.log(`Request headers for ${isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, { ...headers, 'X-BAPI-API-KEY': apiKey.substring(0, 8) + '...' });
 
     const response = await fetch(finalUrl, {
       method,
       headers,
       body: requestBody,
-      cache: 'no-store'  // Ensure no caching
+      cache: 'no-store'
     });
 
     const responseData = await response.json();
-    console.log('Bybit MAIN exchange response:', responseData);
+    console.log(`Bybit ${isDemoTrading ? 'DEMO' : 'MAIN'} exchange response:`, responseData);
 
     return new Response(
       JSON.stringify(responseData),
@@ -187,7 +191,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Bybit MAIN exchange API error:', error);
+    console.error('Bybit API error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
@@ -197,4 +201,3 @@ serve(async (req) => {
     );
   }
 });
-
