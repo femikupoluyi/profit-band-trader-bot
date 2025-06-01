@@ -68,7 +68,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         }
       }
 
-      // Update trade status to closed in database (only for fillable statuses)
+      // Update trade status to closed in database (only for valid statuses)
       const { error: updateError } = await supabase
         .from('trades')
         .update({
@@ -77,7 +77,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .in('status', ['pending', 'filled', 'partial_filled']); // Only close these statuses
+        .in('status', ['pending', 'filled', 'partial_filled']);
 
       if (updateError) {
         console.error('Error updating trade status:', updateError);
@@ -91,12 +91,12 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
 
       console.log(`✅ Trade ${trade.id} manually closed successfully`);
       
-      // Log the manual close activity
+      // Log the manual close activity with valid log type
       await supabase
         .from('trading_logs')
         .insert({
           user_id: currentTrade.user_id,
-          log_type: 'manual_close',
+          log_type: 'position_closed',
           message: `Trade manually closed for ${trade.symbol}`,
           data: {
             tradeId: trade.id,

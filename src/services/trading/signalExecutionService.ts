@@ -26,26 +26,31 @@ export class SignalExecutionService {
   }
 
   private formatQuantityForSymbol(symbol: string, quantity: number): string {
-    // Define precision rules for different symbols based on Bybit requirements
+    // Updated precision rules for Bybit demo trading
     const precisionRules: Record<string, number> = {
-      // Major pairs - typically 3-6 decimal places
-      'BTCUSDT': 6,
-      'ETHUSDT': 4,
-      'BNBUSDT': 3,
-      'SOLUSDT': 3,
-      'ADAUSDT': 1,
-      'XRPUSDT': 1,
+      // Major pairs - more conservative precision
+      'BTCUSDT': 5,
+      'ETHUSDT': 3,
+      'BNBUSDT': 2,
+      'SOLUSDT': 2,  // Reduced from 3 to 2
+      'ADAUSDT': 0,
+      'XRPUSDT': 0,
       'DOGEUSDT': 0,
       'MATICUSDT': 0,
-      'LTCUSDT': 4,
-      // Lower value coins - fewer decimal places
-      'FETUSDT': 1,
-      'POLUSDT': 0,
+      'LTCUSDT': 3,
+      // Lower value coins
+      'FETUSDT': 0,
+      'POLUSDT': 0,  // Reduced from 3 to 0
       'XLMUSDT': 0,
     };
 
-    const decimals = precisionRules[symbol] || 3; // Default to 3 decimal places
-    const formattedQty = quantity.toFixed(decimals);
+    const decimals = precisionRules[symbol] || 2; // Default to 2 decimal places
+    let formattedQty = quantity.toFixed(decimals);
+    
+    // Remove trailing zeros but ensure proper formatting
+    if (decimals > 0) {
+      formattedQty = parseFloat(formattedQty).toString();
+    }
     
     console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
     return formattedQty;
@@ -53,12 +58,29 @@ export class SignalExecutionService {
 
   private validateOrderValue(symbol: string, quantity: number, price: number): boolean {
     const orderValue = quantity * price;
-    const minOrderValue = 1; // Minimum $1 order value for most symbols
     
-    console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minOrderValue})`);
+    // Increased minimum order values for demo trading
+    const minOrderValues: Record<string, number> = {
+      'BTCUSDT': 20,
+      'ETHUSDT': 20,
+      'BNBUSDT': 20,
+      'SOLUSDT': 20,
+      'LTCUSDT': 20,
+      'ADAUSDT': 10,
+      'XRPUSDT': 10,
+      'DOGEUSDT': 10,
+      'MATICUSDT': 10,
+      'FETUSDT': 10,
+      'POLUSDT': 10,
+      'XLMUSDT': 10,
+    };
+
+    const minValue = minOrderValues[symbol] || 20; // Increased default to $20
     
-    if (orderValue < minOrderValue) {
-      console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minOrderValue}`);
+    console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minValue})`);
+    
+    if (orderValue < minValue) {
+      console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minValue}`);
       return false;
     }
     
@@ -213,7 +235,7 @@ export class SignalExecutionService {
         
         // Format quantity with proper precision for the symbol
         const formattedQuantity = this.formatQuantityForSymbol(symbol, quantity);
-        const formattedPrice = orderType === 'limit' ? price.toFixed(4) : undefined;
+        const formattedPrice = orderType === 'limit' ? price.toFixed(2) : undefined;
         
         console.log(`  Formatted quantity: ${formattedQuantity}`);
         if (formattedPrice) console.log(`  Formatted price: ${formattedPrice}`);
@@ -275,7 +297,7 @@ export class SignalExecutionService {
         }
       } catch (bybitError) {
         console.error(`❌ Failed to place order on Bybit Demo: ${bybitError instanceof Error ? bybitError.message : 'Unknown error'}`);
-        await this.logActivity('order_error', `Bybit order error for ${symbol}`, {
+        await this.logActivity('order_failed', `Bybit order error for ${symbol}`, {
           bybitError: bybitError instanceof Error ? bybitError.message : 'Unknown error',
           symbol,
           reason: 'bybit_api_error'
@@ -285,9 +307,6 @@ export class SignalExecutionService {
       }
 
       // Create trade record in database only if Bybit order was successful
-      // Use only valid status values that match the database constraint
-      const validStatus = tradeStatus === 'filled' ? 'filled' : 'pending';
-      
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -297,7 +316,7 @@ export class SignalExecutionService {
           order_type: orderType,
           price: actualFillPrice,
           quantity: parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
-          status: validStatus,
+          status: tradeStatus,
           bybit_order_id: bybitOrderId,
         })
         .select()
@@ -311,7 +330,7 @@ export class SignalExecutionService {
       console.log(`✅ Trade record created successfully for ${symbol}`);
       console.log(`  Trade ID: ${trade.id}`);
       console.log(`  Bybit Order ID: ${bybitOrderId}`);
-      console.log(`  Status: ${validStatus}`);
+      console.log(`  Status: ${tradeStatus}`);
       console.log(`  Order Type: ${orderType.toUpperCase()}`);
       console.log(`  Actual Fill Price: $${actualFillPrice.toFixed(6)}`);
       console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
@@ -324,7 +343,7 @@ export class SignalExecutionService {
         tradeId: trade.id,
         bybitOrderId,
         orderType,
-        status: validStatus,
+        status: tradeStatus,
         takeProfitTarget: takeProfitPercent,
         entryOffset: this.config.entry_offset_percent,
         maxOrderAmount: this.config.max_order_amount_usd,
@@ -346,11 +365,36 @@ export class SignalExecutionService {
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
+      // Valid log types based on database constraints
+      const validLogTypes = [
+        'signal_processed',
+        'trade_executed',
+        'trade_filled',
+        'position_closed',
+        'system_error',
+        'order_placed',
+        'order_failed',
+        'calculation_error',
+        'execution_error',
+        'signal_rejected',
+        'order_rejected'
+      ];
+
+      // Map invalid types to valid ones
+      const typeMapping: Record<string, string> = {
+        'manual_close': 'position_closed',
+        'close_rejected': 'order_rejected',
+        'close_error': 'execution_error',
+        'trade_closed': 'position_closed'
+      };
+
+      const validType = typeMapping[type] || (validLogTypes.includes(type) ? type : 'system_error');
+
       await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
-          log_type: type,
+          log_type: validType,
           message,
           data: data || null,
         });

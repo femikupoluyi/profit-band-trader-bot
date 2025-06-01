@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -23,28 +24,25 @@ export class PositionMonitor {
   }
 
   private formatQuantityForSymbol(symbol: string, quantity: number): string {
-    // Enhanced precision rules based on Bybit testnet requirements
+    // Enhanced precision rules based on Bybit demo requirements
     const precisionRules: Record<string, number> = {
-      // Major pairs - higher precision for smaller quantities
-      'BTCUSDT': 6,
-      'ETHUSDT': 5,
-      'BNBUSDT': 4,
-      'SOLUSDT': 3,
-      'ADAUSDT': 2,
-      'XRPUSDT': 1,
-      'LTCUSDT': 5,
-      // Lower value coins - fewer decimals but still sufficient
+      'BTCUSDT': 5,
+      'ETHUSDT': 3,
+      'BNBUSDT': 2,
+      'SOLUSDT': 2,
+      'ADAUSDT': 0,
+      'XRPUSDT': 0,
+      'LTCUSDT': 3,
       'DOGEUSDT': 0,
-      'MATICUSDT': 1,
+      'MATICUSDT': 0,
       'FETUSDT': 0,
       'POLUSDT': 0,
       'XLMUSDT': 0,
     };
 
-    const decimals = precisionRules[symbol] || 3;
+    const decimals = precisionRules[symbol] || 2;
     let formattedQty = quantity.toFixed(decimals);
     
-    // Remove trailing zeros but keep at least one decimal place for most pairs
     if (decimals > 0) {
       formattedQty = parseFloat(formattedQty).toString();
     }
@@ -58,21 +56,21 @@ export class PositionMonitor {
     
     // Enhanced minimum order values for different symbols
     const minOrderValues: Record<string, number> = {
-      'BTCUSDT': 5,
-      'ETHUSDT': 5,
-      'BNBUSDT': 5,
-      'SOLUSDT': 5,
-      'LTCUSDT': 5,
-      'ADAUSDT': 1,
-      'XRPUSDT': 1,
-      'DOGEUSDT': 1,
-      'MATICUSDT': 1,
-      'FETUSDT': 1,
-      'POLUSDT': 1,
-      'XLMUSDT': 1,
+      'BTCUSDT': 20,
+      'ETHUSDT': 20,
+      'BNBUSDT': 20,
+      'SOLUSDT': 20,
+      'LTCUSDT': 20,
+      'ADAUSDT': 10,
+      'XRPUSDT': 10,
+      'DOGEUSDT': 10,
+      'MATICUSDT': 10,
+      'FETUSDT': 10,
+      'POLUSDT': 10,
+      'XLMUSDT': 10,
     };
 
-    const minValue = minOrderValues[symbol] || 1;
+    const minValue = minOrderValues[symbol] || 20;
     
     console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minValue})`);
     
@@ -216,7 +214,7 @@ export class PositionMonitor {
       // Validate minimum order value before placing sell order
       if (!this.validateMinOrderValue(trade.symbol, quantity, currentPrice)) {
         console.log(`❌ Cannot close ${trade.symbol}: order value below minimum`);
-        await this.logActivity('close_rejected', `Cannot close ${trade.symbol}: order value below minimum`, {
+        await this.logActivity('order_rejected', `Cannot close ${trade.symbol}: order value below minimum`, {
           tradeId: trade.id,
           quantity: formattedQuantity,
           currentPrice,
@@ -290,7 +288,7 @@ export class PositionMonitor {
 
     } catch (error) {
       console.error(`Error closing position for ${trade.symbol}:`, error);
-      await this.logActivity('close_error', `Failed to close position for ${trade.symbol}`, { 
+      await this.logActivity('execution_error', `Failed to close position for ${trade.symbol}`, { 
         error: error instanceof Error ? error.message : 'Unknown error',
         tradeId: trade.id,
         symbol: trade.symbol 
@@ -300,11 +298,36 @@ export class PositionMonitor {
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
+      // Valid log types based on database constraints
+      const validLogTypes = [
+        'signal_processed',
+        'trade_executed',
+        'trade_filled',
+        'position_closed',
+        'system_error',
+        'order_placed',
+        'order_failed',
+        'calculation_error',
+        'execution_error',
+        'signal_rejected',
+        'order_rejected'
+      ];
+
+      // Map invalid types to valid ones
+      const typeMapping: Record<string, string> = {
+        'manual_close': 'position_closed',
+        'close_rejected': 'order_rejected',
+        'close_error': 'execution_error',
+        'trade_closed': 'position_closed'
+      };
+
+      const validType = typeMapping[type] || (validLogTypes.includes(type) ? type : 'system_error');
+
       await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
-          log_type: type,
+          log_type: validType,
           message,
           data: data || null,
         });
