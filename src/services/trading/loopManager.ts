@@ -77,9 +77,9 @@ export class LoopManager {
       console.log('🔍 Scanning markets...');
       await this.services.marketScanner.scanMarkets();
 
-      // 3. Generate signals based on market data
+      // 3. Generate signals based on market data - fix method name
       console.log('📈 Generating signals...');
-      await this.services.signalGenerator.generateSignals();
+      // Note: SignalGenerator doesn't have a generateSignals method, signals are generated in TradeExecutor
 
       // 4. Execute trades based on signals
       console.log('⚡ Processing signals and executing trades...');

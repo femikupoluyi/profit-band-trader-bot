@@ -3,12 +3,15 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 import { BybitService } from '../bybitService';
 import { MarketScanner } from './marketScanner';
 import { SignalAnalyzer } from './signalAnalyzer';
+import { SignalGenerator } from './signalGenerator';
 import { TradeExecutor } from './tradeExecutor';
 import { PositionMonitor } from './positionMonitor';
 
 export interface TradingServices {
+  bybitService: BybitService;
   marketScanner: MarketScanner;
   signalAnalyzer: SignalAnalyzer;
+  signalGenerator: SignalGenerator;
   tradeExecutor: TradeExecutor;
   positionMonitor: PositionMonitor;
 }
@@ -46,12 +49,15 @@ export class ServiceInitializer {
     
     const marketScanner = new MarketScanner(this.userId, bybitService, validatedConfig);
     const signalAnalyzer = new SignalAnalyzer(this.userId, validatedConfig);
+    const signalGenerator = new SignalGenerator(this.userId, validatedConfig);
     const tradeExecutor = new TradeExecutor(this.userId, validatedConfig, bybitService);
     const positionMonitor = new PositionMonitor(this.userId, bybitService, validatedConfig);
 
     return {
+      bybitService,
       marketScanner,
       signalAnalyzer,
+      signalGenerator,
       tradeExecutor,
       positionMonitor
     };
