@@ -156,6 +156,92 @@ export const useTradingSystemTests = () => {
       }
       setTestResults([...results]);
       
+      // Test 6: Test $20 market order placement
+      results.push({ test: 'Market Order Test ($20)', status: 'running', message: 'Testing $20 market order placement...' });
+      setTestResults([...results]);
+      
+      try {
+        // Get current BTC price to calculate quantity for $20
+        const { data: priceResponse } = await supabase.functions.invoke('bybit-api', {
+          body: {
+            endpoint: '/v5/market/tickers',
+            method: 'GET',
+            params: {
+              category: 'spot',
+              symbol: 'BTCUSDT'
+            },
+            isDemoTrading: false
+          }
+        });
+        
+        if (priceResponse?.retCode === 0) {
+          const btcPrice = parseFloat(priceResponse.result?.list?.[0]?.lastPrice || '0');
+          const quantity = (20 / btcPrice).toFixed(6); // $20 worth of BTC
+          
+          const { data: orderResponse, error: orderError } = await supabase.functions.invoke('bybit-api', {
+            body: {
+              endpoint: '/v5/order/create',
+              method: 'POST',
+              params: {
+                category: 'spot',
+                symbol: 'BTCUSDT',
+                side: 'Buy',
+                orderType: 'Market',
+                qty: quantity,
+                timeInForce: 'IOC'
+              },
+              isDemoTrading: false
+            }
+          });
+          
+          if (orderError) {
+            results[5] = { test: 'Market Order Test ($20)', status: 'error', message: `❌ Order placement failed: ${orderError.message}` };
+          } else if (orderResponse?.retCode === 0) {
+            const orderId = orderResponse.result?.orderId;
+            results[5] = { test: 'Market Order Test ($20)', status: 'success', message: `✅ $20 market order placed successfully! Order ID: ${orderId}` };
+            
+            // Test 7: Check order status
+            results.push({ test: 'Order Status Check', status: 'running', message: 'Checking order placement status...' });
+            setTestResults([...results]);
+            
+            // Wait a moment for order to process
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            try {
+              const { data: statusResponse } = await supabase.functions.invoke('bybit-api', {
+                body: {
+                  endpoint: '/v5/order/realtime',
+                  method: 'GET',
+                  params: {
+                    category: 'spot',
+                    orderId: orderId
+                  },
+                  isDemoTrading: false
+                }
+              });
+              
+              if (statusResponse?.retCode === 0 && statusResponse.result?.list?.[0]) {
+                const orderStatus = statusResponse.result.list[0].orderStatus;
+                results[6] = { test: 'Order Status Check', status: 'success', message: `✅ Order status retrieved: ${orderStatus}` };
+              } else {
+                results[6] = { test: 'Order Status Check', status: 'warning', message: `⚠️ Order status check: ${statusResponse?.retMsg || 'Unable to retrieve status'}` };
+              }
+            } catch (error) {
+              results[6] = { test: 'Order Status Check', status: 'error', message: `❌ Status check failed: ${error}` };
+            }
+          } else if (orderResponse?.retCode === 10003) {
+            results[5] = { test: 'Market Order Test ($20)', status: 'warning', message: '⚠️ Order placement unauthorized - trading permissions may be required' };
+          } else {
+            results[5] = { test: 'Market Order Test ($20)', status: 'error', message: `❌ Order failed: ${orderResponse?.retMsg}` };
+          }
+        } else {
+          results[5] = { test: 'Market Order Test ($20)', status: 'error', message: '❌ Could not get BTC price for order calculation' };
+        }
+      } catch (error) {
+        results[5] = { test: 'Market Order Test ($20)', status: 'error', message: `❌ Order test failed: ${error}` };
+      }
+      setTestResults([...results]);
+      
       // Summary
       const successCount = results.filter(r => r.status === 'success').length;
       const totalTests = results.length;
