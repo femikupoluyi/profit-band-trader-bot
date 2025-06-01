@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -66,6 +65,7 @@ export class EndOfDayService {
             console.log(`Closing profitable trade for ${trade.symbol}`);
             
             const sellOrder = await this.bybitService.placeOrder({
+              category: 'spot',
               symbol: trade.symbol,
               side: 'Sell',
               orderType: 'Market',
