@@ -180,7 +180,7 @@ export const useTradingSystemTests = () => {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsTesting(false);
     }
   };
 
