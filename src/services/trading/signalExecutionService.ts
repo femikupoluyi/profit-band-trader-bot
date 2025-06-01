@@ -233,6 +233,9 @@ export class SignalExecutionService {
       }
 
       // Create trade record in database only if Bybit order was successful
+      // Use only valid status values that match the database constraint
+      const validStatus = tradeStatus === 'filled' ? 'filled' : 'pending';
+      
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -242,7 +245,7 @@ export class SignalExecutionService {
           order_type: orderType,
           price: actualFillPrice,
           quantity: quantity,
-          status: tradeStatus,
+          status: validStatus,
           bybit_order_id: bybitOrderId,
         })
         .select()
@@ -256,7 +259,7 @@ export class SignalExecutionService {
       console.log(`✅ Trade record created successfully for ${symbol}`);
       console.log(`  Trade ID: ${trade.id}`);
       console.log(`  Bybit Order ID: ${bybitOrderId}`);
-      console.log(`  Status: ${tradeStatus}`);
+      console.log(`  Status: ${validStatus}`);
       console.log(`  Order Type: ${orderType.toUpperCase()}`);
       console.log(`  Actual Fill Price: $${actualFillPrice.toFixed(6)}`);
       console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
@@ -269,7 +272,7 @@ export class SignalExecutionService {
         tradeId: trade.id,
         bybitOrderId,
         orderType,
-        status: tradeStatus,
+        status: validStatus,
         takeProfitTarget: takeProfitPercent,
         entryOffset: this.config.entry_offset_percent,
         maxOrderAmount: this.config.max_order_amount_usd,

@@ -71,6 +71,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
       }
 
       // Update trade status to closed in database
+      // Only update trades that are in valid statuses that can be closed
       const { error } = await supabase
         .from('trades')
         .update({
@@ -79,7 +80,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .in('status', ['pending', 'filled']);
+        .in('status', ['pending', 'filled']); // Only close pending or filled trades
 
       if (error) {
         console.error('Error updating trade status:', error);

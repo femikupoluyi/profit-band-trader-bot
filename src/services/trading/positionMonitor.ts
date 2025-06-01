@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -152,6 +153,7 @@ export class PositionMonitor {
       }
 
       // Update trade status to closed with correct P&L
+      // Use only 'closed' status which should be valid
       const { error } = await supabase
         .from('trades')
         .update({
