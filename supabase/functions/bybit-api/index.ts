@@ -69,11 +69,15 @@ serve(async (req) => {
         }
       });
 
-      // Sort parameters for signature
-      queryParams.sort();
+      // Sort parameters for signature - this is crucial for Bybit API
+      const sortedParams = Array.from(queryParams.entries()).sort();
+      const sortedQueryParams = new URLSearchParams();
+      sortedParams.forEach(([key, value]) => {
+        sortedQueryParams.append(key, value);
+      });
       
-      // Create signature - sign the query string only
-      const queryString = queryParams.toString();
+      // Create signature - sign the sorted query string
+      const queryString = sortedQueryParams.toString();
       console.log('GET query string for signature:', queryString);
       
       // Generate HMAC SHA256 signature
@@ -95,8 +99,8 @@ serve(async (req) => {
         .join('');
 
       console.log('Generated GET signature for MAIN exchange:', signature);
-      queryParams.append('sign', signature);
-      finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
+      sortedQueryParams.append('sign', signature);
+      finalUrl = `${baseUrl}${endpoint}?${sortedQueryParams.toString()}`;
       
     } else {
       // For POST requests, use V5 signature method
@@ -193,3 +197,4 @@ serve(async (req) => {
     );
   }
 });
+
