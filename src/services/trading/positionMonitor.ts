@@ -1,17 +1,19 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { OrderFillChecker } from './orderFillChecker';
 
 export class PositionMonitor {
   private userId: string;
   private bybitService: BybitService;
   private config: TradingConfigData;
+  private orderFillChecker: OrderFillChecker;
 
   constructor(userId: string, bybitService: BybitService, config: TradingConfigData) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.config = config;
+    this.orderFillChecker = new OrderFillChecker(userId, bybitService);
     
     console.log('PositionMonitor initialized with config:', {
       takeProfitPercent: this.config.take_profit_percent,
@@ -25,25 +27,31 @@ export class PositionMonitor {
     console.log(`Using take profit percentage from config: ${this.config.take_profit_percent}%`);
     
     try {
-      const { data: activeTrades } = await supabase
+      // First, check and fill any pending orders that should be filled
+      await this.orderFillChecker.checkAndFillPendingOrders();
+
+      // Then monitor filled positions for take profit
+      const { data: filledTrades } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'partial_filled', 'filled']);
+        .eq('status', 'filled');
 
-      if (!activeTrades || activeTrades.length === 0) {
-        console.log('No active trades to monitor');
+      if (!filledTrades || filledTrades.length === 0) {
+        console.log('No filled trades to monitor for take profit');
         return;
       }
 
-      console.log(`Monitoring ${activeTrades.length} active trades using config take profit: ${this.config.take_profit_percent}%...`);
+      console.log(`Monitoring ${filledTrades.length} filled trades for take profit using config: ${this.config.take_profit_percent}%...`);
 
-      for (const trade of activeTrades) {
+      for (const trade of filledTrades) {
         await this.checkTradeForClosure(trade);
       }
     } catch (error) {
       console.error('Error in position monitoring:', error);
-      await this.logActivity('system_error', 'Position monitoring failed', { error: error.message });
+      await this.logActivity('system_error', 'Position monitoring failed', { 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   }
 
@@ -95,7 +103,7 @@ export class PositionMonitor {
     } catch (error) {
       console.error(`Error checking trade ${trade.id}:`, error);
       await this.logActivity('system_error', `Failed to check trade ${trade.id}`, { 
-        error: error.message, 
+        error: error instanceof Error ? error.message : 'Unknown error', 
         tradeId: trade.id,
         symbol: trade.symbol 
       });
@@ -151,7 +159,7 @@ export class PositionMonitor {
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .in('status', ['pending', 'partial_filled', 'filled']);
+        .eq('status', 'filled');
 
       if (error) {
         console.error(`Database error closing position:`, error);
@@ -178,7 +186,7 @@ export class PositionMonitor {
     } catch (error) {
       console.error(`Error closing position for ${trade.symbol}:`, error);
       await this.logActivity('system_error', `Failed to close position for ${trade.symbol}`, { 
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         tradeId: trade.id,
         symbol: trade.symbol 
       });

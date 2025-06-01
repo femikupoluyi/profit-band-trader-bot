@@ -82,9 +82,14 @@ export class SignalExecutionService {
         return;
       }
 
+      // Get current market price to determine if we should place a market or limit order
+      const marketData = await this.bybitService.getMarketPrice(signal.symbol);
+      const currentMarketPrice = marketData.price;
+      
       // Calculate entry price with offset using config value
       const entryPrice = signal.price * (1 + entryOffsetPercent / 100);
       console.log(`📈 Entry price calculated: $${entryPrice.toFixed(6)} (${entryOffsetPercent}% above support)`);
+      console.log(`📊 Current market price: $${currentMarketPrice.toFixed(6)}`);
 
       // Calculate quantity based on max order amount from config
       const quantity = maxOrderAmountUsd / entryPrice;
@@ -105,21 +110,37 @@ export class SignalExecutionService {
         return;
       }
 
+      // Determine order type and execution price
+      let orderType: 'market' | 'limit';
+      let executionPrice: number;
+
+      if (currentMarketPrice <= entryPrice) {
+        // Market price is below or at our entry price, place market order for immediate fill
+        orderType = 'market';
+        executionPrice = currentMarketPrice;
+        console.log(`💡 Market price (${currentMarketPrice.toFixed(6)}) <= entry price (${entryPrice.toFixed(6)}), placing MARKET order`);
+      } else {
+        // Market price is above our entry price, place limit order to wait for better price
+        orderType = 'limit';
+        executionPrice = entryPrice;
+        console.log(`💡 Market price (${currentMarketPrice.toFixed(6)}) > entry price (${entryPrice.toFixed(6)}), placing LIMIT order`);
+      }
+
       // Execute the trade
-      await this.executeBuyOrder(signal.symbol, entryPrice, quantity, signal, takeProfitPercent);
+      await this.executeBuyOrder(signal.symbol, executionPrice, quantity, signal, takeProfitPercent, orderType);
 
     } catch (error) {
       console.error(`Error executing signal for ${signal.symbol}:`, error);
       await this.logActivity('execution_error', `Signal execution failed for ${signal.symbol}`, { 
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         signal: signal 
       });
     }
   }
 
-  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number): Promise<void> {
+  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number, orderType: 'market' | 'limit'): Promise<void> {
     try {
-      console.log(`\n💰 Executing buy order for ${symbol}:`);
+      console.log(`\n💰 Executing ${orderType.toUpperCase()} buy order for ${symbol}:`);
       console.log(`  Price: $${price.toFixed(6)}`);
       console.log(`  Quantity: ${quantity.toFixed(6)}`);
       console.log(`  Total Value: $${(price * quantity).toFixed(2)}`);
@@ -131,30 +152,34 @@ export class SignalExecutionService {
       }
 
       let bybitOrderId = `mock_${Date.now()}`;
+      let tradeStatus: 'pending' | 'filled' = orderType === 'market' ? 'filled' : 'pending';
 
       // Try to place actual order on Bybit Demo if service is available
       try {
-        console.log(`🔄 Attempting to place order on Bybit Demo for ${symbol}...`);
+        console.log(`🔄 Attempting to place ${orderType.toUpperCase()} order on Bybit Demo for ${symbol}...`);
         
-        // Place market buy order on Bybit Demo
-        const orderResult = await this.bybitService.placeOrder({
-          category: 'spot',
+        // Place buy order on Bybit Demo
+        const orderParams = {
+          category: 'spot' as const,
           symbol: symbol,
-          side: 'Buy',
-          orderType: 'Market',
+          side: 'Buy' as const,
+          orderType: orderType === 'market' ? 'Market' as const : 'Limit' as const,
           qty: quantity.toString(),
-          timeInForce: 'IOC'
-        });
+          ...(orderType === 'limit' ? { price: price.toString() } : {}),
+          timeInForce: orderType === 'market' ? 'IOC' as const : 'GTC' as const
+        };
+
+        const orderResult = await this.bybitService.placeOrder(orderParams);
 
         if (orderResult && orderResult.orderId) {
           bybitOrderId = orderResult.orderId;
-          console.log(`✅ Successfully placed order on Bybit Demo: ${bybitOrderId}`);
-          await this.logActivity('trade_created', `Real order placed on Bybit Demo for ${symbol}`, {
+          console.log(`✅ Successfully placed ${orderType.toUpperCase()} order on Bybit Demo: ${bybitOrderId}`);
+          await this.logActivity('trade_created', `Real ${orderType} order placed on Bybit Demo for ${symbol}`, {
             bybitOrderId,
             orderResult,
             symbol,
             quantity,
-            orderType: 'Market Buy'
+            orderType: `${orderType} Buy`
           });
         } else {
           console.log(`⚠️ Bybit order placement returned no order ID, using mock order`);
@@ -165,10 +190,10 @@ export class SignalExecutionService {
           });
         }
       } catch (bybitError) {
-        console.error(`⚠️ Failed to place order on Bybit Demo: ${bybitError.message}`);
+        console.error(`⚠️ Failed to place order on Bybit Demo: ${bybitError instanceof Error ? bybitError.message : 'Unknown error'}`);
         console.log(`📝 Falling back to mock order for tracking purposes`);
         await this.logActivity('trade_created', `Bybit order failed, using mock order for ${symbol}`, {
-          bybitError: bybitError.message,
+          bybitError: bybitError instanceof Error ? bybitError.message : 'Unknown error',
           symbol,
           fallbackToMock: true
         });
@@ -181,10 +206,10 @@ export class SignalExecutionService {
           user_id: this.userId,
           symbol,
           side: 'buy',
-          order_type: 'market',
+          order_type: orderType,
           price: price,
           quantity: quantity,
-          status: 'pending' as const,
+          status: tradeStatus,
           bybit_order_id: bybitOrderId,
         })
         .select()
@@ -198,20 +223,24 @@ export class SignalExecutionService {
       console.log(`✅ Trade record created successfully for ${symbol}`);
       console.log(`  Trade ID: ${trade.id}`);
       console.log(`  Bybit Order ID: ${bybitOrderId}`);
+      console.log(`  Status: ${tradeStatus}`);
+      console.log(`  Order Type: ${orderType.toUpperCase()}`);
       console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
 
-      await this.logActivity('trade_created', `Buy order executed for ${symbol} (Order ID: ${bybitOrderId})`, {
+      await this.logActivity('trade_created', `${orderType.toUpperCase()} buy order executed for ${symbol} (Order ID: ${bybitOrderId})`, {
         symbol,
         price,
         quantity,
         totalValue: price * quantity,
         tradeId: trade.id,
         bybitOrderId,
+        orderType,
+        status: tradeStatus,
         takeProfitTarget: takeProfitPercent,
         entryOffset: this.config.entry_offset_percent,
         maxOrderAmount: this.config.max_order_amount_usd,
         maxPositionsPerPair: this.config.max_positions_per_pair,
-        orderType: bybitOrderId.startsWith('mock_') ? 'Mock Order' : 'Real Bybit Order'
+        orderSource: bybitOrderId.startsWith('mock_') ? 'Mock Order' : 'Real Bybit Order'
       });
 
       // Mark signal as processed
