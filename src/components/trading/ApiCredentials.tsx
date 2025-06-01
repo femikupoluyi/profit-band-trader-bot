@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Key, Save, CheckCircle } from 'lucide-react';
+import { Key, Save, CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface ApiCredential {
   id: string;
@@ -27,8 +27,8 @@ const ApiCredentials = () => {
     exchange_name: 'bybit',
     api_key: '',
     api_secret: '',
-    testnet: true,
-    is_active: true, // Default to active
+    testnet: false, // Default to MAIN exchange
+    is_active: true,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [hasExisting, setHasExisting] = useState(false);
@@ -62,10 +62,10 @@ const ApiCredentials = () => {
         setHasExisting(true);
       } else {
         console.log('No existing credentials found');
-        // Set default values for new credentials
+        // Set default values for new credentials - MAIN exchange
         setCredentials(prev => ({
           ...prev,
-          testnet: true,
+          testnet: false, // MAIN exchange by default
           is_active: true
         }));
       }
@@ -93,12 +93,12 @@ const ApiCredentials = () => {
         exchange_name: 'bybit',
         api_key: credentials.api_key,
         api_secret: credentials.api_secret,
-        testnet: credentials.testnet,
+        testnet: false, // Force MAIN exchange
         is_active: credentials.is_active,
         updated_at: new Date().toISOString(),
       };
 
-      console.log('Saving credentials:', { ...credentialData, api_secret: '[HIDDEN]' });
+      console.log('Saving credentials for MAIN exchange:', { ...credentialData, api_secret: '[HIDDEN]' });
 
       if (hasExisting) {
         const { error } = await supabase
@@ -111,7 +111,7 @@ const ApiCredentials = () => {
           console.error('Update error:', error);
           throw error;
         }
-        console.log('Credentials updated successfully');
+        console.log('MAIN exchange credentials updated successfully');
       } else {
         const { data, error } = await supabase
           .from('api_credentials')
@@ -124,14 +124,14 @@ const ApiCredentials = () => {
           throw error;
         }
         
-        console.log('Credentials inserted successfully:', data?.id);
+        console.log('MAIN exchange credentials inserted successfully:', data?.id);
         setCredentials(prev => ({ ...prev, id: data.id }));
         setHasExisting(true);
       }
 
       toast({
         title: "Success",
-        description: "Bybit testnet API credentials saved successfully.",
+        description: "Bybit MAIN exchange API credentials saved successfully.",
       });
 
       // Force a re-fetch to confirm the save
@@ -160,7 +160,7 @@ const ApiCredentials = () => {
 
     setIsLoading(true);
     try {
-      console.log('Testing Bybit testnet API connection...');
+      console.log('Testing Bybit MAIN exchange API connection...');
       
       const { data: apiResponse, error: apiError } = await supabase.functions.invoke('bybit-api', {
         body: {
@@ -170,7 +170,7 @@ const ApiCredentials = () => {
             category: 'spot',
             symbol: 'BTCUSDT'
           },
-          isDemoTrading: true
+          isDemoTrading: false // MAIN exchange
         }
       });
 
@@ -188,9 +188,9 @@ const ApiCredentials = () => {
         const price = apiResponse.result?.list?.[0]?.lastPrice;
         toast({
           title: "Connection Successful",
-          description: `Successfully connected to Bybit testnet! BTC price: $${price}`,
+          description: `Successfully connected to Bybit MAIN exchange! BTC price: $${price}`,
         });
-        console.log('Bybit testnet API connection successful:', apiResponse);
+        console.log('Bybit MAIN exchange API connection successful:', apiResponse);
       } else {
         toast({
           title: "Connection Test Warning",
@@ -216,44 +216,55 @@ const ApiCredentials = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Key className="h-5 w-5" />
-          Bybit Testnet API Credentials
+          Bybit MAIN Exchange API Credentials
           {hasExisting && credentials.is_active && (
             <CheckCircle className="h-5 w-5 text-green-500" />
           )}
         </CardTitle>
         <CardDescription>
-          Configure your Bybit testnet API credentials for automated trading. Always use testnet for safe testing.
+          Configure your Bybit MAIN exchange API credentials for live trading with real market data.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-orange-800">
+            <AlertTriangle className="h-5 w-5" />
+            <span className="font-semibold">Live Trading Environment</span>
+          </div>
+          <p className="text-orange-700 text-sm mt-1">
+            You are now using the MAIN Bybit exchange. Real money and live trading is enabled. Please be cautious.
+          </p>
+        </div>
+
         <div className="space-y-2">
-          <Label htmlFor="api_key">Testnet API Key</Label>
+          <Label htmlFor="api_key">MAIN Exchange API Key</Label>
           <Input
             id="api_key"
             type="text"
             value={credentials.api_key}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_key: e.target.value }))}
-            placeholder="Enter your Bybit testnet API key"
+            placeholder="Enter your Bybit MAIN exchange API key"
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="api_secret">Testnet API Secret</Label>
+          <Label htmlFor="api_secret">MAIN Exchange API Secret</Label>
           <Input
             id="api_secret"
             type="password"
             value={credentials.api_secret}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_secret: e.target.value }))}
-            placeholder="Enter your Bybit testnet API secret"
+            placeholder="Enter your Bybit MAIN exchange API secret"
           />
         </div>
 
         <div className="flex items-center space-x-2">
           <Switch
-            checked={credentials.testnet}
-            onCheckedChange={(checked) => setCredentials(prev => ({ ...prev, testnet: checked }))}
+            checked={!credentials.testnet}
+            onCheckedChange={(checked) => setCredentials(prev => ({ ...prev, testnet: !checked }))}
+            disabled={true} // Lock to main exchange
           />
-          <Label>Use Testnet (Recommended - Always keep enabled)</Label>
+          <Label>Use MAIN Exchange (Live Trading)</Label>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -280,23 +291,23 @@ const ApiCredentials = () => {
 
         {hasExisting && (
           <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-            ✅ Bybit testnet API credentials are configured and {credentials.is_active ? 'ACTIVE' : 'INACTIVE'}
+            ✅ Bybit MAIN exchange API credentials are configured and {credentials.is_active ? 'ACTIVE' : 'INACTIVE'}
             <br />
-            <small>Using Bybit Testnet environment for safe trading</small>
+            <small>Using Bybit MAIN exchange for live trading</small>
           </div>
         )}
 
         <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
-          💡 <strong>Get Testnet Credentials:</strong> Visit{' '}
+          💡 <strong>Get MAIN Exchange Credentials:</strong> Visit{' '}
           <a 
-            href="https://testnet.bybit.com" 
+            href="https://www.bybit.com/app/user/api-management" 
             target="_blank" 
             rel="noopener noreferrer"
             className="underline font-semibold"
           >
-            testnet.bybit.com
+            Bybit API Management
           </a>
-          {' '}→ Create account → API Management → Create API Key with trading permissions
+          {' '}→ Create API Key with trading permissions for the MAIN exchange
         </div>
       </CardContent>
     </Card>

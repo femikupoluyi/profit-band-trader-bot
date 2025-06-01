@@ -12,7 +12,7 @@ export class CredentialsManager {
 
   async fetchCredentials(): Promise<BybitService | null> {
     try {
-      console.log('Fetching API credentials for user:', this.userId);
+      console.log('Fetching API credentials for MAIN exchange for user:', this.userId);
       
       const { data: credentials, error } = await supabase
         .from('api_credentials')
@@ -25,7 +25,7 @@ export class CredentialsManager {
       if (error) {
         if (error.code === 'PGRST116') {
           console.log('No active API credentials found for user:', this.userId);
-          await this.logActivity('error', 'No active API credentials found. Please configure your Bybit testnet API credentials in the API Setup tab.');
+          await this.logActivity('error', 'No active API credentials found. Please configure your Bybit MAIN exchange API credentials in the API Setup tab.');
         } else {
           console.error('Error fetching credentials:', error);
           await this.logActivity('error', `Error fetching API credentials: ${error.message}`);
@@ -34,24 +34,24 @@ export class CredentialsManager {
       }
 
       if (credentials && credentials.api_key && credentials.api_secret) {
-        console.log('Found valid API credentials for Bybit testnet:', {
-          testnet: credentials.testnet,
+        console.log('Found valid API credentials for Bybit MAIN exchange:', {
+          mainExchange: true,
           apiKey: credentials.api_key ? `${credentials.api_key.substring(0, 8)}...` : 'Missing',
           apiSecret: credentials.api_secret ? 'Present' : 'Missing',
           isActive: credentials.is_active
         });
         
-        await this.logActivity('info', `Found API credentials for Bybit testnet (active: ${credentials.is_active})`);
+        await this.logActivity('info', `Found API credentials for Bybit MAIN exchange (active: ${credentials.is_active})`);
         
         const bybitService = new BybitService({
           apiKey: credentials.api_key,
           apiSecret: credentials.api_secret,
-          testnet: credentials.testnet,
+          testnet: false, // Force MAIN exchange
         });
 
-        // Test the connection to verify credentials work
+        // Test the connection to verify credentials work on MAIN exchange
         try {
-          console.log('Testing API connection using Supabase edge function...');
+          console.log('Testing API connection using Supabase edge function for MAIN exchange...');
           const { data: testResult, error: testError } = await supabase.functions.invoke('bybit-api', {
             body: {
               endpoint: '/v5/market/tickers',
@@ -60,29 +60,30 @@ export class CredentialsManager {
                 category: 'spot',
                 symbol: 'BTCUSDT'
               },
-              isDemoTrading: true
+              isDemoTrading: false, // MAIN exchange
+              cacheBust: Math.random().toString()
             }
           });
 
           if (testError) {
-            console.log('API connection test failed with error:', testError);
-            await this.logActivity('error', 'API connection test failed', { error: testError.message });
+            console.log('MAIN exchange API connection test failed with error:', testError);
+            await this.logActivity('error', 'MAIN exchange API connection test failed', { error: testError.message });
           } else if (testResult?.retCode === 0) {
-            console.log('API connection test successful');
-            await this.logActivity('info', 'API connection established successfully', { 
-              testnet: credentials.testnet,
+            console.log('MAIN exchange API connection test successful');
+            await this.logActivity('info', 'MAIN exchange API connection established successfully', { 
+              mainExchange: true,
               response: 'Valid API response received'
             });
           } else {
-            console.log('API connection test failed:', testResult);
-            await this.logActivity('error', 'API connection test failed', { 
+            console.log('MAIN exchange API connection test failed:', testResult);
+            await this.logActivity('error', 'MAIN exchange API connection test failed', { 
               retCode: testResult?.retCode, 
               retMsg: testResult?.retMsg 
             });
           }
         } catch (error) {
-          console.log('API connection test failed:', error);
-          await this.logActivity('error', 'API connection failed', { error: error.message });
+          console.log('MAIN exchange API connection test failed:', error);
+          await this.logActivity('error', 'MAIN exchange API connection failed', { error: error.message });
         }
 
         return bybitService;

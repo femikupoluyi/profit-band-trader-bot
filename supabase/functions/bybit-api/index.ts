@@ -12,6 +12,8 @@ interface BybitRequest {
   method?: string;
   params?: Record<string, any>;
   isDemoTrading?: boolean;
+  timestamp?: number;
+  cacheBust?: string;
 }
 
 serve(async (req) => {
@@ -26,27 +28,27 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { endpoint, method = 'GET', params = {}, isDemoTrading = true }: BybitRequest = await req.json();
+    const { endpoint, method = 'GET', params = {}, isDemoTrading = false }: BybitRequest = await req.json();
 
-    // Get API credentials from secrets - using testnet credentials
-    const apiKey = Deno.env.get('BYBIT_DEMO_API_KEY');
-    const apiSecret = Deno.env.get('BYBIT_DEMO_API_SECRET');
+    // Get API credentials from secrets - now using MAIN exchange credentials
+    const apiKey = Deno.env.get('BYBIT_API_KEY');
+    const apiSecret = Deno.env.get('BYBIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
-      console.error('Missing Bybit testnet API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
+      console.error('Missing Bybit MAIN API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
       return new Response(
-        JSON.stringify({ error: 'Bybit testnet API credentials not configured' }),
+        JSON.stringify({ error: 'Bybit MAIN API credentials not configured. Please add BYBIT_API_KEY and BYBIT_API_SECRET to Supabase secrets.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Using Bybit testnet credentials for API call');
+    console.log('Using Bybit MAIN exchange credentials for API call');
 
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
     
-    // Always use testnet environment
-    const baseUrl = 'https://api-demo.bybit.com';
+    // Always use MAIN exchange environment
+    const baseUrl = 'https://api.bybit.com';
     
     let finalUrl: string;
     let requestBody: string | undefined;
@@ -58,9 +60,10 @@ serve(async (req) => {
       queryParams.append('timestamp', timestamp);
       queryParams.append('recv_window', recvWindow);
       
-      // Add all other params
+      // Add all other params (excluding cache busting params from signature)
       Object.keys(params).forEach(key => {
-        if (params[key] !== undefined && params[key] !== null) {
+        if (params[key] !== undefined && params[key] !== null && 
+            !key.startsWith('_') && key !== 'cacheBust') {
           queryParams.append(key, params[key].toString());
         }
       });
@@ -90,20 +93,29 @@ serve(async (req) => {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
-      console.log('Generated GET signature:', signature);
+      console.log('Generated GET signature for MAIN exchange:', signature);
       queryParams.append('sign', signature);
       finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
       
     } else {
-      // For POST requests, create proper signature according to Bybit V5 API specs
+      // For POST requests, create proper signature
+      const cleanParams = { ...params };
+      // Remove cache busting parameters from the actual request
+      delete cleanParams._t;
+      delete cleanParams._cache_bust;
+      delete cleanParams._nocache;
+      delete cleanParams._fresh;
+      delete cleanParams._live;
+      delete cleanParams.cacheBust;
+      
       const requestParams = {
-        ...params,
+        ...cleanParams,
         api_key: apiKey,
         timestamp,
         recv_window: recvWindow,
       };
 
-      // Create sorted query string for signature (V5 API requirement)
+      // Create sorted query string for signature
       const sortedKeys = Object.keys(requestParams).sort();
       const queryString = sortedKeys
         .map(key => `${key}=${requestParams[key]}`)
@@ -129,29 +141,31 @@ serve(async (req) => {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
-      console.log('Generated POST signature:', signature);
+      console.log('Generated POST signature for MAIN exchange:', signature);
       
-      // For V5 API, send as JSON body without signature in body
-      requestBody = JSON.stringify(params);
+      // For V5 API, send clean params as JSON body
+      requestBody = JSON.stringify(cleanParams);
       finalUrl = `${baseUrl}${endpoint}`;
     }
 
-    console.log(`Making ${method} request to Bybit testnet:`, finalUrl);
+    console.log(`Making ${method} request to Bybit MAIN exchange:`, finalUrl);
     if (requestBody) {
       console.log('Request body:', requestBody);
     }
 
-    // Prepare headers according to V5 API specs
+    // Prepare headers for MAIN exchange
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-BAPI-API-KEY': apiKey,
       'X-BAPI-TIMESTAMP': timestamp,
       'X-BAPI-RECV-WINDOW': recvWindow,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     };
 
-    // Add signature to headers for both GET and POST
+    // Add signature to headers for POST requests
     if (method === 'POST') {
-      // For POST, we need to sign timestamp + api_key + recv_window + request_body
       const postSignString = timestamp + apiKey + recvWindow + (requestBody || '');
       console.log('POST signature string:', postSignString);
       
@@ -176,27 +190,34 @@ serve(async (req) => {
       console.log('POST signature for headers:', signature);
     }
 
-    console.log('Request headers:', headers);
+    console.log('Request headers for MAIN exchange:', headers);
 
     const response = await fetch(finalUrl, {
       method,
       headers,
       body: requestBody,
+      cache: 'no-store'  // Ensure no caching
     });
 
     const responseData = await response.json();
-    console.log('Bybit testnet response:', responseData);
+    console.log('Bybit MAIN exchange response:', responseData);
 
     return new Response(
       JSON.stringify(responseData),
       { 
         status: response.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       }
     );
 
   } catch (error) {
-    console.error('Bybit testnet API error:', error);
+    console.error('Bybit MAIN exchange API error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
