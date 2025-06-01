@@ -30,21 +30,53 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
   const handleManualClose = async () => {
     try {
       console.log(`Manually closing trade ${trade.id} for ${trade.symbol}`);
+      console.log(`Trade current status: ${trade.status}`);
       
-      // Update trade status to closed in database
+      // First, verify the trade exists and get its current status
+      const { data: currentTrade, error: fetchError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('id', trade.id)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching current trade:', fetchError);
+        toast({
+          title: "Error",
+          description: "Trade not found in database",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('Current trade data:', currentTrade);
+
+      // Only update if trade is not already closed
+      if (currentTrade.status === 'closed') {
+        console.log('Trade is already closed');
+        toast({
+          title: "Info",
+          description: "Trade is already closed",
+        });
+        onClose(trade);
+        return;
+      }
+
+      // Update trade status to closed in database with explicit status value
       const { error } = await supabase
         .from('trades')
         .update({
           status: 'closed',
           updated_at: new Date().toISOString()
         })
-        .eq('id', trade.id);
+        .eq('id', trade.id)
+        .eq('status', currentTrade.status); // Only update if status hasn't changed
 
       if (error) {
         console.error('Error updating trade status:', error);
         toast({
           title: "Error",
-          description: "Failed to close trade in database",
+          description: `Failed to close trade: ${error.message}`,
           variant: "destructive",
         });
         return;
@@ -64,7 +96,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
       console.error('Error in manual close:', error);
       toast({
         title: "Error",
-        description: "Failed to close trade",
+        description: `Failed to close trade: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive",
       });
     }
@@ -92,6 +124,10 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
           <AlertDialogDescription>
             Are you sure you want to manually close this {trade.symbol} position?
             <br />
+            <br />
+            <strong>Trade ID:</strong> {trade.id}
+            <br />
+            <strong>Current Status:</strong> {trade.status}
             <br />
             <strong>Current P&L:</strong> <span className={`font-medium ${
               (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'

@@ -33,6 +33,7 @@ serve(async (req) => {
     const apiSecret = Deno.env.get('BYBIT_DEMO_API_SECRET');
 
     if (!apiKey || !apiSecret) {
+      console.error('Missing API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
       return new Response(
         JSON.stringify({ error: 'Bybit API credentials not configured' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -62,50 +63,13 @@ serve(async (req) => {
         }
       });
 
-      // Sort parameters for signature
+      // Sort parameters for signature - this is critical for Bybit
       queryParams.sort();
       
-      // Create signature payload
-      const signaturePayload = queryParams.toString() + apiSecret;
+      // Create signature payload - FIXED: proper concatenation
+      const queryString = queryParams.toString();
+      const signaturePayload = queryString + apiSecret;
       console.log('GET signature payload:', signaturePayload);
-      
-      // Generate HMAC SHA256 signature
-      const encoder = new TextEncoder();
-      const keyData = encoder.encode(apiSecret);
-      const dataToSign = encoder.encode(queryParams.toString());
-      
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-      
-      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
-      const signature = Array.from(new Uint8Array(signatureBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      queryParams.append('sign', signature);
-      finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
-      
-    } else {
-      // For POST requests, create JSON body with signature
-      const requestParams = {
-        ...params,
-        api_key: apiKey,
-        timestamp,
-        recv_window: recvWindow,
-      };
-
-      // Create sorted query string for signature
-      const sortedKeys = Object.keys(requestParams).sort();
-      const queryString = sortedKeys
-        .map(key => `${key}=${requestParams[key]}`)
-        .join('&');
-      
-      console.log('POST query string for signature:', queryString);
       
       // Generate HMAC SHA256 signature
       const encoder = new TextEncoder();
@@ -125,6 +89,46 @@ serve(async (req) => {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
+      console.log('Generated signature:', signature);
+      queryParams.append('sign', signature);
+      finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
+      
+    } else {
+      // For POST requests, create JSON body with signature
+      const requestParams = {
+        ...params,
+        api_key: apiKey,
+        timestamp,
+        recv_window: recvWindow,
+      };
+
+      // Create sorted query string for signature - FIXED: proper sorting and concatenation
+      const sortedKeys = Object.keys(requestParams).sort();
+      const queryString = sortedKeys
+        .map(key => `${key}=${requestParams[key]}`)
+        .join('&');
+      
+      console.log('POST query string for signature:', queryString);
+      
+      // Generate HMAC SHA256 signature - FIXED: sign the query string, not with secret appended
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(apiSecret);
+      const dataToSign = encoder.encode(queryString);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
+      const signature = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      console.log('Generated POST signature:', signature);
       requestParams.sign = signature;
       requestBody = JSON.stringify(requestParams);
       finalUrl = `${baseUrl}${endpoint}`;
