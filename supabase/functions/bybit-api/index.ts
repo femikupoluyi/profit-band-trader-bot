@@ -108,41 +108,6 @@ serve(async (req) => {
       delete cleanParams._live;
       delete cleanParams.cacheBust;
       
-      const requestParams = {
-        ...cleanParams,
-        api_key: apiKey,
-        timestamp,
-        recv_window: recvWindow,
-      };
-
-      // Create sorted query string for signature
-      const sortedKeys = Object.keys(requestParams).sort();
-      const queryString = sortedKeys
-        .map(key => `${key}=${requestParams[key]}`)
-        .join('&');
-      
-      console.log('POST query string for signature:', queryString);
-      
-      // Generate HMAC SHA256 signature
-      const encoder = new TextEncoder();
-      const keyData = encoder.encode(apiSecret);
-      const dataToSign = encoder.encode(queryString);
-      
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-      
-      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
-      const signature = Array.from(new Uint8Array(signatureBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      console.log('Generated POST signature for MAIN exchange:', signature);
-      
       // For V5 API, send clean params as JSON body
       requestBody = JSON.stringify(cleanParams);
       finalUrl = `${baseUrl}${endpoint}`;

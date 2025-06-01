@@ -24,16 +24,22 @@ export const useTradingSystemTests = () => {
       results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit MAIN exchange API credentials...' });
       setTestResults([...results]);
       
-      const { data: credentials } = await supabase
+      const { data: credentials, error: credError } = await supabase
         .from('api_credentials')
         .select('*')
         .eq('user_id', user.id)
         .eq('exchange_name', 'bybit')
-        .eq('is_active', true)
-        .single();
+        .eq('is_active', true);
       
-      if (credentials && credentials.api_key && credentials.api_secret) {
-        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit MAIN exchange API credentials configured' };
+      if (credError) {
+        results[0] = { test: 'API Credentials', status: 'error', message: `❌ Error fetching credentials: ${credError.message}` };
+      } else if (credentials && credentials.length > 0) {
+        const cred = credentials[0];
+        if (cred.api_key && cred.api_secret) {
+          results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit MAIN exchange API credentials found and active' };
+        } else {
+          results[0] = { test: 'API Credentials', status: 'error', message: '❌ API credentials incomplete - missing key or secret' };
+        }
       } else {
         results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit MAIN exchange API credentials not found. Please configure them in the API Setup tab.' };
       }
@@ -122,7 +128,7 @@ export const useTradingSystemTests = () => {
       }
       setTestResults([...results]);
       
-      // Test 5: Test account balance check (instead of order placement)
+      // Test 5: Test account balance check with proper error handling
       results.push({ test: 'Account Balance Check', status: 'running', message: 'Testing account balance access on Bybit MAIN exchange...' });
       setTestResults([...results]);
       
@@ -142,6 +148,8 @@ export const useTradingSystemTests = () => {
           results[4] = { test: 'Account Balance Check', status: 'error', message: `❌ Balance check failed: ${balanceError.message}` };
         } else if (balanceResponse?.retCode === 0) {
           results[4] = { test: 'Account Balance Check', status: 'success', message: '✅ Account balance access working on MAIN exchange' };
+        } else if (balanceResponse?.retCode === 10001) {
+          results[4] = { test: 'Account Balance Check', status: 'error', message: '❌ API signature error - check your API credentials setup' };
         } else if (balanceResponse?.retCode === 10003) {
           results[4] = { test: 'Account Balance Check', status: 'warning', message: '⚠️ API credentials may need trading permissions enabled' };
         } else {
