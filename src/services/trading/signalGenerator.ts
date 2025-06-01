@@ -19,16 +19,18 @@ export class SignalGenerator {
   ): Promise<TradingSignal | null> {
     try {
       // Use config values for calculations
-      const entryOffsetPercent = this.config.entry_offset_percent || 1.5;
-      const takeProfitPercent = this.config.take_profit_percent || 2.0;
+      const entryOffsetPercent = this.config.entry_offset_percent || 0.5;
+      const takeProfitPercent = this.config.take_profit_percent || 1.0;
       
       const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
-      const priceWithinRange = currentPrice <= entryPrice && currentPrice >= supportLevel.price * 0.98;
+      // Updated entry conditions: price within 2.5% below support and at/below entry price
+      const priceWithinRange = currentPrice <= entryPrice && currentPrice >= supportLevel.price * 0.975;
       
       console.log(`${symbol} signal check using config - Entry offset: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%`);
       console.log(`Current ${currentPrice}, Support ${supportLevel.price.toFixed(4)}, Entry ${entryPrice.toFixed(4)}, TP ${takeProfitPrice.toFixed(4)}, InRange: ${priceWithinRange}`);
+      console.log(`Entry range: ${(supportLevel.price * 0.975).toFixed(4)} - ${entryPrice.toFixed(4)} (2.5% below support to ${entryOffsetPercent}% above)`);
 
       if (priceWithinRange) {
         const signal: TradingSignal = {
@@ -36,7 +38,7 @@ export class SignalGenerator {
           action: 'buy',
           price: currentPrice,
           confidence: Math.max(supportLevel.strength, 0.6),
-          reasoning: `Support level at ${supportLevel.price.toFixed(4)}, entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)} (Config: ${entryOffsetPercent}% entry, ${takeProfitPercent}% TP)`,
+          reasoning: `Support level at ${supportLevel.price.toFixed(4)}, entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)} (Config: ${entryOffsetPercent}% entry, ${takeProfitPercent}% TP, 2.5% support range)`,
           supportLevel: supportLevel.price,
           takeProfitPrice: takeProfitPrice,
         };
@@ -45,7 +47,7 @@ export class SignalGenerator {
         await this.createSignal(signal);
         return signal;
       } else {
-        console.log(`${symbol}: Current price ${currentPrice} not in entry range (${(supportLevel.price * 0.98).toFixed(4)} - ${entryPrice.toFixed(4)})`);
+        console.log(`${symbol}: Current price ${currentPrice} not in entry range (${(supportLevel.price * 0.975).toFixed(4)} - ${entryPrice.toFixed(4)})`);
         return null;
       }
     } catch (error) {

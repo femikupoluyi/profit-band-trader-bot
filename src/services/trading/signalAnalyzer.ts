@@ -31,7 +31,8 @@ export class SignalAnalyzer {
     console.log('Using config values:', {
       candleCount: this.config.support_candle_count,
       entryOffset: this.config.entry_offset_percent,
-      takeProfitPercent: this.config.take_profit_percent
+      takeProfitPercent: this.config.take_profit_percent,
+      supportRange: '2.5% below support to entry price'
     });
     
     for (const symbol of symbols) {
@@ -44,7 +45,7 @@ export class SignalAnalyzer {
         }
 
         // Get candle data using config value
-        const candleCount = this.config.support_candle_count || 20;
+        const candleCount = this.config.support_candle_count || 128;
         const candles = await this.candleDataService.getCandleData(symbol, candleCount);
         
         if (!candles || candles.length < Math.min(candleCount / 2, 10)) {
@@ -79,7 +80,7 @@ export class SignalAnalyzer {
 
         const currentPrice = parseFloat(latestPrice.price);
         
-        // Generate signal using config values
+        // Generate signal using config values and 2.5% support range
         await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
       } catch (error) {
         console.error(`Error analyzing ${symbol}:`, error);
@@ -104,14 +105,14 @@ export class SignalAnalyzer {
       const currentPrice = parseFloat(latestPrice.price);
       
       // Create a simplified support level based on current price and config
-      const entryOffsetPercent = this.config.entry_offset_percent || 1.0;
+      const entryOffsetPercent = this.config.entry_offset_percent || 0.5;
       const supportLevel = {
         price: currentPrice * (1 - entryOffsetPercent / 100),
         strength: 0.7,
         touchCount: 3
       };
 
-      console.log(`Creating test signal for ${symbol} at price ${currentPrice} with entry offset ${entryOffsetPercent}%`);
+      console.log(`Creating test signal for ${symbol} at price ${currentPrice} with entry offset ${entryOffsetPercent}% and 2.5% support range`);
       await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
     } catch (error) {
       console.error(`Error creating test signal for ${symbol}:`, error);
