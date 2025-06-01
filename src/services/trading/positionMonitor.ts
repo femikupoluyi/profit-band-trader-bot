@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -27,7 +28,8 @@ export class PositionMonitor {
     console.log(`Using take profit percentage from config: ${this.config.take_profit_percent}%`);
     
     try {
-      // First, check and fill any pending orders that should be filled
+      // FIRST AND MOST IMPORTANT: Check and fill any pending orders that should be filled
+      console.log('🔄 Checking pending orders for fill conditions...');
       await this.orderFillChecker.checkAndFillPendingOrders();
 
       // Then monitor filled positions for take profit
