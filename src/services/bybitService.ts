@@ -25,15 +25,17 @@ export class BybitService {
   private credentials: BybitCredentials;
   private baseUrl: string;
   private isBrowserEnvironment: boolean;
+  private isDemoTrading: boolean;
 
   constructor(credentials: BybitCredentials) {
     this.credentials = credentials;
-    // Force main API even if testnet flag is true
-    this.baseUrl = 'https://api.bybit.com';
+    this.isDemoTrading = true; // Force demo trading mode
+    // Use demo URL for demo trading as per Bybit documentation
+    this.baseUrl = this.isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
     this.isBrowserEnvironment = typeof window !== 'undefined';
     
     console.log('BybitService initialized:', {
-      mainnetTrading: true,
+      demoTrading: this.isDemoTrading,
       apiKey: credentials.apiKey ? `${credentials.apiKey.substring(0, 8)}...` : 'Missing',
       isBrowser: this.isBrowserEnvironment,
       baseUrl: this.baseUrl
@@ -44,7 +46,7 @@ export class BybitService {
     try {
       const { supabase } = await import('@/integrations/supabase/client');
       
-      console.log(`🚀 Making FRESH API call to Bybit MAIN exchange: ${method} ${endpoint}`, params);
+      console.log(`🚀 Making FRESH API call to Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange: ${method} ${endpoint}`, params);
       
       // Add timestamp and random value to prevent any caching
       const timestamp = Date.now();
@@ -60,7 +62,7 @@ export class BybitService {
           endpoint,
           method,
           params: requestParams,
-          isDemoTrading: false, // Force main exchange
+          isDemoTrading: this.isDemoTrading,
           timestamp,
           cacheBust: randomValue
         }
@@ -71,7 +73,7 @@ export class BybitService {
         throw new Error(`Bybit API call failed: ${error.message}`);
       }
 
-      console.log('✅ Fresh API response received from Bybit MAIN exchange:', data);
+      console.log(`✅ Fresh API response received from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, data);
       return data;
     } catch (error) {
       console.error('❌ Bybit API call error:', error);
@@ -81,19 +83,19 @@ export class BybitService {
 
   async getAccountBalance(): Promise<any> {
     try {
-      console.log('Fetching account balance from Bybit MAIN exchange...');
+      console.log(`Fetching account balance from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange...`);
       return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
         accountType: 'UNIFIED'
       });
     } catch (error) {
-      console.error('Error fetching balance from main exchange:', error);
-      throw error; // Don't use fallback for main exchange
+      console.error(`Error fetching balance from ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      throw error;
     }
   }
 
   async getMarketPrice(symbol: string): Promise<MarketPrice> {
     try {
-      console.log(`🔄 Fetching REAL-TIME price for ${symbol} from Bybit MAIN exchange (NO CACHE)...`);
+      console.log(`🔄 Fetching REAL-TIME price for ${symbol} from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange (NO CACHE)...`);
       
       // Force fresh API call with multiple anti-cache parameters
       const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
@@ -108,7 +110,7 @@ export class BybitService {
         const ticker = response.result.list[0];
         const price = parseFloat(ticker.lastPrice);
         
-        console.log(`✅ FRESH market price for ${symbol}: $${price.toFixed(6)} (from Bybit MAIN exchange)`);
+        console.log(`✅ FRESH market price for ${symbol}: $${price.toFixed(6)} (from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange)`);
         return {
           symbol,
           price,
@@ -116,17 +118,17 @@ export class BybitService {
         };
       }
 
-      console.error(`❌ Invalid response from Bybit MAIN exchange for ${symbol}:`, response);
+      console.error(`❌ Invalid response from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange for ${symbol}:`, response);
       throw new Error(`Invalid response from Bybit for ${symbol}: ${response.retMsg || 'Unknown error'}`);
     } catch (error) {
-      console.error(`❌ Error fetching real-time price for ${symbol} from MAIN exchange:`, error);
+      console.error(`❌ Error fetching real-time price for ${symbol} from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, error);
       throw new Error(`Failed to fetch real-time price for ${symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async placeOrder(order: OrderRequest): Promise<any> {
     try {
-      console.log('Placing order on Bybit MAIN exchange:', order);
+      console.log(`Placing order on Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, order);
       
       if (!order.symbol || !order.side || !order.orderType || !order.qty) {
         throw new Error('Missing required order parameters');
@@ -156,28 +158,28 @@ export class BybitService {
         orderParams.timeInForce = order.orderType === 'Market' ? 'IOC' : 'GTC';
       }
 
-      console.log('Final order parameters for MAIN exchange:', orderParams);
+      console.log(`Final order parameters for ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, orderParams);
 
       const response = await this.callBybitAPI('/v5/order/create', 'POST', orderParams);
       
-      console.log('Order response from MAIN exchange:', response);
+      console.log(`Order response from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, response);
       return response;
     } catch (error) {
-      console.error('Error placing order on main exchange:', error);
+      console.error(`Error placing order on ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
       throw error;
     }
   }
 
   async getOrderStatus(orderId: string): Promise<any> {
     try {
-      console.log('Fetching order status from MAIN exchange:', orderId);
+      console.log(`Fetching order status from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, orderId);
       
       return await this.callBybitAPI('/v5/order/realtime', 'GET', {
         category: 'spot',
         orderId
       });
     } catch (error) {
-      console.error('Error fetching order status from main exchange:', error);
+      console.error(`Error fetching order status from ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
       throw error;
     }
   }

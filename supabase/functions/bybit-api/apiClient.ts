@@ -9,10 +9,10 @@ export const makeBybitRequest = async (
 ): Promise<any> => {
   const { method = 'GET', isDemoTrading = false } = request;
   
-  // Use main exchange URL (demo trading is handled via API parameters)
-  const baseUrl = 'https://api.bybit.com';
+  // Use correct URL based on demo trading flag
+  const baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
   
-  console.log(`Using Bybit API credentials for ${isDemoTrading ? 'DEMO' : 'MAIN'} exchange`);
+  console.log(`Using Bybit ${isDemoTrading ? 'DEMO' : 'MAIN'} exchange URL: ${baseUrl}`);
 
   let response: Response;
 
