@@ -18,16 +18,16 @@ export class MarketScanner {
     // Use trading pairs from config
     const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
-    console.log('Scanning markets for symbols from config:', symbols);
+    console.log('Scanning markets on Bybit testnet for symbols from config:', symbols);
     console.log('Chart timeframe from config:', this.config.chart_timeframe);
     
     for (const symbol of symbols) {
       try {
-        console.log(`Getting price for ${symbol}...`);
+        console.log(`Getting price for ${symbol} from Bybit testnet...`);
         
-        // Get market price (currently mock, but structured for real API integration)
+        // Get market price from testnet
         const marketPrice = await this.getRealtimePrice(symbol);
-        console.log(`${symbol} price: $${marketPrice.price}`);
+        console.log(`${symbol} testnet price: $${marketPrice.price}`);
         
         // Store current market data - fix type issue by ensuring price is a number
         await supabase
@@ -36,45 +36,39 @@ export class MarketScanner {
             symbol,
             price: marketPrice.price, // Keep as number, not string
             timestamp: new Date().toISOString(),
-            source: 'bybit',
+            source: 'bybit_testnet',
           });
 
-        console.log(`Market data stored for ${symbol}`);
+        console.log(`Market data stored for ${symbol} from testnet`);
         
         // Create additional historical data points for analysis (temporary until real historical data is available)
         await this.createHistoricalDataPoints(symbol, marketPrice.price);
         
-        console.log(`Historical data created for ${symbol}`);
+        console.log(`Historical data created for ${symbol} from testnet`);
       } catch (error) {
-        console.error(`Error scanning ${symbol}:`, error);
-        await this.logActivity('error', `Failed to scan ${symbol}`, { error: error.message });
+        console.error(`Error scanning ${symbol} on testnet:`, error);
+        await this.logActivity('error', `Failed to scan ${symbol} on testnet`, { error: error.message });
       }
     }
   }
 
   private async getRealtimePrice(symbol: string): Promise<{ price: number }> {
     try {
-      // TODO: Replace with actual real-time price fetching when ready
-      // For now, using Bybit service which returns mock data
+      // Fetch real-time price from Bybit testnet
       const marketPrice = await this.bybitService.getMarketPrice(symbol);
       
-      // In a real implementation, this would fetch from:
-      // 1. Bybit WebSocket API for real-time prices
-      // 2. REST API endpoints for current market data
-      // 3. Alternative price feeds as backup
-      
-      console.log(`Fetched real-time price for ${symbol}: $${marketPrice.price} (currently mock)`);
+      console.log(`Fetched real-time price for ${symbol} from Bybit testnet: $${marketPrice.price}`);
       
       return { price: marketPrice.price };
     } catch (error) {
-      console.error(`Error fetching real-time price for ${symbol}:`, error);
+      console.error(`Error fetching real-time price for ${symbol} from testnet:`, error);
       throw error;
     }
   }
 
   private async createHistoricalDataPoints(symbol: string, currentPrice: number): Promise<void> {
     // Create historical price points for technical analysis
-    // This simulates price movement - in production, fetch real historical data
+    // This simulates price movement - in production, fetch real historical data from testnet
     const candleCount = this.config.support_candle_count || 20;
     
     for (let i = 1; i <= candleCount; i++) {
@@ -87,7 +81,7 @@ export class MarketScanner {
           symbol,
           price: historicalPrice, // Keep as number
           timestamp: timestamp.toISOString(),
-          source: 'bybit',
+          source: 'bybit_testnet',
         });
     }
   }

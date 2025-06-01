@@ -34,7 +34,7 @@ export class BybitService {
     this.isBrowserEnvironment = typeof window !== 'undefined';
     
     console.log('BybitService initialized:', {
-      demoTrading: credentials.testnet,
+      testnetTrading: credentials.testnet,
       apiKey: credentials.apiKey ? `${credentials.apiKey.substring(0, 8)}...` : 'Missing',
       isBrowser: this.isBrowserEnvironment,
       baseUrl: this.baseUrl
@@ -71,7 +71,7 @@ export class BybitService {
 
   async getAccountBalance(): Promise<any> {
     try {
-      console.log('Fetching account balance from Bybit Demo...');
+      console.log('Fetching account balance from Bybit testnet...');
       return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
         accountType: 'UNIFIED'
       });
@@ -82,12 +82,12 @@ export class BybitService {
         retMsg: 'OK (Fallback)',
         result: {
           list: [{
-            totalEquity: '1000.00',
+            totalEquity: '10000.00',
             accountType: 'UNIFIED',
             coin: [{
               coin: 'USDT',
-              walletBalance: '1000.00',
-              availableToWithdraw: '1000.00'
+              walletBalance: '10000.00',
+              availableToWithdraw: '10000.00'
             }]
           }]
         }
@@ -97,7 +97,7 @@ export class BybitService {
 
   async getMarketPrice(symbol: string): Promise<MarketPrice> {
     try {
-      console.log(`Fetching market price for ${symbol} from Bybit Demo...`);
+      console.log(`Fetching market price for ${symbol} from Bybit testnet...`);
       const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
         category: 'spot',
         symbol
@@ -147,7 +147,7 @@ export class BybitService {
 
   async placeOrder(order: OrderRequest): Promise<any> {
     try {
-      console.log('Placing order on Bybit Demo:', order);
+      console.log('Placing order on Bybit testnet:', order);
       
       if (!order.symbol || !order.side || !order.orderType || !order.qty) {
         throw new Error('Missing required order parameters');

@@ -21,7 +21,7 @@ export const useTradingSystemTests = () => {
     
     try {
       // Test 1: Check API credentials
-      results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit API credentials...' });
+      results.push({ test: 'API Credentials', status: 'running', message: 'Checking Bybit testnet API credentials...' });
       setTestResults([...results]);
       
       const { data: credentials } = await supabase
@@ -32,14 +32,14 @@ export const useTradingSystemTests = () => {
         .single();
       
       if (credentials && credentials.api_key && credentials.api_secret) {
-        results[0] = { test: 'API Credentials', status: 'success', message: '✅ API credentials configured' };
+        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit testnet API credentials configured' };
       } else {
-        results[0] = { test: 'API Credentials', status: 'error', message: '❌ API credentials not found' };
+        results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit testnet API credentials not found' };
       }
       setTestResults([...results]);
       
-      // Test 2: Test Bybit Demo API connection
-      results.push({ test: 'Bybit API Connection', status: 'running', message: 'Testing Bybit Demo API...' });
+      // Test 2: Test Bybit testnet API connection
+      results.push({ test: 'Bybit Testnet API', status: 'running', message: 'Testing Bybit testnet API connection...' });
       setTestResults([...results]);
       
       try {
@@ -56,14 +56,15 @@ export const useTradingSystemTests = () => {
         });
         
         if (apiError) {
-          results[1] = { test: 'Bybit API Connection', status: 'error', message: `❌ API Error: ${apiError.message}` };
+          results[1] = { test: 'Bybit Testnet API', status: 'error', message: `❌ API Error: ${apiError.message}` };
         } else if (apiResponse?.retCode === 0) {
-          results[1] = { test: 'Bybit API Connection', status: 'success', message: '✅ Bybit Demo API working' };
+          const price = apiResponse.result?.list?.[0]?.lastPrice;
+          results[1] = { test: 'Bybit Testnet API', status: 'success', message: `✅ Bybit testnet API working! BTC: $${price}` };
         } else {
-          results[1] = { test: 'Bybit API Connection', status: 'error', message: `❌ API returned error: ${apiResponse?.retMsg}` };
+          results[1] = { test: 'Bybit Testnet API', status: 'error', message: `❌ API returned error: ${apiResponse?.retMsg}` };
         }
       } catch (error) {
-        results[1] = { test: 'Bybit API Connection', status: 'error', message: `❌ Connection failed: ${error}` };
+        results[1] = { test: 'Bybit Testnet API', status: 'error', message: `❌ Connection failed: ${error}` };
       }
       setTestResults([...results]);
       
@@ -120,8 +121,8 @@ export const useTradingSystemTests = () => {
       }
       setTestResults([...results]);
       
-      // Test 5: Test order placement (mock)
-      results.push({ test: 'Order Placement Test', status: 'running', message: 'Testing order placement...' });
+      // Test 5: Test order placement on testnet
+      results.push({ test: 'Testnet Order Test', status: 'running', message: 'Testing order placement on Bybit testnet...' });
       setTestResults([...results]);
       
       try {
@@ -143,14 +144,14 @@ export const useTradingSystemTests = () => {
         });
         
         if (orderError) {
-          results[4] = { test: 'Order Placement Test', status: 'error', message: `❌ Order test failed: ${orderError.message}` };
+          results[4] = { test: 'Testnet Order Test', status: 'error', message: `❌ Order test failed: ${orderError.message}` };
         } else if (testOrder?.retCode === 0) {
-          results[4] = { test: 'Order Placement Test', status: 'success', message: '✅ Order placement working' };
+          results[4] = { test: 'Testnet Order Test', status: 'success', message: '✅ Testnet order placement working' };
         } else {
-          results[4] = { test: 'Order Placement Test', status: 'warning', message: `⚠️ Order response: ${testOrder?.retMsg}` };
+          results[4] = { test: 'Testnet Order Test', status: 'warning', message: `⚠️ Order response: ${testOrder?.retMsg}` };
         }
       } catch (error) {
-        results[4] = { test: 'Order Placement Test', status: 'error', message: `❌ Order test error: ${error}` };
+        results[4] = { test: 'Testnet Order Test', status: 'error', message: `❌ Order test error: ${error}` };
       }
       setTestResults([...results]);
       
@@ -161,7 +162,7 @@ export const useTradingSystemTests = () => {
       if (successCount === totalTests) {
         toast({
           title: "System Test Complete",
-          description: `All ${totalTests} tests passed! Trading system is ready.`,
+          description: `All ${totalTests} tests passed! Bybit testnet trading system is ready.`,
         });
       } else {
         toast({
@@ -179,7 +180,7 @@ export const useTradingSystemTests = () => {
         variant: "destructive",
       });
     } finally {
-      setIsTesting(false);
+      setIsLoading(false);
     }
   };
 

@@ -152,18 +152,57 @@ const ApiCredentials = () => {
       return;
     }
 
-    toast({
-      title: "Testing Connection",
-      description: "Verifying your API credentials...",
-    });
-
-    // This would test the actual connection in a real scenario
-    setTimeout(() => {
-      toast({
-        title: "Connection Test",
-        description: "Please save your credentials and check the trading logs for connection status.",
+    setIsLoading(true);
+    try {
+      console.log('Testing Bybit testnet API connection...');
+      
+      const { data: apiResponse, error: apiError } = await supabase.functions.invoke('bybit-api', {
+        body: {
+          endpoint: '/v5/market/tickers',
+          method: 'GET',
+          params: {
+            category: 'spot',
+            symbol: 'BTCUSDT'
+          },
+          isDemoTrading: true
+        }
       });
-    }, 1000);
+
+      if (apiError) {
+        console.error('API Error:', apiError);
+        toast({
+          title: "Connection Failed",
+          description: `API Error: ${apiError.message}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (apiResponse?.retCode === 0) {
+        const price = apiResponse.result?.list?.[0]?.lastPrice;
+        toast({
+          title: "Connection Successful",
+          description: `Successfully connected to Bybit testnet! BTC price: $${price}`,
+        });
+        console.log('Bybit testnet API connection successful:', apiResponse);
+      } else {
+        toast({
+          title: "Connection Test Warning",
+          description: `API returned: ${apiResponse?.retMsg || 'Unknown response'}`,
+          variant: "destructive",
+        });
+        console.log('API response:', apiResponse);
+      }
+    } catch (error) {
+      console.error('Connection test error:', error);
+      toast({
+        title: "Connection Failed",
+        description: "Failed to test API connection. Please check your credentials.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -177,7 +216,7 @@ const ApiCredentials = () => {
           )}
         </CardTitle>
         <CardDescription>
-          Configure your Bybit Global demo API credentials for automated trading. Keep demo mode enabled for safe testing.
+          Configure your Bybit testnet API credentials for automated trading. Keep testnet mode enabled for safe testing.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -188,7 +227,7 @@ const ApiCredentials = () => {
             type="text"
             value={credentials.api_key}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_key: e.target.value }))}
-            placeholder="Enter your Bybit Global demo API key"
+            placeholder="Enter your Bybit testnet API key"
           />
         </div>
 
@@ -199,7 +238,7 @@ const ApiCredentials = () => {
             type="password"
             value={credentials.api_secret}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_secret: e.target.value }))}
-            placeholder="Enter your Bybit Global demo API secret"
+            placeholder="Enter your Bybit testnet API secret"
           />
         </div>
 
@@ -208,7 +247,7 @@ const ApiCredentials = () => {
             checked={credentials.testnet}
             onCheckedChange={(checked) => setCredentials(prev => ({ ...prev, testnet: checked }))}
           />
-          <Label>Use Demo Trading (Recommended for testing)</Label>
+          <Label>Use Testnet Trading (Recommended for testing)</Label>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -227,7 +266,7 @@ const ApiCredentials = () => {
           <Button 
             onClick={testConnection} 
             variant="outline"
-            disabled={!credentials.api_key || !credentials.api_secret}
+            disabled={!credentials.api_key || !credentials.api_secret || isLoading}
           >
             Test Connection
           </Button>
@@ -237,21 +276,21 @@ const ApiCredentials = () => {
           <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
             ✅ API credentials are configured. Status: {credentials.is_active ? 'Active' : 'Inactive'}
             <br />
-            <small>Using Bybit Global {credentials.testnet ? 'Demo' : 'Live'} environment</small>
+            <small>Using Bybit {credentials.testnet ? 'Testnet' : 'Live'} environment</small>
           </div>
         )}
 
         <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
-          💡 <strong>Bybit Global Demo:</strong> Get your demo API credentials from{' '}
+          💡 <strong>Bybit Testnet:</strong> Get your testnet API credentials from{' '}
           <a 
-            href="https://www.bybitglobal.com" 
+            href="https://testnet.bybit.com" 
             target="_blank" 
             rel="noopener noreferrer"
             className="underline"
           >
-            Bybit Global
+            Bybit Testnet
           </a>
-          {' '}by creating an account and enabling API access in demo mode.
+          {' '}by creating an account and enabling API access in the API management section.
         </div>
       </CardContent>
     </Card>

@@ -28,22 +28,24 @@ serve(async (req) => {
 
     const { endpoint, method = 'GET', params = {}, isDemoTrading = true }: BybitRequest = await req.json();
 
-    // Get API credentials from secrets
+    // Get API credentials from secrets - using testnet credentials
     const apiKey = Deno.env.get('BYBIT_DEMO_API_KEY');
     const apiSecret = Deno.env.get('BYBIT_DEMO_API_SECRET');
 
     if (!apiKey || !apiSecret) {
-      console.error('Missing API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
+      console.error('Missing Bybit testnet API credentials:', { apiKey: !!apiKey, apiSecret: !!apiSecret });
       return new Response(
-        JSON.stringify({ error: 'Bybit API credentials not configured' }),
+        JSON.stringify({ error: 'Bybit testnet API credentials not configured' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    console.log('Using Bybit testnet credentials for API call');
+
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
     
-    // Use demo environment for all requests
+    // Always use testnet environment
     const baseUrl = 'https://api-demo.bybit.com';
     
     let finalUrl: string;
@@ -134,7 +136,7 @@ serve(async (req) => {
       finalUrl = `${baseUrl}${endpoint}`;
     }
 
-    console.log(`Making ${method} request to Bybit Demo:`, finalUrl);
+    console.log(`Making ${method} request to Bybit testnet:`, finalUrl);
     if (requestBody) {
       console.log('Request body:', requestBody);
     }
@@ -183,7 +185,7 @@ serve(async (req) => {
     });
 
     const responseData = await response.json();
-    console.log('Bybit Demo response:', responseData);
+    console.log('Bybit testnet response:', responseData);
 
     return new Response(
       JSON.stringify(responseData),
@@ -194,7 +196,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Bybit API error:', error);
+    console.error('Bybit testnet API error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
