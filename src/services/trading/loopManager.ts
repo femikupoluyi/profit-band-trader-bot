@@ -4,6 +4,7 @@ import { PositionMonitor } from './positionMonitor';
 import { TradeExecutor } from './tradeExecutor';
 import { MarketScanner } from './marketScanner';
 import { SignalGenerator } from './signalGenerator';
+import { SignalAnalyzer } from './signalAnalyzer';
 import { BybitService } from '../bybitService';
 
 interface TradingServices {
@@ -12,6 +13,7 @@ interface TradingServices {
   tradeExecutor: TradeExecutor;
   marketScanner: MarketScanner;
   signalGenerator: SignalGenerator;
+  signalAnalyzer: SignalAnalyzer;
 }
 
 export class LoopManager {
@@ -36,7 +38,7 @@ export class LoopManager {
       return;
     }
 
-    console.log('Starting trading loop...');
+    console.log('🔄 STARTING TRADING LOOP...');
     this.isRunning = true;
 
     // Run immediately
@@ -54,7 +56,7 @@ export class LoopManager {
       return;
     }
 
-    console.log('Stopping trading loop...');
+    console.log('⏹️  STOPPING TRADING LOOP...');
     this.isRunning = false;
 
     if (this.intervalId) {
@@ -67,32 +69,38 @@ export class LoopManager {
     if (!this.services || !this.isRunning) return;
 
     try {
-      console.log('\n🔄 Starting trading cycle...');
+      const cycleStart = Date.now();
+      console.log('\n' + '='.repeat(80));
+      console.log('🔄 STARTING TRADING CYCLE at', new Date().toISOString());
+      console.log('='.repeat(80));
 
       // 1. FIRST PRIORITY: Monitor positions and fill pending orders
-      console.log('📊 Monitoring positions and checking for fills...');
+      console.log('\n📊 STEP 1: MONITORING POSITIONS...');
       await this.services.positionMonitor.monitorPositions();
 
-      // 2. Scan markets for new opportunities
-      console.log('🔍 Scanning markets...');
+      // 2. Scan markets for new price data
+      console.log('\n🔍 STEP 2: SCANNING MARKETS...');
       await this.services.marketScanner.scanMarkets();
 
-      // 3. Generate signals based on market data - fix method name
-      console.log('📈 Generating signals...');
-      // Note: SignalGenerator doesn't have a generateSignals method, signals are generated in TradeExecutor
+      // 3. Analyze markets and generate signals
+      console.log('\n📈 STEP 3: ANALYZING SIGNALS...');
+      await this.services.signalAnalyzer.analyzeAndCreateSignals();
 
       // 4. Execute trades based on signals
-      console.log('⚡ Processing signals and executing trades...');
+      console.log('\n⚡ STEP 4: PROCESSING SIGNALS...');
       await this.services.tradeExecutor.processSignals();
 
       // 5. Close end-of-day trades if needed
-      console.log('🌅 Checking for end-of-day closures...');
+      console.log('\n🌅 STEP 5: END-OF-DAY CHECKS...');
       await this.services.tradeExecutor.closeEndOfDayTrades();
 
-      console.log('✅ Trading cycle completed successfully\n');
+      const cycleTime = Date.now() - cycleStart;
+      console.log('\n' + '='.repeat(80));
+      console.log(`✅ TRADING CYCLE COMPLETED in ${cycleTime}ms`);
+      console.log('='.repeat(80) + '\n');
 
     } catch (error) {
-      console.error('Error in trading cycle:', error);
+      console.error('❌ ERROR IN TRADING CYCLE:', error);
     }
   }
 }

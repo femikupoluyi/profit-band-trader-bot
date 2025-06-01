@@ -13,26 +13,49 @@ export class SignalProcessorService {
 
   async processSignals(): Promise<void> {
     try {
-      const { data: signals } = await (supabase as any)
+      console.log('\n🔄 PROCESSING SIGNALS...');
+      
+      const { data: signals, error } = await supabase
         .from('trading_signals')
         .select('*')
         .eq('user_id', this.userId)
         .eq('processed', false)
         .order('created_at', { ascending: true })
-        .limit(5);
+        .limit(10);
 
-      if (!signals || signals.length === 0) {
-        console.log('No unprocessed signals found');
+      if (error) {
+        console.error('❌ Error fetching signals:', error);
         return;
       }
 
-      console.log(`Processing ${signals.length} signals...`);
-      for (const signal of signals) {
-        console.log('Processing signal:', signal);
-        await this.signalExecutionService.executeSignal(signal);
+      if (!signals || signals.length === 0) {
+        console.log('📭 No unprocessed signals found');
+        return;
       }
+
+      console.log(`📊 Found ${signals.length} unprocessed signals:`);
+      signals.forEach((signal, index) => {
+        console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${signal.price} (ID: ${signal.id})`);
+      });
+
+      for (const signal of signals) {
+        console.log(`\n⚡ EXECUTING SIGNAL ${signal.id} for ${signal.symbol}:`);
+        console.log(`  Type: ${signal.signal_type}`);
+        console.log(`  Price: $${signal.price}`);
+        console.log(`  Confidence: ${signal.confidence}%`);
+        console.log(`  Created: ${signal.created_at}`);
+        
+        try {
+          await this.signalExecutionService.executeSignal(signal);
+          console.log(`✅ Signal ${signal.id} executed successfully`);
+        } catch (error) {
+          console.error(`❌ Error executing signal ${signal.id}:`, error);
+        }
+      }
+      
+      console.log(`✅ Finished processing ${signals.length} signals\n`);
     } catch (error) {
-      console.error('Error processing signals:', error);
+      console.error('❌ Error in signal processing:', error);
     }
   }
 }

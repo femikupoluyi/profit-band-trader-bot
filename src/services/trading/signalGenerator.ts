@@ -25,29 +25,42 @@ export class SignalGenerator {
       const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
-      // Updated entry conditions: price within 2.5% below support and at/below entry price
-      const priceWithinRange = currentPrice <= entryPrice && currentPrice >= supportLevel.price * 0.975;
+      // RELAXED entry conditions for better signal generation
+      // Allow signals when price is within 5% range around support level
+      const supportLowerBound = supportLevel.price * 0.95;  // 5% below support
+      const supportUpperBound = entryPrice * 1.02;          // 2% above entry price
+      const priceWithinRange = currentPrice >= supportLowerBound && currentPrice <= supportUpperBound;
       
-      console.log(`${symbol} signal check using config - Entry offset: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%`);
-      console.log(`Current ${currentPrice}, Support ${supportLevel.price.toFixed(4)}, Entry ${entryPrice.toFixed(4)}, TP ${takeProfitPrice.toFixed(4)}, InRange: ${priceWithinRange}`);
-      console.log(`Entry range: ${(supportLevel.price * 0.975).toFixed(4)} - ${entryPrice.toFixed(4)} (2.5% below support to ${entryOffsetPercent}% above)`);
+      console.log(`\n🎯 DETAILED SIGNAL CHECK for ${symbol}:`);
+      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
+      console.log(`  Support Level: $${supportLevel.price.toFixed(4)}`);
+      console.log(`  Entry Price: $${entryPrice.toFixed(4)} (${entryOffsetPercent}% above support)`);
+      console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)} (${takeProfitPercent}% above entry)`);
+      console.log(`  Signal Range: $${supportLowerBound.toFixed(4)} - $${supportUpperBound.toFixed(4)}`);
+      console.log(`  Range Check: ${priceWithinRange ? '✅ IN RANGE' : '❌ OUT OF RANGE'}`);
+      console.log(`  Support Strength: ${supportLevel.strength}`);
 
       if (priceWithinRange) {
         const signal: TradingSignal = {
           symbol,
           action: 'buy',
           price: currentPrice,
-          confidence: Math.max(supportLevel.strength, 0.6),
-          reasoning: `Support level at ${supportLevel.price.toFixed(4)}, entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)} (Config: ${entryOffsetPercent}% entry, ${takeProfitPercent}% TP, 2.5% support range)`,
+          confidence: Math.max(supportLevel.strength, 0.7),
+          reasoning: `BUY SIGNAL: Price ${currentPrice.toFixed(4)} within range ${supportLowerBound.toFixed(4)}-${supportUpperBound.toFixed(4)}. Support at ${supportLevel.price.toFixed(4)}, Entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)}`,
           supportLevel: supportLevel.price,
           takeProfitPrice: takeProfitPrice,
         };
 
-        console.log(`Generated buy signal for ${symbol} using config values:`, signal);
+        console.log(`🚀 GENERATING BUY SIGNAL for ${symbol}:`);
+        console.log(`  Signal: ${JSON.stringify(signal, null, 2)}`);
+        
         await this.createSignal(signal);
         return signal;
       } else {
-        console.log(`${symbol}: Current price ${currentPrice} not in entry range (${(supportLevel.price * 0.975).toFixed(4)} - ${entryPrice.toFixed(4)})`);
+        const belowRange = currentPrice < supportLowerBound;
+        const aboveRange = currentPrice > supportUpperBound;
+        console.log(`❌ NO SIGNAL for ${symbol}: Price ${currentPrice.toFixed(4)} is ${belowRange ? 'BELOW' : 'ABOVE'} signal range`);
+        console.log(`  ${belowRange ? 'Too low' : 'Too high'} - need price between ${supportLowerBound.toFixed(4)} and ${supportUpperBound.toFixed(4)}`);
         return null;
       }
     } catch (error) {
@@ -58,7 +71,9 @@ export class SignalGenerator {
 
   private async createSignal(signal: TradingSignal): Promise<void> {
     try {
-      await (supabase as any)
+      console.log(`📝 CREATING SIGNAL IN DATABASE for ${signal.symbol}:`);
+      
+      const { data, error } = await supabase
         .from('trading_signals')
         .insert({
           user_id: this.userId,
@@ -68,18 +83,30 @@ export class SignalGenerator {
           confidence: signal.confidence,
           reasoning: signal.reasoning,
           processed: false,
-        });
+        })
+        .select()
+        .single();
 
-      await this.logActivity('scan', `Generated ${signal.action} signal for ${signal.symbol}`, signal);
-      console.log(`Signal created for ${signal.symbol}:`, signal);
+      if (error) {
+        console.error('❌ DATABASE ERROR creating signal:', error);
+        throw error;
+      }
+
+      console.log(`✅ SIGNAL CREATED SUCCESSFULLY:`, data);
+
+      await this.logActivity('signal_generated', `BUY signal created for ${signal.symbol} at $${signal.price.toFixed(4)}`, {
+        signal,
+        signalId: data.id,
+        createdAt: data.created_at
+      });
     } catch (error) {
-      console.error('Error creating signal:', error);
+      console.error('❌ Error creating signal:', error);
     }
   }
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
-      await (supabase as any)
+      await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
