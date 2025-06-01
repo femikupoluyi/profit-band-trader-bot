@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Loader2, X } from 'lucide-react';
 import { ActiveTrade } from '@/types/trading';
 import { formatCurrency } from '@/utils/formatters';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface CloseTradeDialogProps {
   trade: ActiveTrade;
@@ -23,6 +25,51 @@ interface CloseTradeDialogProps {
 }
 
 const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) => {
+  const { toast } = useToast();
+
+  const handleManualClose = async () => {
+    try {
+      console.log(`Manually closing trade ${trade.id} for ${trade.symbol}`);
+      
+      // Update trade status to closed in database
+      const { error } = await supabase
+        .from('trades')
+        .update({
+          status: 'closed',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', trade.id);
+
+      if (error) {
+        console.error('Error updating trade status:', error);
+        toast({
+          title: "Error",
+          description: "Failed to close trade in database",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`✅ Trade ${trade.id} manually closed successfully`);
+      
+      toast({
+        title: "Trade Closed",
+        description: `Successfully closed ${trade.symbol} position`,
+      });
+
+      // Call the parent callback to refresh the UI
+      onClose(trade);
+
+    } catch (error) {
+      console.error('Error in manual close:', error);
+      toast({
+        title: "Error",
+        description: "Failed to close trade",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -56,7 +103,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => onClose(trade)}
+            onClick={handleManualClose}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             Close Position

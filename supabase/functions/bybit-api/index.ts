@@ -39,56 +39,115 @@ serve(async (req) => {
       );
     }
 
-    // Create signature for authenticated requests
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
     
-    // Prepare parameters
-    const allParams = {
-      ...params,
-      api_key: apiKey,
-      timestamp,
-      recv_window: recvWindow,
-    };
+    // Use demo environment for all requests
+    const baseUrl = 'https://api-demo.bybit.com';
+    
+    let finalUrl: string;
+    let requestBody: string | undefined;
 
-    // Create query string
-    const queryString = Object.keys(allParams)
-      .sort()
-      .map(key => `${key}=${allParams[key]}`)
-      .join('&');
+    if (method === 'GET') {
+      // For GET requests, create query string with proper signature
+      const queryParams = new URLSearchParams();
+      queryParams.append('api_key', apiKey);
+      queryParams.append('timestamp', timestamp);
+      queryParams.append('recv_window', recvWindow);
+      
+      // Add all other params
+      Object.keys(params).forEach(key => {
+        if (params[key] !== undefined && params[key] !== null) {
+          queryParams.append(key, params[key].toString());
+        }
+      });
 
-    // Create signature
-    const signaturePayload = queryString + apiSecret;
-    const encoder = new TextEncoder();
-    const signatureData = encoder.encode(signaturePayload);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', signatureData);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      // Sort parameters for signature
+      queryParams.sort();
+      
+      // Create signature payload
+      const signaturePayload = queryParams.toString() + apiSecret;
+      console.log('GET signature payload:', signaturePayload);
+      
+      // Generate HMAC SHA256 signature
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(apiSecret);
+      const dataToSign = encoder.encode(queryParams.toString());
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
+      const signature = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
 
-    // Add signature to params
-    const finalParams = { ...allParams, sign: signature };
-    const finalQueryString = Object.keys(finalParams)
-      .map(key => `${key}=${finalParams[key]}`)
-      .join('&');
+      queryParams.append('sign', signature);
+      finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
+      
+    } else {
+      // For POST requests, create JSON body with signature
+      const requestParams = {
+        ...params,
+        api_key: apiKey,
+        timestamp,
+        recv_window: recvWindow,
+      };
 
-    // Use Bybit Global demo environment
-    const baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
-    const url = method === 'GET' 
-      ? `${baseUrl}${endpoint}?${finalQueryString}`
-      : `${baseUrl}${endpoint}`;
+      // Create sorted query string for signature
+      const sortedKeys = Object.keys(requestParams).sort();
+      const queryString = sortedKeys
+        .map(key => `${key}=${requestParams[key]}`)
+        .join('&');
+      
+      console.log('POST query string for signature:', queryString);
+      
+      // Generate HMAC SHA256 signature
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(apiSecret);
+      const dataToSign = encoder.encode(queryString);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
+      const signature = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
 
-    console.log(`Making ${method} request to Bybit Global Demo:`, url);
+      requestParams.sign = signature;
+      requestBody = JSON.stringify(requestParams);
+      finalUrl = `${baseUrl}${endpoint}`;
+    }
 
-    const response = await fetch(url, {
+    console.log(`Making ${method} request to Bybit Demo:`, finalUrl);
+    if (requestBody) {
+      console.log('Request body:', requestBody);
+    }
+
+    const response = await fetch(finalUrl, {
       method,
       headers: {
         'Content-Type': 'application/json',
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
       },
-      body: method !== 'GET' ? JSON.stringify(finalParams) : undefined,
+      body: requestBody,
     });
 
     const responseData = await response.json();
-    console.log('Bybit Global Demo response:', responseData);
+    console.log('Bybit Demo response:', responseData);
 
     return new Response(
       JSON.stringify(responseData),

@@ -28,7 +28,6 @@ export class BybitService {
 
   constructor(credentials: BybitCredentials) {
     this.credentials = credentials;
-    // Use Bybit Global demo for demo trading, production for live trading
     this.baseUrl = credentials.testnet 
       ? 'https://api-demo.bybit.com' 
       : 'https://api.bybit.com';
@@ -44,8 +43,9 @@ export class BybitService {
 
   private async callBybitAPI(endpoint: string, method: string = 'GET', params: Record<string, any> = {}): Promise<any> {
     try {
-      // Use edge function for secure API calls
       const { supabase } = await import('@/integrations/supabase/client');
+      
+      console.log(`Calling Bybit API: ${method} ${endpoint}`, params);
       
       const { data, error } = await supabase.functions.invoke('bybit-api', {
         body: {
@@ -61,6 +61,7 @@ export class BybitService {
         throw new Error(`API call failed: ${error.message}`);
       }
 
+      console.log('API response received:', data);
       return data;
     } catch (error) {
       console.error('Bybit API call error:', error);
@@ -70,13 +71,12 @@ export class BybitService {
 
   async getAccountBalance(): Promise<any> {
     try {
-      console.log('Fetching account balance from Bybit Global demo...');
+      console.log('Fetching account balance from Bybit Demo...');
       return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
         accountType: 'UNIFIED'
       });
     } catch (error) {
       console.error('Error fetching balance:', error);
-      // Fallback to mock data if API fails
       return {
         retCode: 0,
         retMsg: 'OK (Fallback)',
@@ -97,7 +97,7 @@ export class BybitService {
 
   async getMarketPrice(symbol: string): Promise<MarketPrice> {
     try {
-      console.log(`Fetching real market price for ${symbol} from Bybit Global demo...`);
+      console.log(`Fetching market price for ${symbol} from Bybit Demo...`);
       const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
         category: 'spot',
         symbol
@@ -107,7 +107,7 @@ export class BybitService {
         const ticker = response.result.list[0];
         const price = parseFloat(ticker.lastPrice);
         
-        console.log(`Real market price for ${symbol}: $${price}`);
+        console.log(`Market price for ${symbol}: $${price}`);
         return {
           symbol,
           price,
@@ -118,13 +118,12 @@ export class BybitService {
       throw new Error('Invalid response from Bybit');
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error);
-      // Fallback to mock price generation
       return this.generateMockPrice(symbol);
     }
   }
 
   private generateMockPrice(symbol: string): MarketPrice {
-    console.log(`Generating fallback mock price for ${symbol}`);
+    console.log(`Generating fallback price for ${symbol}`);
     const basePrices: Record<string, number> = {
       'BTCUSDT': 102000,
       'ETHUSDT': 2780,
@@ -148,50 +147,51 @@ export class BybitService {
 
   async placeOrder(order: OrderRequest): Promise<any> {
     try {
-      console.log('Placing order on Bybit Global demo with params:', order);
+      console.log('Placing order on Bybit Demo:', order);
       
-      // Validate order parameters
       if (!order.symbol || !order.side || !order.orderType || !order.qty) {
         throw new Error('Missing required order parameters');
       }
 
-      // For limit orders, price is required
       if (order.orderType === 'Limit' && !order.price) {
         throw new Error('Price is required for limit orders');
       }
 
+      // Clean parameters - remove undefined values
       const orderParams: Record<string, any> = {
         category: order.category,
         symbol: order.symbol,
         side: order.side,
         orderType: order.orderType,
         qty: order.qty,
-        timeInForce: order.timeInForce || (order.orderType === 'Market' ? 'IOC' : 'GTC')
       };
 
-      // Only add price for limit orders
+      // Only add optional parameters if they exist
       if (order.orderType === 'Limit' && order.price) {
         orderParams.price = order.price;
       }
+      
+      if (order.timeInForce) {
+        orderParams.timeInForce = order.timeInForce;
+      } else {
+        orderParams.timeInForce = order.orderType === 'Market' ? 'IOC' : 'GTC';
+      }
 
-      console.log('Final order params being sent to Bybit:', orderParams);
+      console.log('Final order parameters:', orderParams);
 
       const response = await this.callBybitAPI('/v5/order/create', 'POST', orderParams);
       
-      console.log('Raw Bybit order response:', response);
-
-      // Return the response as-is, let the calling code handle success/failure
+      console.log('Order response:', response);
       return response;
     } catch (error) {
-      console.error('Error placing order on Bybit:', error);
-      // Re-throw the error instead of providing fallback
+      console.error('Error placing order:', error);
       throw error;
     }
   }
 
   async getOrderStatus(orderId: string): Promise<any> {
     try {
-      console.log('Fetching order status from Bybit Global demo:', orderId);
+      console.log('Fetching order status:', orderId);
       
       return await this.callBybitAPI('/v5/order/realtime', 'GET', {
         category: 'spot',
@@ -199,10 +199,9 @@ export class BybitService {
       });
     } catch (error) {
       console.error('Error fetching order status:', error);
-      // Fallback to mock status
       return {
         retCode: 0,
-        retMsg: 'OK (Mock Fallback)',
+        retMsg: 'OK (Mock)',
         result: {
           list: [{
             orderId,
