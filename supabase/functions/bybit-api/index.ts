@@ -11,6 +11,7 @@ interface BybitRequest {
   endpoint: string;
   method?: string;
   params?: Record<string, any>;
+  isDemoTrading?: boolean;
 }
 
 serve(async (req) => {
@@ -25,7 +26,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { endpoint, method = 'GET', params = {} }: BybitRequest = await req.json();
+    const { endpoint, method = 'GET', params = {}, isDemoTrading = true }: BybitRequest = await req.json();
 
     // Get API credentials from secrets
     const apiKey = Deno.env.get('BYBIT_DEMO_API_KEY');
@@ -70,13 +71,13 @@ serve(async (req) => {
       .map(key => `${key}=${finalParams[key]}`)
       .join('&');
 
-    // Make request to Bybit
-    const baseUrl = 'https://api-testnet.bybit.com';
+    // Use Bybit Global demo environment
+    const baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
     const url = method === 'GET' 
       ? `${baseUrl}${endpoint}?${finalQueryString}`
       : `${baseUrl}${endpoint}`;
 
-    console.log(`Making ${method} request to Bybit:`, url);
+    console.log(`Making ${method} request to Bybit Global Demo:`, url);
 
     const response = await fetch(url, {
       method,
@@ -87,7 +88,7 @@ serve(async (req) => {
     });
 
     const responseData = await response.json();
-    console.log('Bybit response:', responseData);
+    console.log('Bybit Global Demo response:', responseData);
 
     return new Response(
       JSON.stringify(responseData),

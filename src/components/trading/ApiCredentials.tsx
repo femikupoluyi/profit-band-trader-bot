@@ -177,7 +177,7 @@ const ApiCredentials = () => {
           )}
         </CardTitle>
         <CardDescription>
-          Configure your Bybit API credentials for automated trading. Keep testnet enabled for safe testing.
+          Configure your Bybit Global demo API credentials for automated trading. Keep demo mode enabled for safe testing.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -188,7 +188,7 @@ const ApiCredentials = () => {
             type="text"
             value={credentials.api_key}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_key: e.target.value }))}
-            placeholder="Enter your Bybit API key"
+            placeholder="Enter your Bybit Global demo API key"
           />
         </div>
 
@@ -199,7 +199,7 @@ const ApiCredentials = () => {
             type="password"
             value={credentials.api_secret}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_secret: e.target.value }))}
-            placeholder="Enter your Bybit API secret"
+            placeholder="Enter your Bybit Global demo API secret"
           />
         </div>
 
@@ -208,7 +208,7 @@ const ApiCredentials = () => {
             checked={credentials.testnet}
             onCheckedChange={(checked) => setCredentials(prev => ({ ...prev, testnet: checked }))}
           />
-          <Label>Use Testnet (Recommended for testing)</Label>
+          <Label>Use Demo Trading (Recommended for testing)</Label>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -236,8 +236,23 @@ const ApiCredentials = () => {
         {hasExisting && (
           <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
             ✅ API credentials are configured. Status: {credentials.is_active ? 'Active' : 'Inactive'}
+            <br />
+            <small>Using Bybit Global {credentials.testnet ? 'Demo' : 'Live'} environment</small>
           </div>
         )}
+
+        <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
+          💡 <strong>Bybit Global Demo:</strong> Get your demo API credentials from{' '}
+          <a 
+            href="https://www.bybitglobal.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            Bybit Global
+          </a>
+          {' '}by creating an account and enabling API access in demo mode.
+        </div>
       </CardContent>
     </Card>
   );

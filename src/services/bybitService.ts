@@ -26,15 +26,17 @@ export class BybitService {
 
   constructor(credentials: BybitCredentials) {
     this.credentials = credentials;
+    // Use Bybit Global demo for demo trading, production for live trading
     this.baseUrl = credentials.testnet 
-      ? 'https://api-testnet.bybit.com' 
+      ? 'https://api-demo.bybit.com' 
       : 'https://api.bybit.com';
     this.isBrowserEnvironment = typeof window !== 'undefined';
     
     console.log('BybitService initialized:', {
-      testnet: credentials.testnet,
+      demoTrading: credentials.testnet,
       apiKey: credentials.apiKey ? `${credentials.apiKey.substring(0, 8)}...` : 'Missing',
-      isBrowser: this.isBrowserEnvironment
+      isBrowser: this.isBrowserEnvironment,
+      baseUrl: this.baseUrl
     });
   }
 
@@ -47,7 +49,8 @@ export class BybitService {
         body: {
           endpoint,
           method,
-          params
+          params,
+          isDemoTrading: this.credentials.testnet
         }
       });
 
@@ -65,7 +68,7 @@ export class BybitService {
 
   async getAccountBalance(): Promise<any> {
     try {
-      console.log('Fetching account balance from Bybit demo...');
+      console.log('Fetching account balance from Bybit Global demo...');
       return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
         accountType: 'UNIFIED'
       });
@@ -92,7 +95,7 @@ export class BybitService {
 
   async getMarketPrice(symbol: string): Promise<MarketPrice> {
     try {
-      console.log(`Fetching real market price for ${symbol} from Bybit demo...`);
+      console.log(`Fetching real market price for ${symbol} from Bybit Global demo...`);
       const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
         category: 'spot',
         symbol
@@ -143,7 +146,7 @@ export class BybitService {
 
   async placeOrder(order: OrderRequest): Promise<any> {
     try {
-      console.log('Placing real order on Bybit demo:', order);
+      console.log('Placing real order on Bybit Global demo:', order);
       
       return await this.callBybitAPI('/v5/order/create', 'POST', {
         category: 'spot',
@@ -177,7 +180,7 @@ export class BybitService {
 
   async getOrderStatus(orderId: string): Promise<any> {
     try {
-      console.log('Fetching order status from Bybit demo:', orderId);
+      console.log('Fetching order status from Bybit Global demo:', orderId);
       
       return await this.callBybitAPI('/v5/order/realtime', 'GET', {
         category: 'spot',
