@@ -5,14 +5,14 @@ import { TEST_NAMES, TEST_SYMBOLS, TEST_CONFIG } from './testConstants';
 
 export const runMarketOrderTest = async (): Promise<TestResult> => {
   try {
-    // Get current BTC price to calculate quantities for different amounts
+    // Get current SOL price to calculate quantities for different amounts
     const { data: priceResponse } = await supabase.functions.invoke('bybit-api', {
       body: {
         endpoint: '/v5/market/tickers',
         method: 'GET',
         params: {
           category: 'spot',
-          symbol: TEST_SYMBOLS.BTC
+          symbol: TEST_SYMBOLS.SOL
         },
         isDemoTrading: true
       }
@@ -22,12 +22,12 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
       return { 
         test: TEST_NAMES.MARKET_ORDER, 
         status: 'error', 
-        message: '❌ Could not get BTC price for order calculation' 
+        message: '❌ Could not get SOL price for order calculation' 
       };
     }
 
-    const btcPrice = parseFloat(priceResponse.result?.list?.[0]?.lastPrice || '0');
-    console.log(`Current BTC price: $${btcPrice}`);
+    const solPrice = parseFloat(priceResponse.result?.list?.[0]?.lastPrice || '0');
+    console.log(`Current SOL price: $${solPrice}`);
 
     // Test with higher order amounts to meet minimum requirements: $100, $200, $500, $1000
     const testAmounts = [100, 200, 500, 1000];
@@ -36,8 +36,8 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
     for (const amount of testAmounts) {
       console.log(`\n🧪 Testing market order with $${amount}...`);
       
-      const quantity = (amount / btcPrice).toFixed(6);
-      console.log(`Calculated quantity: ${quantity} BTC for $${amount}`);
+      const quantity = (amount / solPrice).toFixed(6);
+      console.log(`Calculated quantity: ${quantity} SOL for $${amount}`);
       
       const { data: orderResponse, error: orderError } = await supabase.functions.invoke('bybit-api', {
         body: {
@@ -45,7 +45,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
           method: 'POST',
           params: {
             category: 'spot',
-            symbol: TEST_SYMBOLS.BTC,
+            symbol: TEST_SYMBOLS.SOL,
             side: 'Buy',
             orderType: 'Market',
             qty: quantity,

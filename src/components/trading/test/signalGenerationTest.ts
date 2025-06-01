@@ -9,9 +9,9 @@ export const runSignalGenerationTest = async (userId: string): Promise<TestResul
       .from('trading_signals')
       .insert({
         user_id: userId,
-        symbol: TEST_SYMBOLS.BTC,
+        symbol: TEST_SYMBOLS.SOL,
         signal_type: 'buy',
-        price: 50000,
+        price: 150,
         confidence: 0.8,
         reasoning: 'Test signal for system verification',
         processed: false,

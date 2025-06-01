@@ -11,7 +11,7 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
         method: 'GET',
         params: {
           category: 'spot',
-          symbol: TEST_SYMBOLS.BTC
+          symbol: TEST_SYMBOLS.SOL
         },
         isDemoTrading: true
       }
@@ -28,7 +28,7 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
       return { 
         test: TEST_NAMES.BYBIT_API, 
         status: 'success', 
-        message: `✅ Bybit DEMO account API working! BTC: $${price}` 
+        message: `✅ Bybit DEMO account API working! SOL: $${price}` 
       };
     } else {
       return { 

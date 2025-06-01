@@ -61,7 +61,7 @@ export class TestRunner {
     this.onResultUpdate([...results]);
 
     // Test 6: Market Order Test
-    results.push({ test: 'Market Order Test ($20)', status: 'running', message: 'Testing $20 market order placement on DEMO account...' });
+    results.push({ test: 'Market Order Tests ($100-$1000)', status: 'running', message: 'Testing market order placement with SOL on DEMO account...' });
     this.onResultUpdate([...results]);
     
     const orderResult = await runMarketOrderTest();
