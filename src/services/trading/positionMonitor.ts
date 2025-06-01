@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -23,12 +22,74 @@ export class PositionMonitor {
     });
   }
 
+  private formatQuantityForSymbol(symbol: string, quantity: number): string {
+    // Enhanced precision rules based on Bybit testnet requirements
+    const precisionRules: Record<string, number> = {
+      // Major pairs - higher precision for smaller quantities
+      'BTCUSDT': 6,
+      'ETHUSDT': 5,
+      'BNBUSDT': 4,
+      'SOLUSDT': 3,
+      'ADAUSDT': 2,
+      'XRPUSDT': 1,
+      'LTCUSDT': 5,
+      // Lower value coins - fewer decimals but still sufficient
+      'DOGEUSDT': 0,
+      'MATICUSDT': 1,
+      'FETUSDT': 0,
+      'POLUSDT': 0,
+      'XLMUSDT': 0,
+    };
+
+    const decimals = precisionRules[symbol] || 3;
+    let formattedQty = quantity.toFixed(decimals);
+    
+    // Remove trailing zeros but keep at least one decimal place for most pairs
+    if (decimals > 0) {
+      formattedQty = parseFloat(formattedQty).toString();
+    }
+    
+    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
+    return formattedQty;
+  }
+
+  private validateMinOrderValue(symbol: string, quantity: number, price: number): boolean {
+    const orderValue = quantity * price;
+    
+    // Enhanced minimum order values for different symbols
+    const minOrderValues: Record<string, number> = {
+      'BTCUSDT': 5,
+      'ETHUSDT': 5,
+      'BNBUSDT': 5,
+      'SOLUSDT': 5,
+      'LTCUSDT': 5,
+      'ADAUSDT': 1,
+      'XRPUSDT': 1,
+      'DOGEUSDT': 1,
+      'MATICUSDT': 1,
+      'FETUSDT': 1,
+      'POLUSDT': 1,
+      'XLMUSDT': 1,
+    };
+
+    const minValue = minOrderValues[symbol] || 1;
+    
+    console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minValue})`);
+    
+    if (orderValue < minValue) {
+      console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minValue}`);
+      return false;
+    }
+    
+    return true;
+  }
+
   async monitorPositions(): Promise<void> {
     console.log('🔍 Starting position monitoring...');
     console.log(`Using take profit percentage from config: ${this.config.take_profit_percent}%`);
     
     try {
-      // FIRST AND MOST IMPORTANT: Check and fill any pending orders that should be filled
+      // Check and fill any pending orders first
       console.log('🔄 Checking pending orders for fill conditions...');
       await this.orderFillChecker.checkAndFillPendingOrders();
 
@@ -66,16 +127,15 @@ export class PositionMonitor {
       console.log(`  Quantity: ${trade.quantity}`);
       console.log(`  Take Profit Target: ${this.config.take_profit_percent}%`);
 
-      // Get current market price
+      // Get fresh market price from Bybit testnet
       const marketData = await this.bybitService.getMarketPrice(trade.symbol);
       const currentPrice = marketData.price;
       
       console.log(`  Current Price: $${currentPrice}`);
 
-      // Calculate profit/loss percentage and dollar amount correctly
+      // Calculate profit/loss percentage and dollar amount
       const entryPrice = parseFloat(trade.price.toString());
       const quantity = parseFloat(trade.quantity.toString());
-      const originalInvestment = entryPrice * quantity;
 
       let profitPercent = 0;
       let dollarProfitLoss = 0;
@@ -88,14 +148,13 @@ export class PositionMonitor {
         dollarProfitLoss = (entryPrice - currentPrice) * quantity;
       }
 
-      console.log(`  Original Investment: $${originalInvestment.toFixed(2)}`);
       console.log(`  Profit/Loss: ${profitPercent.toFixed(2)}% ($${dollarProfitLoss.toFixed(2)})`);
       console.log(`  Take Profit Target from config: ${this.config.take_profit_percent}%`);
 
-      // Update the trade with current P&L regardless of whether we close it
+      // Update the trade with current P&L
       await this.updateTradeWithCurrentPL(trade.id, dollarProfitLoss);
 
-      // Check if profit target is reached using config value
+      // Check if profit target is reached
       if (profitPercent >= this.config.take_profit_percent) {
         console.log(`🎯 PROFIT TARGET REACHED! Closing position for ${trade.symbol} (${profitPercent.toFixed(2)}% >= ${this.config.take_profit_percent}%)`);
         await this.closePosition(trade, currentPrice, dollarProfitLoss);
@@ -132,15 +191,14 @@ export class PositionMonitor {
       const quantity = parseFloat(trade.quantity.toString());
       const profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
       
-      console.log(`💰 Closing position for ${trade.symbol}:`);
+      console.log(`💰 Attempting to close position for ${trade.symbol}:`);
       console.log(`  Entry: $${entryPrice}`);
       console.log(`  Exit: $${currentPrice}`);
       console.log(`  Quantity: ${quantity}`);
       console.log(`  Dollar P&L: $${dollarProfitLoss.toFixed(2)}`);
       console.log(`  Percent P&L: ${profitPercent.toFixed(2)}%`);
-      console.log(`  Config take profit target: ${this.config.take_profit_percent}%`);
 
-      // First check if trade is already closed
+      // Check if trade is already closed
       const { data: currentTrade } = await supabase
         .from('trades')
         .select('status')
@@ -152,39 +210,83 @@ export class PositionMonitor {
         return;
       }
 
-      // Update trade status to closed with correct P&L
-      // Use only 'closed' status which should be valid
-      const { error } = await supabase
-        .from('trades')
-        .update({
-          status: 'closed',
-          profit_loss: dollarProfitLoss,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', trade.id)
-        .eq('status', 'filled');
-
-      if (error) {
-        console.error(`Database error closing position:`, error);
-        throw error;
+      // Format quantity properly for close order
+      const formattedQuantity = this.formatQuantityForSymbol(trade.symbol, quantity);
+      
+      // Validate minimum order value before placing sell order
+      if (!this.validateMinOrderValue(trade.symbol, quantity, currentPrice)) {
+        console.log(`❌ Cannot close ${trade.symbol}: order value below minimum`);
+        await this.logActivity('close_rejected', `Cannot close ${trade.symbol}: order value below minimum`, {
+          tradeId: trade.id,
+          quantity: formattedQuantity,
+          currentPrice,
+          orderValue: quantity * currentPrice,
+          reason: 'order_value_too_low'
+        });
+        return;
       }
 
-      console.log(`✅ Position closed successfully for ${trade.symbol}`);
-      
-      await this.logActivity('position_closed', `Position closed for ${trade.symbol}`, {
-        symbol: trade.symbol,
-        entryPrice,
-        exitPrice: currentPrice,
-        quantity,
-        dollarProfitLoss,
-        profitPercent,
-        takeProfitTarget: this.config.take_profit_percent,
-        tradeId: trade.id,
-        configUsed: {
-          takeProfitPercent: this.config.take_profit_percent,
-          maxPositionsPerPair: this.config.max_positions_per_pair
+      try {
+        // Place sell order on Bybit testnet
+        const sellOrder = await this.bybitService.placeOrder({
+          category: 'spot',
+          symbol: trade.symbol,
+          side: 'Sell',
+          orderType: 'Market',
+          qty: formattedQuantity,
+        });
+
+        console.log('Sell order response:', sellOrder);
+
+        if (sellOrder.retCode === 0) {
+          // Update trade status to closed
+          const { error } = await supabase
+            .from('trades')
+            .update({
+              status: 'closed',
+              profit_loss: dollarProfitLoss,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', trade.id)
+            .eq('status', 'filled');
+
+          if (error) {
+            console.error(`Database error closing position:`, error);
+            throw error;
+          }
+
+          console.log(`✅ Position closed successfully for ${trade.symbol}`);
+          
+          await this.logActivity('position_closed', `Position closed for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`, {
+            symbol: trade.symbol,
+            entryPrice,
+            exitPrice: currentPrice,
+            quantity: formattedQuantity,
+            dollarProfitLoss,
+            profitPercent,
+            takeProfitTarget: this.config.take_profit_percent,
+            tradeId: trade.id,
+            sellOrderId: sellOrder.result?.orderId
+          });
+        } else {
+          console.error(`Failed to close position for ${trade.symbol}:`, sellOrder);
+          await this.logActivity('execution_error', `Failed to close position for ${trade.symbol}`, { 
+            sellOrder,
+            reason: `Bybit error: ${sellOrder.retMsg}`,
+            retCode: sellOrder.retCode,
+            tradeId: trade.id,
+            formattedQuantity
+          });
         }
-      });
+      } catch (orderError) {
+        console.error(`Error placing close order for ${trade.symbol}:`, orderError);
+        await this.logActivity('execution_error', `Error placing close order for ${trade.symbol}`, { 
+          error: orderError instanceof Error ? orderError.message : 'Unknown error',
+          tradeId: trade.id,
+          symbol: trade.symbol,
+          formattedQuantity
+        });
+      }
 
     } catch (error) {
       console.error(`Error closing position for ${trade.symbol}:`, error);

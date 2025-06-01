@@ -30,9 +30,8 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
   const handleManualClose = async () => {
     try {
       console.log(`Manually closing trade ${trade.id} for ${trade.symbol}`);
-      console.log(`Trade current status: ${trade.status}`);
       
-      // First, verify the trade exists and get its current status
+      // First, verify the trade exists and is not already closed
       const { data: currentTrade, error: fetchError } = await supabase
         .from('trades')
         .select('*')
@@ -49,13 +48,10 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         return;
       }
 
-      console.log('Current trade data:', currentTrade);
-
-      // Only update if trade is not already closed
       if (currentTrade.status === 'closed') {
         console.log('Trade is already closed');
         toast({
-          title: "Info",
+          title: "Info", 
           description: "Trade is already closed",
         });
         onClose(trade);
@@ -64,15 +60,16 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
 
       // Calculate current P&L if we have current price
       let profitLoss = 0;
-      if (trade.currentPrice && currentTrade.side === 'buy') {
-        profitLoss = (trade.currentPrice - currentTrade.price) * currentTrade.quantity;
-      } else if (trade.currentPrice && currentTrade.side === 'sell') {
-        profitLoss = (currentTrade.price - trade.currentPrice) * currentTrade.quantity;
+      if (trade.currentPrice) {
+        if (currentTrade.side === 'buy') {
+          profitLoss = (trade.currentPrice - currentTrade.price) * currentTrade.quantity;
+        } else if (currentTrade.side === 'sell') {
+          profitLoss = (currentTrade.price - trade.currentPrice) * currentTrade.quantity;
+        }
       }
 
-      // Update trade status to closed in database
-      // Only update trades that are in valid statuses that can be closed
-      const { error } = await supabase
+      // Update trade status to closed in database (only for fillable statuses)
+      const { error: updateError } = await supabase
         .from('trades')
         .update({
           status: 'closed',
@@ -80,13 +77,13 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .in('status', ['pending', 'filled']); // Only close pending or filled trades
+        .in('status', ['pending', 'filled', 'partial_filled']); // Only close these statuses
 
-      if (error) {
-        console.error('Error updating trade status:', error);
+      if (updateError) {
+        console.error('Error updating trade status:', updateError);
         toast({
           title: "Error",
-          description: `Failed to close trade: ${error.message}`,
+          description: `Failed to close trade: ${updateError.message}`,
           variant: "destructive",
         });
         return;
@@ -94,9 +91,25 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
 
       console.log(`✅ Trade ${trade.id} manually closed successfully`);
       
+      // Log the manual close activity
+      await supabase
+        .from('trading_logs')
+        .insert({
+          user_id: currentTrade.user_id,
+          log_type: 'manual_close',
+          message: `Trade manually closed for ${trade.symbol}`,
+          data: {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            profitLoss,
+            previousStatus: currentTrade.status,
+            closedBy: 'manual'
+          }
+        });
+      
       toast({
         title: "Trade Closed",
-        description: `Successfully closed ${trade.symbol} position`,
+        description: `Successfully closed ${trade.symbol} position manually`,
       });
 
       // Call the parent callback to refresh the UI
@@ -118,7 +131,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         <Button
           variant="destructive"
           size="sm"
-          disabled={isClosing}
+          disabled={isClosing || trade.status === 'closed'}
           className="h-8 w-8 p-0"
         >
           {isClosing ? (
@@ -135,15 +148,22 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
             Are you sure you want to manually close this {trade.symbol} position?
             <br />
             <br />
-            <strong>Trade ID:</strong> {trade.id}
+            <strong>Trade ID:</strong> {trade.id.substring(0, 8)}...
             <br />
             <strong>Current Status:</strong> {trade.status}
+            <br />
+            <strong>Entry Price:</strong> ${trade.price?.toFixed(6) || 'N/A'}
+            <br />
+            <strong>Quantity:</strong> {trade.quantity}
             <br />
             <strong>Current P&L:</strong> <span className={`font-medium ${
               (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
               {formatCurrency(trade.unrealizedPL || 0)}
             </span>
+            <br />
+            <br />
+            <em>Note: This will close the position in the database only. For live trading, ensure you also close the position on the exchange.</em>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
