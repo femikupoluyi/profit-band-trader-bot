@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -80,6 +79,18 @@ const TradingLogs = () => {
         console.log('✅ Market data cleared');
       }
       
+      // Clear trade data
+      const { error: tradesError } = await supabase
+        .from('trades')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (tradesError) {
+        console.error('Error clearing trades:', tradesError);
+      } else {
+        console.log('✅ Trade data cleared');
+      }
+      
       // Clear trading logs
       const { error: logsError } = await supabase
         .from('trading_logs')
@@ -107,7 +118,7 @@ const TradingLogs = () => {
       // Refresh the logs display
       await fetchLogs();
       
-      console.log('✅ All historical data cleared successfully');
+      console.log('✅ All historical data including trades cleared successfully');
     } catch (error) {
       console.error('❌ Error clearing data:', error);
     } finally {
@@ -160,7 +171,7 @@ const TradingLogs = () => {
               disabled={clearing}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              {clearing ? 'Clearing...' : 'Clear All Data'}
+              {clearing ? 'Clearing...' : 'Clear All Data & Trades'}
             </Button>
             <Button
               variant="outline"
