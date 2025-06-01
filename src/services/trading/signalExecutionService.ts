@@ -125,23 +125,67 @@ export class SignalExecutionService {
       console.log(`  Total Value: $${(price * quantity).toFixed(2)}`);
       console.log(`  Take Profit Target: ${takeProfitPercent}%`);
 
-      // Validate inputs before database insert
+      // Validate inputs before order placement
       if (isNaN(price) || isNaN(quantity) || price <= 0 || quantity <= 0) {
         throw new Error(`Invalid trade parameters: price=${price}, quantity=${quantity}`);
       }
 
-      // Create trade record
+      let bybitOrderId = `mock_${Date.now()}`;
+
+      // Try to place actual order on Bybit Demo if service is available
+      try {
+        console.log(`🔄 Attempting to place order on Bybit Demo for ${symbol}...`);
+        
+        // Place market buy order on Bybit Demo
+        const orderResult = await this.bybitService.placeOrder({
+          category: 'spot',
+          symbol: symbol,
+          side: 'Buy',
+          orderType: 'Market',
+          qty: quantity.toString(),
+          timeInForce: 'IOC'
+        });
+
+        if (orderResult && orderResult.orderId) {
+          bybitOrderId = orderResult.orderId;
+          console.log(`✅ Successfully placed order on Bybit Demo: ${bybitOrderId}`);
+          await this.logActivity('trade_created', `Real order placed on Bybit Demo for ${symbol}`, {
+            bybitOrderId,
+            orderResult,
+            symbol,
+            quantity,
+            orderType: 'Market Buy'
+          });
+        } else {
+          console.log(`⚠️ Bybit order placement returned no order ID, using mock order`);
+          await this.logActivity('trade_created', `Bybit order placement failed, using mock order for ${symbol}`, {
+            orderResult,
+            symbol,
+            fallbackToMock: true
+          });
+        }
+      } catch (bybitError) {
+        console.error(`⚠️ Failed to place order on Bybit Demo: ${bybitError.message}`);
+        console.log(`📝 Falling back to mock order for tracking purposes`);
+        await this.logActivity('trade_created', `Bybit order failed, using mock order for ${symbol}`, {
+          bybitError: bybitError.message,
+          symbol,
+          fallbackToMock: true
+        });
+      }
+
+      // Create trade record in database
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
           user_id: this.userId,
           symbol,
           side: 'buy',
-          order_type: 'limit',
+          order_type: 'market',
           price: price,
           quantity: quantity,
           status: 'pending' as const,
-          bybit_order_id: `mock_${Date.now()}`,
+          bybit_order_id: bybitOrderId,
         })
         .select()
         .single();
@@ -151,20 +195,23 @@ export class SignalExecutionService {
         throw error;
       }
 
-      console.log(`✅ Buy order executed successfully for ${symbol}`);
+      console.log(`✅ Trade record created successfully for ${symbol}`);
       console.log(`  Trade ID: ${trade.id}`);
+      console.log(`  Bybit Order ID: ${bybitOrderId}`);
       console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
 
-      await this.logActivity('trade_created', `Buy order executed for ${symbol}`, {
+      await this.logActivity('trade_created', `Buy order executed for ${symbol} (Order ID: ${bybitOrderId})`, {
         symbol,
         price,
         quantity,
         totalValue: price * quantity,
         tradeId: trade.id,
+        bybitOrderId,
         takeProfitTarget: takeProfitPercent,
         entryOffset: this.config.entry_offset_percent,
         maxOrderAmount: this.config.max_order_amount_usd,
-        maxPositionsPerPair: this.config.max_positions_per_pair
+        maxPositionsPerPair: this.config.max_positions_per_pair,
+        orderType: bybitOrderId.startsWith('mock_') ? 'Mock Order' : 'Real Bybit Order'
       });
 
       // Mark signal as processed
