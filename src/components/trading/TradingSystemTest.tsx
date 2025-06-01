@@ -10,13 +10,13 @@ import { Loader2, TestTube, CheckCircle, XCircle } from 'lucide-react';
 const TradingSystemTest = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [isTesting, setIsLoading] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [testResults, setTestResults] = useState<any[]>([]);
 
   const runSystemTests = async () => {
     if (!user) return;
     
-    setIsLoading(true);
+    setIsTesting(true);
     setTestResults([]);
     
     const results: any[] = [];
@@ -181,7 +181,7 @@ const TradingSystemTest = () => {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsTesting(false);
     }
   };
 
@@ -212,10 +212,10 @@ const TradingSystemTest = () => {
       <CardContent className="space-y-4">
         <Button 
           onClick={runSystemTests} 
-          disabled={isLoading || !user}
+          disabled={isTesting || !user}
           className="w-full"
         >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isTesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Run System Tests
         </Button>
 
