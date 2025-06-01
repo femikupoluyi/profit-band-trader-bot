@@ -1,4 +1,5 @@
 
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -98,7 +99,7 @@ serve(async (req) => {
       finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
       
     } else {
-      // For POST requests, create proper signature
+      // For POST requests, use V5 signature method
       const cleanParams = { ...params };
       // Remove cache busting parameters from the actual request
       delete cleanParams._t;
@@ -129,7 +130,7 @@ serve(async (req) => {
       'Expires': '0'
     };
 
-    // Add signature to headers for POST requests
+    // Add signature to headers for POST requests (V5 API)
     if (method === 'POST') {
       const postSignString = timestamp + apiKey + recvWindow + (requestBody || '');
       console.log('POST signature string:', postSignString);

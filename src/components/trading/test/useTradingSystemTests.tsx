@@ -29,17 +29,13 @@ export const useTradingSystemTests = () => {
         .select('*')
         .eq('user_id', user.id)
         .eq('exchange_name', 'bybit')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .maybeSingle();
       
       if (credError) {
         results[0] = { test: 'API Credentials', status: 'error', message: `❌ Error fetching credentials: ${credError.message}` };
-      } else if (credentials && credentials.length > 0) {
-        const cred = credentials[0];
-        if (cred.api_key && cred.api_secret) {
-          results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit MAIN exchange API credentials found and active' };
-        } else {
-          results[0] = { test: 'API Credentials', status: 'error', message: '❌ API credentials incomplete - missing key or secret' };
-        }
+      } else if (credentials && credentials.api_key && credentials.api_secret) {
+        results[0] = { test: 'API Credentials', status: 'success', message: '✅ Bybit MAIN exchange API credentials found and active' };
       } else {
         results[0] = { test: 'API Credentials', status: 'error', message: '❌ Bybit MAIN exchange API credentials not found. Please configure them in the API Setup tab.' };
       }
