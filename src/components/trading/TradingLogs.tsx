@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 
 interface TradingLog {
   id: string;
@@ -21,6 +21,7 @@ const TradingLogs = () => {
   const [logs, setLogs] = useState<TradingLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -57,6 +58,60 @@ const TradingLogs = () => {
       console.error('Error fetching logs:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const clearAllData = async () => {
+    if (!user) return;
+    
+    setClearing(true);
+    try {
+      console.log('🧹 Clearing all historical data and logs...');
+      
+      // Clear market data
+      const { error: marketError } = await supabase
+        .from('market_data')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      if (marketError) {
+        console.error('Error clearing market data:', marketError);
+      } else {
+        console.log('✅ Market data cleared');
+      }
+      
+      // Clear trading logs
+      const { error: logsError } = await supabase
+        .from('trading_logs')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (logsError) {
+        console.error('Error clearing logs:', logsError);
+      } else {
+        console.log('✅ Trading logs cleared');
+      }
+      
+      // Clear trading signals
+      const { error: signalsError } = await supabase
+        .from('trading_signals')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (signalsError) {
+        console.error('Error clearing signals:', signalsError);
+      } else {
+        console.log('✅ Trading signals cleared');
+      }
+      
+      // Refresh the logs display
+      await fetchLogs();
+      
+      console.log('✅ All historical data cleared successfully');
+    } catch (error) {
+      console.error('❌ Error clearing data:', error);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -98,6 +153,15 @@ const TradingLogs = () => {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearAllData}
+              disabled={clearing}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {clearing ? 'Clearing...' : 'Clear All Data'}
+            </Button>
             <Button
               variant="outline"
               size="sm"

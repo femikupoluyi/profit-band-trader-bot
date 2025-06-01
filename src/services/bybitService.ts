@@ -1,4 +1,3 @@
-
 interface BybitCredentials {
   apiKey: string;
   apiSecret: string;
@@ -45,26 +44,34 @@ export class BybitService {
     try {
       const { supabase } = await import('@/integrations/supabase/client');
       
-      console.log(`Calling Bybit API: ${method} ${endpoint}`, params);
+      console.log(`🚀 Making FRESH API call to Bybit testnet: ${method} ${endpoint}`, params);
+      
+      // Add timestamp to prevent caching
+      const timestamp = Date.now();
+      const requestParams = {
+        ...params,
+        _t: timestamp // Anti-cache parameter
+      };
       
       const { data, error } = await supabase.functions.invoke('bybit-api', {
         body: {
           endpoint,
           method,
-          params,
-          isDemoTrading: this.credentials.testnet
+          params: requestParams,
+          isDemoTrading: this.credentials.testnet,
+          timestamp // Ensure fresh request
         }
       });
 
       if (error) {
-        console.error('Edge function error:', error);
-        throw new Error(`API call failed: ${error.message}`);
+        console.error('❌ Edge function error:', error);
+        throw new Error(`Bybit API call failed: ${error.message}`);
       }
 
-      console.log('API response received:', data);
+      console.log('✅ Fresh API response received from Bybit testnet:', data);
       return data;
     } catch (error) {
-      console.error('Bybit API call error:', error);
+      console.error('❌ Bybit API call error:', error);
       throw error;
     }
   }
@@ -97,17 +104,20 @@ export class BybitService {
 
   async getMarketPrice(symbol: string): Promise<MarketPrice> {
     try {
-      console.log(`Fetching market price for ${symbol} from Bybit testnet...`);
+      console.log(`🔄 Fetching REAL-TIME price for ${symbol} from Bybit testnet (NO CACHE)...`);
+      
+      // Force fresh API call with timestamp to prevent caching
       const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
         category: 'spot',
-        symbol
+        symbol,
+        _nocache: Date.now() // Additional anti-cache parameter
       });
 
       if (response.retCode === 0 && response.result?.list?.[0]) {
         const ticker = response.result.list[0];
         const price = parseFloat(ticker.lastPrice);
         
-        console.log(`Market price for ${symbol}: $${price}`);
+        console.log(`✅ FRESH market price for ${symbol}: $${price.toFixed(6)} (from Bybit testnet)`);
         return {
           symbol,
           price,
@@ -115,10 +125,14 @@ export class BybitService {
         };
       }
 
-      throw new Error('Invalid response from Bybit');
+      console.error(`❌ Invalid response from Bybit for ${symbol}:`, response);
+      throw new Error(`Invalid response from Bybit for ${symbol}`);
     } catch (error) {
-      console.error(`Error fetching price for ${symbol}:`, error);
-      return this.generateMockPrice(symbol);
+      console.error(`❌ Error fetching real-time price for ${symbol}:`, error);
+      
+      // Log the API failure but don't use fallback prices
+      console.error(`❌ CRITICAL: Cannot fetch real-time price for ${symbol} from Bybit testnet`);
+      throw new Error(`Failed to fetch real-time price for ${symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

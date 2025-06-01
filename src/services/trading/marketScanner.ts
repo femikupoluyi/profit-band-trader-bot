@@ -15,6 +15,9 @@ export class MarketScanner {
   }
 
   async scanMarkets(): Promise<void> {
+    // Clear historical data first
+    await this.clearHistoricalData();
+    
     // Use trading pairs from config
     const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
@@ -23,24 +26,24 @@ export class MarketScanner {
     
     for (const symbol of symbols) {
       try {
-        console.log(`📊 Getting REAL-TIME price for ${symbol} from Bybit testnet...`);
+        console.log(`📊 Getting REAL-TIME price for ${symbol} from Bybit testnet (NO CACHE)...`);
         
-        // Get fresh market price from testnet (not cached)
+        // Always fetch fresh real-time price from testnet API
         const marketPrice = await this.getRealtimePrice(symbol);
         console.log(`✅ ${symbol} LIVE testnet price: $${marketPrice.price.toFixed(6)}`);
         
-        // Store current market data with proper price handling
+        // Store current market data with real-time price
         const { error: insertError } = await supabase
           .from('market_data')
           .insert({
             symbol,
             price: marketPrice.price,
             timestamp: new Date().toISOString(),
-            source: 'bybit_testnet_live',
+            source: 'bybit_testnet_realtime',
           });
 
         if (insertError) {
-          console.error(`Error storing market data for ${symbol}:`, insertError);
+          console.error(`❌ Error storing market data for ${symbol}:`, insertError);
           await this.logActivity('error', `Failed to store market data for ${symbol}`, { 
             error: insertError.message,
             price: marketPrice.price
@@ -49,29 +52,47 @@ export class MarketScanner {
           console.log(`✅ Market data stored for ${symbol} - Price: $${marketPrice.price.toFixed(6)}`);
         }
         
-        // Create additional historical data points for analysis
-        await this.createHistoricalDataPoints(symbol, marketPrice.price);
-        
       } catch (error) {
         console.error(`❌ Error scanning ${symbol} on testnet:`, error);
-        await this.logActivity('error', `Failed to scan ${symbol} on testnet`, { 
+        await this.logActivity('error', `Failed to scan ${symbol} on testnet - API call failed`, { 
           error: error instanceof Error ? error.message : 'Unknown error',
-          symbol
+          symbol,
+          timestamp: new Date().toISOString()
         });
       }
     }
     
-    console.log('✅ MARKET SCAN COMPLETED');
+    console.log('✅ MARKET SCAN COMPLETED - All prices fetched in real-time');
+  }
+
+  private async clearHistoricalData(): Promise<void> {
+    try {
+      console.log('🧹 Clearing historical market data...');
+      
+      // Delete all historical market data to ensure fresh start
+      const { error } = await supabase
+        .from('market_data')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
+      
+      if (error) {
+        console.error('❌ Error clearing historical data:', error);
+      } else {
+        console.log('✅ Historical market data cleared successfully');
+      }
+    } catch (error) {
+      console.error('❌ Failed to clear historical data:', error);
+    }
   }
 
   private async getRealtimePrice(symbol: string): Promise<{ price: number }> {
     try {
-      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit testnet API...`);
+      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit testnet API (FRESH REQUEST)...`);
       
-      // Always fetch fresh price from Bybit testnet
+      // Force a fresh API call to Bybit testnet - no caching
       const marketPrice = await this.bybitService.getMarketPrice(symbol);
       
-      console.log(`📈 LIVE price received for ${symbol}: $${marketPrice.price.toFixed(6)}`);
+      console.log(`📈 FRESH price received for ${symbol}: $${marketPrice.price.toFixed(6)}`);
       
       // Validate the price is reasonable
       if (marketPrice.price <= 0 || !isFinite(marketPrice.price)) {
@@ -80,47 +101,14 @@ export class MarketScanner {
       
       return { price: marketPrice.price };
     } catch (error) {
-      console.error(`❌ Error fetching real-time price for ${symbol}:`, error);
+      console.error(`❌ Failed to fetch real-time price for ${symbol}:`, error);
+      await this.logActivity('error', `Real-time price fetch failed for ${symbol}`, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        symbol,
+        timestamp: new Date().toISOString(),
+        source: 'bybit_testnet_api'
+      });
       throw error;
-    }
-  }
-
-  private async createHistoricalDataPoints(symbol: string, currentPrice: number): Promise<void> {
-    // Create historical price points for technical analysis
-    const candleCount = this.config.support_candle_count || 20;
-    
-    try {
-      console.log(`📈 Creating ${candleCount} historical data points for ${symbol} based on current price $${currentPrice.toFixed(6)}`);
-      
-      const historicalPoints = [];
-      
-      for (let i = 1; i <= candleCount; i++) {
-        // Create realistic price variation (±2% from current price)
-        const variation = (Math.random() - 0.5) * 0.04; // -2% to +2%
-        const historicalPrice = currentPrice * (1 + variation);
-        const timestamp = new Date(Date.now() - i * 3600000); // 1 hour intervals
-        
-        historicalPoints.push({
-          symbol,
-          price: historicalPrice,
-          timestamp: timestamp.toISOString(),
-          source: 'bybit_testnet_historical',
-        });
-      }
-
-      // Insert all historical points in batch
-      const { error } = await supabase
-        .from('market_data')
-        .insert(historicalPoints);
-
-      if (error) {
-        console.error(`Error creating historical data for ${symbol}:`, error);
-      } else {
-        console.log(`✅ Created ${candleCount} historical data points for ${symbol}`);
-      }
-      
-    } catch (error) {
-      console.error(`Error creating historical data for ${symbol}:`, error);
     }
   }
 
