@@ -6,11 +6,13 @@ interface BybitCredentials {
 }
 
 interface OrderRequest {
+  category: string;
   symbol: string;
   side: 'Buy' | 'Sell';
   orderType: 'Market' | 'Limit';
   qty: string;
   price?: string;
+  timeInForce?: string;
 }
 
 interface MarketPrice {
@@ -149,13 +151,13 @@ export class BybitService {
       console.log('Placing real order on Bybit Global demo:', order);
       
       return await this.callBybitAPI('/v5/order/create', 'POST', {
-        category: 'spot',
+        category: order.category,
         symbol: order.symbol,
         side: order.side,
         orderType: order.orderType,
         qty: order.qty,
         price: order.price,
-        timeInForce: 'GTC'
+        timeInForce: order.timeInForce || 'GTC'
       });
     } catch (error) {
       console.error('Error placing order:', error);

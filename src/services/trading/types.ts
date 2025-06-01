@@ -17,11 +17,13 @@ export interface ApiCredentials {
 }
 
 export interface OrderRequest {
+  category: string;
   symbol: string;
   side: 'buy' | 'sell';
   orderType: 'market' | 'limit';
   qty: string;
   price?: string;
+  timeInForce?: string;
 }
 
 export interface CandleData {
