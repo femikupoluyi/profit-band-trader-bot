@@ -25,6 +25,46 @@ export class SignalExecutionService {
     });
   }
 
+  private formatQuantityForSymbol(symbol: string, quantity: number): string {
+    // Define precision rules for different symbols based on Bybit requirements
+    const precisionRules: Record<string, number> = {
+      // Major pairs - typically 3-6 decimal places
+      'BTCUSDT': 6,
+      'ETHUSDT': 4,
+      'BNBUSDT': 3,
+      'SOLUSDT': 3,
+      'ADAUSDT': 1,
+      'XRPUSDT': 1,
+      'DOGEUSDT': 0,
+      'MATICUSDT': 0,
+      'LTCUSDT': 4,
+      // Lower value coins - fewer decimal places
+      'FETUSDT': 1,
+      'POLUSDT': 0,
+      'XLMUSDT': 0,
+    };
+
+    const decimals = precisionRules[symbol] || 3; // Default to 3 decimal places
+    const formattedQty = quantity.toFixed(decimals);
+    
+    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
+    return formattedQty;
+  }
+
+  private validateOrderValue(symbol: string, quantity: number, price: number): boolean {
+    const orderValue = quantity * price;
+    const minOrderValue = 1; // Minimum $1 order value for most symbols
+    
+    console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minOrderValue})`);
+    
+    if (orderValue < minOrderValue) {
+      console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minOrderValue}`);
+      return false;
+    }
+    
+    return true;
+  }
+
   async executeSignal(signal: any): Promise<void> {
     console.log(`\n🎯 Processing signal for ${signal.symbol}:`);
     console.log(`  Signal Type: ${signal.signal_type}`);
@@ -151,6 +191,18 @@ export class SignalExecutionService {
         throw new Error(`Invalid trade parameters: price=${price}, quantity=${quantity}`);
       }
 
+      // Validate minimum order value
+      if (!this.validateOrderValue(symbol, quantity, price)) {
+        await this.logActivity('order_rejected', `Order rejected for ${symbol}: value below minimum`, {
+          symbol,
+          quantity,
+          price,
+          orderValue: quantity * price,
+          reason: 'order_value_too_low'
+        });
+        return;
+      }
+
       let bybitOrderId = `mock_${Date.now()}`;
       let tradeStatus: 'pending' | 'filled' = 'pending';
       let actualFillPrice = price;
@@ -159,8 +211,8 @@ export class SignalExecutionService {
       try {
         console.log(`🔄 Placing ${orderType.toUpperCase()} order on Bybit Demo for ${symbol}...`);
         
-        // Format quantity to appropriate decimal places for Bybit
-        const formattedQuantity = quantity.toFixed(6);
+        // Format quantity with proper precision for the symbol
+        const formattedQuantity = this.formatQuantityForSymbol(symbol, quantity);
         const formattedPrice = orderType === 'limit' ? price.toFixed(4) : undefined;
         
         console.log(`  Formatted quantity: ${formattedQuantity}`);
@@ -244,7 +296,7 @@ export class SignalExecutionService {
           side: 'buy',
           order_type: orderType,
           price: actualFillPrice,
-          quantity: quantity,
+          quantity: parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
           status: validStatus,
           bybit_order_id: bybitOrderId,
         })
@@ -267,8 +319,8 @@ export class SignalExecutionService {
       await this.logActivity('trade_executed', `${orderType.toUpperCase()} buy order executed successfully for ${symbol} on Bybit Demo`, {
         symbol,
         price: actualFillPrice,
-        quantity,
-        totalValue: actualFillPrice * quantity,
+        quantity: parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
+        totalValue: actualFillPrice * parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
         tradeId: trade.id,
         bybitOrderId,
         orderType,
