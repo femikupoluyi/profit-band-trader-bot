@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,7 +26,7 @@ const getDefaultConfig = (): TradingConfigData => ({
   chart_timeframe: '1m',
   entry_offset_percent: 0.5,
   take_profit_percent: 1.0,
-  support_candle_count: 20,
+  support_candle_count: 128,
   max_positions_per_pair: 2,
   new_support_threshold_percent: 1.0,
   trading_pairs: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
@@ -69,16 +68,16 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           max_portfolio_exposure_percent: parseFloat(data.max_portfolio_exposure_percent?.toString() || '20'),
           daily_reset_time: data.daily_reset_time || '00:00:00',
           chart_timeframe: data.chart_timeframe || '1m',
-          entry_offset_percent: parseFloat(data.buy_range_upper_offset?.toString() || '0.5'),
-          take_profit_percent: parseFloat(data.sell_range_offset?.toString() || '1'),
-          support_candle_count: data.support_candle_count || 20,
+          entry_offset_percent: parseFloat(data.entry_offset_percent?.toString() || '0.5'),
+          take_profit_percent: parseFloat(data.take_profit_percent?.toString() || '1.0'),
+          support_candle_count: data.support_candle_count || 128,
           max_positions_per_pair: data.max_positions_per_pair || 2,
-          new_support_threshold_percent: parseFloat(data.new_support_threshold_percent?.toString() || '1'),
+          new_support_threshold_percent: parseFloat(data.new_support_threshold_percent?.toString() || '1.0'),
           trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
           is_active: data.is_active || false,
         };
         
-        console.log('Loaded config from database with updated defaults:', loadedConfig);
+        console.log('Loaded config from database with updated schema:', loadedConfig);
         setConfig(loadedConfig);
       } else {
         setHasExistingConfig(false);
@@ -99,15 +98,14 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
 
     setIsLoading(true);
     try {
-      // Ensure all values match the screenshot configuration
       const configData = {
         max_active_pairs: config.max_active_pairs,
         max_order_amount_usd: config.max_order_amount_usd,
         max_portfolio_exposure_percent: config.max_portfolio_exposure_percent,
         daily_reset_time: config.daily_reset_time,
         chart_timeframe: config.chart_timeframe,
-        buy_range_upper_offset: config.entry_offset_percent,
-        sell_range_offset: config.take_profit_percent,
+        entry_offset_percent: config.entry_offset_percent,
+        take_profit_percent: config.take_profit_percent,
         support_candle_count: config.support_candle_count,
         max_positions_per_pair: config.max_positions_per_pair,
         new_support_threshold_percent: config.new_support_threshold_percent,
@@ -116,7 +114,7 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         updated_at: new Date().toISOString(),
       };
 
-      console.log('Saving config data matching screenshot values:', configData);
+      console.log('Saving config data with cleaned schema:', configData);
 
       if (hasExistingConfig) {
         const { error } = await supabase

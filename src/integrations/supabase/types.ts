@@ -899,61 +899,55 @@ export type Database = {
       }
       trading_configs: {
         Row: {
-          buy_range_lower_offset: number | null
-          buy_range_upper_offset: number | null
           chart_timeframe: string | null
           created_at: string | null
           daily_reset_time: string | null
+          entry_offset_percent: number | null
           id: string
           is_active: boolean | null
           max_active_pairs: number | null
           max_order_amount_usd: number | null
           max_portfolio_exposure_percent: number | null
           max_positions_per_pair: number | null
-          min_profit_percent: number | null
           new_support_threshold_percent: number | null
-          sell_range_offset: number | null
           support_candle_count: number | null
+          take_profit_percent: number | null
           trading_pairs: string[] | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
-          buy_range_lower_offset?: number | null
-          buy_range_upper_offset?: number | null
           chart_timeframe?: string | null
           created_at?: string | null
           daily_reset_time?: string | null
+          entry_offset_percent?: number | null
           id?: string
           is_active?: boolean | null
           max_active_pairs?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
           max_positions_per_pair?: number | null
-          min_profit_percent?: number | null
           new_support_threshold_percent?: number | null
-          sell_range_offset?: number | null
           support_candle_count?: number | null
+          take_profit_percent?: number | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
-          buy_range_lower_offset?: number | null
-          buy_range_upper_offset?: number | null
           chart_timeframe?: string | null
           created_at?: string | null
           daily_reset_time?: string | null
+          entry_offset_percent?: number | null
           id?: string
           is_active?: boolean | null
           max_active_pairs?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
           max_positions_per_pair?: number | null
-          min_profit_percent?: number | null
           new_support_threshold_percent?: number | null
-          sell_range_offset?: number | null
           support_candle_count?: number | null
+          take_profit_percent?: number | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id?: string
