@@ -18,6 +18,6 @@ export const TEST_NAMES = {
   TRADING_CONFIG: 'Trading Configuration',
   SIGNAL_GENERATION: 'Signal Generation',
   ACCOUNT_BALANCE: 'Account Balance Check',
-  MARKET_ORDER: 'Market Order Test ($20)',
+  MARKET_ORDER: 'Market Order Tests ($5-$50)',
   ORDER_STATUS: 'Order Status Check'
 } as const;
