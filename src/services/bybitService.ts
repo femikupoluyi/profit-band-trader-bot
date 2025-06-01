@@ -148,35 +148,44 @@ export class BybitService {
 
   async placeOrder(order: OrderRequest): Promise<any> {
     try {
-      console.log('Placing real order on Bybit Global demo:', order);
+      console.log('Placing order on Bybit Global demo with params:', order);
       
-      return await this.callBybitAPI('/v5/order/create', 'POST', {
+      // Validate order parameters
+      if (!order.symbol || !order.side || !order.orderType || !order.qty) {
+        throw new Error('Missing required order parameters');
+      }
+
+      // For limit orders, price is required
+      if (order.orderType === 'Limit' && !order.price) {
+        throw new Error('Price is required for limit orders');
+      }
+
+      const orderParams: Record<string, any> = {
         category: order.category,
         symbol: order.symbol,
         side: order.side,
         orderType: order.orderType,
         qty: order.qty,
-        price: order.price,
-        timeInForce: order.timeInForce || 'GTC'
-      });
-    } catch (error) {
-      console.error('Error placing order:', error);
-      // Fallback to mock response
-      return {
-        retCode: 0,
-        retMsg: 'OK (Mock Fallback)',
-        result: {
-          orderId: `mock_${Date.now()}`,
-          orderLinkId: '',
-          symbol: order.symbol,
-          side: order.side,
-          orderType: order.orderType,
-          qty: order.qty,
-          price: order.price || 'Market',
-          orderStatus: 'Filled',
-          createTime: Date.now().toString()
-        }
+        timeInForce: order.timeInForce || (order.orderType === 'Market' ? 'IOC' : 'GTC')
       };
+
+      // Only add price for limit orders
+      if (order.orderType === 'Limit' && order.price) {
+        orderParams.price = order.price;
+      }
+
+      console.log('Final order params being sent to Bybit:', orderParams);
+
+      const response = await this.callBybitAPI('/v5/order/create', 'POST', orderParams);
+      
+      console.log('Raw Bybit order response:', response);
+
+      // Return the response as-is, let the calling code handle success/failure
+      return response;
+    } catch (error) {
+      console.error('Error placing order on Bybit:', error);
+      // Re-throw the error instead of providing fallback
+      throw error;
     }
   }
 
