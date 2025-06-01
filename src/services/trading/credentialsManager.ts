@@ -51,14 +51,9 @@ export class CredentialsManager {
 
         // Test the connection to verify credentials work
         try {
-          console.log('Testing API connection...');
-          const testResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/bybit-api`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabase.supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+          console.log('Testing API connection using Supabase edge function...');
+          const { data: testResult, error: testError } = await supabase.functions.invoke('bybit-api', {
+            body: {
               endpoint: '/v5/market/tickers',
               method: 'GET',
               params: {
@@ -66,12 +61,13 @@ export class CredentialsManager {
                 symbol: 'BTCUSDT'
               },
               isDemoTrading: true
-            })
+            }
           });
 
-          const testResult = await testResponse.json();
-          
-          if (testResult.retCode === 0) {
+          if (testError) {
+            console.log('API connection test failed with error:', testError);
+            await this.logActivity('error', 'API connection test failed', { error: testError.message });
+          } else if (testResult?.retCode === 0) {
             console.log('API connection test successful');
             await this.logActivity('info', 'API connection established successfully', { 
               testnet: credentials.testnet,
@@ -80,8 +76,8 @@ export class CredentialsManager {
           } else {
             console.log('API connection test failed:', testResult);
             await this.logActivity('error', 'API connection test failed', { 
-              retCode: testResult.retCode, 
-              retMsg: testResult.retMsg 
+              retCode: testResult?.retCode, 
+              retMsg: testResult?.retMsg 
             });
           }
         } catch (error) {
