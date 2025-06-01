@@ -61,7 +61,7 @@ export class SignalAnalyzer {
           continue;
         }
 
-        const currentPrice = parseFloat(latestPrice.price);
+        const currentPrice = parseFloat(latestPrice.price.toString());
         console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(4)}`);
 
         // Create a simplified support level for signal generation
