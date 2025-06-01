@@ -70,16 +70,16 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         profitLoss = (currentTrade.price - trade.currentPrice) * currentTrade.quantity;
       }
 
-      // Update trade status to closed in database with proper status value
+      // Update trade status to closed in database
       const { error } = await supabase
         .from('trades')
         .update({
-          status: 'closed', // Use valid status value
+          status: 'closed',
           profit_loss: profitLoss,
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .eq('status', currentTrade.status); // Only update if status hasn't changed
+        .in('status', ['pending', 'filled']);
 
       if (error) {
         console.error('Error updating trade status:', error);

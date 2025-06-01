@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PositionChecker } from './positionChecker';
@@ -152,7 +151,7 @@ export class SignalExecutionService {
       }
 
       let bybitOrderId = `mock_${Date.now()}`;
-      let tradeStatus: 'pending' | 'filled' = 'pending'; // Use only valid status values
+      let tradeStatus: 'pending' | 'filled' = 'pending';
       let actualFillPrice = price;
 
       // Always try to place a real order on Bybit Demo
@@ -202,7 +201,7 @@ export class SignalExecutionService {
           console.log(`  Order status: ${tradeStatus}`);
           console.log(`  Fill price: $${actualFillPrice.toFixed(6)}`);
           
-          await this.logActivity('trade_created', `Real ${orderType} order placed successfully on Bybit Demo for ${symbol}`, {
+          await this.logActivity('order_placed', `Real ${orderType} order placed successfully on Bybit Demo for ${symbol}`, {
             bybitOrderId,
             orderResult,
             symbol,
@@ -213,7 +212,7 @@ export class SignalExecutionService {
           });
         } else {
           console.error(`❌ Bybit order failed - retCode: ${orderResult?.retCode}, retMsg: ${orderResult?.retMsg}`);
-          await this.logActivity('trade_error', `Bybit order failed for ${symbol}`, {
+          await this.logActivity('order_failed', `Bybit order failed for ${symbol}`, {
             orderResult,
             symbol,
             reason: 'bybit_order_failed'
@@ -223,7 +222,7 @@ export class SignalExecutionService {
         }
       } catch (bybitError) {
         console.error(`❌ Failed to place order on Bybit Demo: ${bybitError instanceof Error ? bybitError.message : 'Unknown error'}`);
-        await this.logActivity('trade_error', `Bybit order error for ${symbol}`, {
+        await this.logActivity('order_error', `Bybit order error for ${symbol}`, {
           bybitError: bybitError instanceof Error ? bybitError.message : 'Unknown error',
           symbol,
           reason: 'bybit_api_error'
@@ -233,7 +232,6 @@ export class SignalExecutionService {
       }
 
       // Create trade record in database only if Bybit order was successful
-      // Use only valid status values: 'pending', 'filled', 'closed'
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -243,7 +241,7 @@ export class SignalExecutionService {
           order_type: orderType,
           price: actualFillPrice,
           quantity: quantity,
-          status: tradeStatus, // This should be 'pending' or 'filled'
+          status: tradeStatus,
           bybit_order_id: bybitOrderId,
         })
         .select()
@@ -262,7 +260,7 @@ export class SignalExecutionService {
       console.log(`  Actual Fill Price: $${actualFillPrice.toFixed(6)}`);
       console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
 
-      await this.logActivity('trade_created', `${orderType.toUpperCase()} buy order executed successfully for ${symbol} on Bybit Demo`, {
+      await this.logActivity('trade_executed', `${orderType.toUpperCase()} buy order executed successfully for ${symbol} on Bybit Demo`, {
         symbol,
         price: actualFillPrice,
         quantity,

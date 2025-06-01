@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -156,7 +155,7 @@ export class PositionMonitor {
       const { error } = await supabase
         .from('trades')
         .update({
-          status: 'closed' as const,
+          status: 'closed',
           profit_loss: dollarProfitLoss,
           updated_at: new Date().toISOString()
         })
@@ -170,7 +169,7 @@ export class PositionMonitor {
 
       console.log(`✅ Position closed successfully for ${trade.symbol}`);
       
-      await this.logActivity('trade_closed', `Position closed for ${trade.symbol}`, {
+      await this.logActivity('position_closed', `Position closed for ${trade.symbol}`, {
         symbol: trade.symbol,
         entryPrice,
         exitPrice: currentPrice,
@@ -187,7 +186,7 @@ export class PositionMonitor {
 
     } catch (error) {
       console.error(`Error closing position for ${trade.symbol}:`, error);
-      await this.logActivity('system_error', `Failed to close position for ${trade.symbol}`, { 
+      await this.logActivity('close_error', `Failed to close position for ${trade.symbol}`, { 
         error: error instanceof Error ? error.message : 'Unknown error',
         tradeId: trade.id,
         symbol: trade.symbol 
