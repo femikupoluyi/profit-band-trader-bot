@@ -62,11 +62,20 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         return;
       }
 
-      // Update trade status to closed in database with explicit status value
+      // Calculate current P&L if we have current price
+      let profitLoss = 0;
+      if (trade.currentPrice && currentTrade.side === 'buy') {
+        profitLoss = (trade.currentPrice - currentTrade.price) * currentTrade.quantity;
+      } else if (trade.currentPrice && currentTrade.side === 'sell') {
+        profitLoss = (currentTrade.price - trade.currentPrice) * currentTrade.quantity;
+      }
+
+      // Update trade status to closed in database with proper status value
       const { error } = await supabase
         .from('trades')
         .update({
-          status: 'closed',
+          status: 'closed', // Use valid status value
+          profit_loss: profitLoss,
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)

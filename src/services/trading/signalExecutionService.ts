@@ -152,7 +152,7 @@ export class SignalExecutionService {
       }
 
       let bybitOrderId = `mock_${Date.now()}`;
-      let tradeStatus: 'pending' | 'filled' = 'pending'; // Default to pending, will be updated if real order succeeds
+      let tradeStatus: 'pending' | 'filled' = 'pending'; // Use only valid status values
       let actualFillPrice = price;
 
       // Always try to place a real order on Bybit Demo
@@ -233,6 +233,7 @@ export class SignalExecutionService {
       }
 
       // Create trade record in database only if Bybit order was successful
+      // Use only valid status values: 'pending', 'filled', 'closed'
       const { data: trade, error } = await supabase
         .from('trades')
         .insert({
@@ -242,7 +243,7 @@ export class SignalExecutionService {
           order_type: orderType,
           price: actualFillPrice,
           quantity: quantity,
-          status: tradeStatus,
+          status: tradeStatus, // This should be 'pending' or 'filled'
           bybit_order_id: bybitOrderId,
         })
         .select()

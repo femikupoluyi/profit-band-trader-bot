@@ -48,6 +48,7 @@ serve(async (req) => {
     
     let finalUrl: string;
     let requestBody: string | undefined;
+    let signature: string;
 
     if (method === 'GET') {
       // For GET requests, create query string with proper signature
@@ -63,13 +64,12 @@ serve(async (req) => {
         }
       });
 
-      // Sort parameters for signature - this is critical for Bybit
+      // Sort parameters for signature
       queryParams.sort();
       
-      // Create signature payload - FIXED: proper concatenation
+      // Create signature - sign the query string only
       const queryString = queryParams.toString();
-      const signaturePayload = queryString + apiSecret;
-      console.log('GET signature payload:', signaturePayload);
+      console.log('GET query string for signature:', queryString);
       
       // Generate HMAC SHA256 signature
       const encoder = new TextEncoder();
@@ -85,11 +85,11 @@ serve(async (req) => {
       );
       
       const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
-      const signature = Array.from(new Uint8Array(signatureBuffer))
+      signature = Array.from(new Uint8Array(signatureBuffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
-      console.log('Generated signature:', signature);
+      console.log('Generated GET signature:', signature);
       queryParams.append('sign', signature);
       finalUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
       
@@ -102,7 +102,7 @@ serve(async (req) => {
         recv_window: recvWindow,
       };
 
-      // Create sorted query string for signature - FIXED: proper sorting and concatenation
+      // Create sorted query string for signature
       const sortedKeys = Object.keys(requestParams).sort();
       const queryString = sortedKeys
         .map(key => `${key}=${requestParams[key]}`)
@@ -110,7 +110,7 @@ serve(async (req) => {
       
       console.log('POST query string for signature:', queryString);
       
-      // Generate HMAC SHA256 signature - FIXED: sign the query string, not with secret appended
+      // Generate HMAC SHA256 signature
       const encoder = new TextEncoder();
       const keyData = encoder.encode(apiSecret);
       const dataToSign = encoder.encode(queryString);
@@ -124,7 +124,7 @@ serve(async (req) => {
       );
       
       const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, dataToSign);
-      const signature = Array.from(new Uint8Array(signatureBuffer))
+      signature = Array.from(new Uint8Array(signatureBuffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
@@ -139,14 +139,20 @@ serve(async (req) => {
       console.log('Request body:', requestBody);
     }
 
+    // Prepare headers with proper signature
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-BAPI-API-KEY': apiKey,
+      'X-BAPI-TIMESTAMP': timestamp,
+      'X-BAPI-RECV-WINDOW': recvWindow,
+      'X-BAPI-SIGN': signature, // Add signature to headers
+    };
+
+    console.log('Request headers:', headers);
+
     const response = await fetch(finalUrl, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': recvWindow,
-      },
+      headers,
       body: requestBody,
     });
 
