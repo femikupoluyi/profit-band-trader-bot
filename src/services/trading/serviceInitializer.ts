@@ -6,6 +6,7 @@ import { SignalAnalyzer } from './signalAnalyzer';
 import { SignalGenerator } from './signalGenerator';
 import { TradeExecutor } from './tradeExecutor';
 import { PositionMonitor } from './positionMonitor';
+import { TradeSyncService } from './tradeSyncService';
 
 export interface TradingServices {
   bybitService: BybitService;
@@ -14,6 +15,7 @@ export interface TradingServices {
   signalGenerator: SignalGenerator;
   tradeExecutor: TradeExecutor;
   positionMonitor: PositionMonitor;
+  tradeSyncService: TradeSyncService;
 }
 
 export class ServiceInitializer {
@@ -52,6 +54,7 @@ export class ServiceInitializer {
     const signalGenerator = new SignalGenerator(this.userId, validatedConfig);
     const tradeExecutor = new TradeExecutor(this.userId, validatedConfig, bybitService);
     const positionMonitor = new PositionMonitor(this.userId, bybitService, validatedConfig);
+    const tradeSyncService = new TradeSyncService(this.userId, bybitService);
 
     return {
       bybitService,
@@ -59,7 +62,8 @@ export class ServiceInitializer {
       signalAnalyzer,
       signalGenerator,
       tradeExecutor,
-      positionMonitor
+      positionMonitor,
+      tradeSyncService
     };
   }
 }

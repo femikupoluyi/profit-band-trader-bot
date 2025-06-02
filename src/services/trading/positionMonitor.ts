@@ -1,20 +1,22 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { OrderFillChecker } from './orderFillChecker';
+import { TradeSyncService } from './tradeSyncService';
 
 export class PositionMonitor {
   private userId: string;
   private bybitService: BybitService;
   private config: TradingConfigData;
   private orderFillChecker: OrderFillChecker;
+  private tradeSyncService: TradeSyncService;
 
   constructor(userId: string, bybitService: BybitService, config: TradingConfigData) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.config = config;
     this.orderFillChecker = new OrderFillChecker(userId, bybitService);
+    this.tradeSyncService = new TradeSyncService(userId, bybitService);
     
     console.log('PositionMonitor initialized with config:', {
       takeProfitPercent: this.config.take_profit_percent,
@@ -87,9 +89,13 @@ export class PositionMonitor {
     console.log(`Using take profit percentage from config: ${this.config.take_profit_percent}%`);
     
     try {
-      // Check and fill any pending orders first
+      // Check and fill any pending orders first with Bybit sync
       console.log('🔄 Checking pending orders for fill conditions...');
       await this.orderFillChecker.checkAndFillPendingOrders();
+
+      // Sync all active trades with Bybit to ensure accurate status
+      console.log('🔄 Syncing all active trades with Bybit...');
+      await this.tradeSyncService.syncAllActiveTrades();
 
       // Then monitor filled positions for take profit
       const { data: filledTrades } = await supabase
@@ -224,6 +230,9 @@ export class PositionMonitor {
         return;
       }
 
+      let closeOrderId = null;
+      let closeSuccessful = false;
+
       try {
         // Place sell order on Bybit testnet
         const sellOrder = await this.bybitService.placeOrder({
@@ -236,45 +245,21 @@ export class PositionMonitor {
 
         console.log('Sell order response:', sellOrder);
 
-        if (sellOrder.retCode === 0) {
-          // Update trade status to closed
-          const { error } = await supabase
-            .from('trades')
-            .update({
-              status: 'closed',
-              profit_loss: dollarProfitLoss,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', trade.id)
-            .eq('status', 'filled');
-
-          if (error) {
-            console.error(`Database error closing position:`, error);
-            throw error;
-          }
-
-          console.log(`✅ Position closed successfully for ${trade.symbol}`);
+        if (sellOrder.retCode === 0 && sellOrder.result?.orderId) {
+          closeOrderId = sellOrder.result.orderId;
+          closeSuccessful = true;
           
-          await this.logActivity('position_closed', `Position closed for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`, {
-            symbol: trade.symbol,
-            entryPrice,
-            exitPrice: currentPrice,
-            quantity: formattedQuantity,
-            dollarProfitLoss,
-            profitPercent,
-            takeProfitTarget: this.config.take_profit_percent,
-            tradeId: trade.id,
-            sellOrderId: sellOrder.result?.orderId
-          });
+          console.log(`✅ Sell order placed successfully: ${closeOrderId}`);
         } else {
-          console.error(`Failed to close position for ${trade.symbol}:`, sellOrder);
-          await this.logActivity('execution_error', `Failed to close position for ${trade.symbol}`, { 
+          console.error(`Failed to place sell order for ${trade.symbol}:`, sellOrder);
+          await this.logActivity('execution_error', `Failed to place sell order for ${trade.symbol}`, { 
             sellOrder,
             reason: `Bybit error: ${sellOrder.retMsg}`,
             retCode: sellOrder.retCode,
             tradeId: trade.id,
             formattedQuantity
           });
+          return;
         }
       } catch (orderError) {
         console.error(`Error placing close order for ${trade.symbol}:`, orderError);
@@ -284,6 +269,52 @@ export class PositionMonitor {
           symbol: trade.symbol,
           formattedQuantity
         });
+        return;
+      }
+
+      // Only update database if Bybit order was successful
+      if (closeSuccessful) {
+        const { error } = await supabase
+          .from('trades')
+          .update({
+            status: 'closed',
+            profit_loss: dollarProfitLoss,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', trade.id)
+          .eq('status', 'filled'); // Only update if still filled
+
+        if (error) {
+          console.error(`Database error closing position:`, error);
+          throw error;
+        }
+
+        console.log(`✅ Position closed successfully for ${trade.symbol}`);
+        
+        await this.logActivity('position_closed', `Position closed for ${trade.symbol} with ${profitPercent.toFixed(2)}% profit`, {
+          symbol: trade.symbol,
+          entryPrice,
+          exitPrice: currentPrice,
+          quantity: formattedQuantity,
+          dollarProfitLoss,
+          profitPercent,
+          takeProfitTarget: this.config.take_profit_percent,
+          tradeId: trade.id,
+          sellOrderId: closeOrderId
+        });
+
+        // Verify the close order after a delay
+        if (closeOrderId) {
+          setTimeout(async () => {
+            console.log(`🔍 Verifying close order ${closeOrderId} for ${trade.symbol}...`);
+            try {
+              const orderStatus = await this.bybitService.getOrderStatus(closeOrderId);
+              console.log(`Close order ${closeOrderId} status:`, orderStatus);
+            } catch (error) {
+              console.error('Error verifying close order:', error);
+            }
+          }, 3000);
+        }
       }
 
     } catch (error) {
