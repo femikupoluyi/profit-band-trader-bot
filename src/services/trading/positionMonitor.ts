@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { OrderFillChecker } from './orderFillChecker';
-import { TradeSyncService } from '@/services/tradeSyncService';
+import { TradeSyncService } from './tradeSyncService';
 
 export class PositionMonitor {
   private userId: string;
