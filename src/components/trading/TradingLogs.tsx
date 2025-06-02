@@ -51,7 +51,10 @@ const TradingLogs = () => {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching logs:', error);
+        throw error;
+      }
 
       setLogs(data || []);
     } catch (error) {
@@ -129,13 +132,19 @@ const TradingLogs = () => {
 
   const getLogTypeBadge = (logType: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      info: "default",
-      warning: "secondary",
-      error: "destructive",
-      trade: "outline",
-      scan: "outline",
+      signal_processed: "default",
+      trade_executed: "outline",
+      trade_filled: "outline", 
+      position_closed: "secondary",
+      system_error: "destructive",
+      order_placed: "outline",
+      order_failed: "destructive",
+      calculation_error: "destructive",
+      execution_error: "destructive",
+      signal_rejected: "secondary",
+      order_rejected: "secondary"
     };
-    return <Badge variant={variants[logType] || "outline"}>{logType.toUpperCase()}</Badge>;
+    return <Badge variant={variants[logType] || "outline"}>{logType.toUpperCase().replace('_', ' ')}</Badge>;
   };
 
   if (loading) {
