@@ -3,21 +3,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PositionChecker } from './positionChecker';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { TradeSyncService } from './tradeSyncService';
 
 export class SignalExecutionService {
   private userId: string;
   private bybitService: BybitService;
   private positionChecker: PositionChecker;
   private config: TradingConfigData;
-  private tradeSyncService: TradeSyncService;
 
   constructor(userId: string, config: TradingConfigData, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.positionChecker = new PositionChecker(userId);
     this.config = config;
-    this.tradeSyncService = new TradeSyncService(userId, bybitService);
     
     console.log('SignalExecutionService config validation:', {
       entryOffset: this.config.entry_offset_percent,
@@ -228,11 +225,11 @@ export class SignalExecutionService {
         return;
       }
 
-      let bybitOrderId = null;
+      let bybitOrderId = `mock_${Date.now()}`;
       let tradeStatus: 'pending' | 'filled' = 'pending';
       let actualFillPrice = price;
 
-      // Try to place real order on Bybit Demo
+      // Always try to place a real order on Bybit Demo
       try {
         console.log(`🔄 Placing ${orderType.toUpperCase()} order on Bybit Demo for ${symbol}...`);
         
@@ -359,16 +356,6 @@ export class SignalExecutionService {
         .from('trading_signals')
         .update({ processed: true })
         .eq('id', signal.id);
-
-      // Start verification process for the new trade if we have a real Bybit order ID
-      if (bybitOrderId && !bybitOrderId.startsWith('mock_')) {
-        console.log(`🔍 Starting order verification for trade ${trade.id}...`);
-        
-        // Verify order placement after a short delay
-        setTimeout(async () => {
-          await this.tradeSyncService.verifyOrderPlacement(trade.id);
-        }, 3000);
-      }
 
     } catch (error) {
       console.error(`Error executing buy order for ${symbol}:`, error);

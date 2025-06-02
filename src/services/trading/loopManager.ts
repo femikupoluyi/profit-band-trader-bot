@@ -5,7 +5,6 @@ import { TradeExecutor } from './tradeExecutor';
 import { MarketScanner } from './marketScanner';
 import { SignalGenerator } from './signalGenerator';
 import { SignalAnalyzer } from './signalAnalyzer';
-import { TradeSyncService } from './tradeSyncService';
 import { BybitService } from '../bybitService';
 
 interface TradingServices {
@@ -15,7 +14,6 @@ interface TradingServices {
   marketScanner: MarketScanner;
   signalGenerator: SignalGenerator;
   signalAnalyzer: SignalAnalyzer;
-  tradeSyncService: TradeSyncService;
 }
 
 export class LoopManager {
@@ -75,10 +73,6 @@ export class LoopManager {
       console.log('\n' + '='.repeat(80));
       console.log('🔄 STARTING TRADING CYCLE at', new Date().toISOString());
       console.log('='.repeat(80));
-
-      // 0. SYNC CHECK: Ensure all trades are synced with Bybit
-      console.log('\n🔄 STEP 0: TRADE SYNCHRONIZATION...');
-      await this.services.tradeSyncService.syncAllActiveTrades();
 
       // 1. FIRST PRIORITY: Monitor positions and fill pending orders
       console.log('\n📊 STEP 1: MONITORING POSITIONS...');
