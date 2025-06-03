@@ -31,7 +31,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
     try {
       console.log(`Manually closing trade ${trade.id} for ${trade.symbol}`);
       
-      // First, verify the trade exists and is not already closed
+      // First, verify the trade exists and get current status
       const { data: currentTrade, error: fetchError } = await supabase
         .from('trades')
         .select('*')
@@ -48,6 +48,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
         return;
       }
 
+      // Check if trade is already closed
       if (currentTrade.status === 'closed') {
         console.log('Trade is already closed');
         toast({
@@ -61,14 +62,30 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
       // Calculate current P&L if we have current price
       let profitLoss = 0;
       if (trade.currentPrice) {
+        const entryPrice = parseFloat(currentTrade.price.toString());
+        const quantity = parseFloat(currentTrade.quantity.toString());
+        
         if (currentTrade.side === 'buy') {
-          profitLoss = (trade.currentPrice - currentTrade.price) * currentTrade.quantity;
+          profitLoss = (trade.currentPrice - entryPrice) * quantity;
         } else if (currentTrade.side === 'sell') {
-          profitLoss = (currentTrade.price - trade.currentPrice) * currentTrade.quantity;
+          profitLoss = (entryPrice - trade.currentPrice) * quantity;
         }
       }
 
-      // Update trade status to closed in database (only for valid statuses)
+      console.log(`Updating trade ${trade.id} status from ${currentTrade.status} to closed with P&L: ${profitLoss}`);
+
+      // Update trade status to closed - only if current status allows it
+      const validStatusesToClose = ['pending', 'filled', 'partial_filled'];
+      
+      if (!validStatusesToClose.includes(currentTrade.status)) {
+        toast({
+          title: "Error",
+          description: `Cannot close trade with status: ${currentTrade.status}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { error: updateError } = await supabase
         .from('trades')
         .update({
@@ -77,13 +94,20 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id)
-        .in('status', ['pending', 'filled', 'partial_filled']);
+        .eq('status', currentTrade.status); // Ensure we're only updating if status hasn't changed
 
       if (updateError) {
         console.error('Error updating trade status:', updateError);
+        
+        // Handle specific constraint errors
+        let errorMessage = `Failed to close trade: ${updateError.message}`;
+        if (updateError.message.includes('check constraint')) {
+          errorMessage = "Trade status cannot be changed to closed at this time. Please check trade status requirements.";
+        }
+        
         toast({
           title: "Error",
-          description: `Failed to close trade: ${updateError.message}`,
+          description: errorMessage,
           variant: "destructive",
         });
         return;
@@ -91,21 +115,26 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
 
       console.log(`✅ Trade ${trade.id} manually closed successfully`);
       
-      // Log the manual close activity with valid log type
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: currentTrade.user_id,
-          log_type: 'position_closed',
-          message: `Trade manually closed for ${trade.symbol}`,
-          data: {
-            tradeId: trade.id,
-            symbol: trade.symbol,
-            profitLoss,
-            previousStatus: currentTrade.status,
-            closedBy: 'manual'
-          }
-        });
+      // Log the manual close activity
+      try {
+        await supabase
+          .from('trading_logs')
+          .insert({
+            user_id: currentTrade.user_id,
+            log_type: 'position_closed',
+            message: `Trade manually closed for ${trade.symbol}`,
+            data: {
+              tradeId: trade.id,
+              symbol: trade.symbol,
+              profitLoss,
+              previousStatus: currentTrade.status,
+              closedBy: 'manual'
+            }
+          });
+      } catch (logError) {
+        console.error('Error logging manual close:', logError);
+        // Don't fail the operation if logging fails
+      }
       
       toast({
         title: "Trade Closed",
