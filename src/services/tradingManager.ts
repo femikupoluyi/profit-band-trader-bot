@@ -6,6 +6,7 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 class TradingManager {
   private static instance: TradingManager;
   private engines: Map<string, TradingEngine> = new Map();
+  private manuallyStoppedUsers: Set<string> = new Set(); // Track manually stopped users
 
   private constructor() {}
 
@@ -23,6 +24,9 @@ class TradingManager {
         console.log(`Trading already running for user ${userId}`);
         return;
       }
+
+      // Remove from manually stopped list when explicitly starting
+      this.manuallyStoppedUsers.delete(userId);
 
       // Get user's trading config
       const { data: config, error } = await (supabase as any)
@@ -54,12 +58,16 @@ class TradingManager {
     if (engine) {
       await engine.stop();
       this.engines.delete(userId);
-      console.log(`Trading stopped for user ${userId}`);
+      // Mark as manually stopped to prevent auto-restart
+      this.manuallyStoppedUsers.add(userId);
+      console.log(`Trading stopped for user ${userId} (manually stopped)`);
     }
   }
 
   async restartTradingForUser(userId: string): Promise<void> {
     await this.stopTradingForUser(userId);
+    // Remove from manually stopped when restarting
+    this.manuallyStoppedUsers.delete(userId);
     await this.startTradingForUser(userId);
   }
 
@@ -76,6 +84,12 @@ class TradingManager {
 
       if (activeConfigs) {
         for (const config of activeConfigs) {
+          // Skip users who were manually stopped
+          if (this.manuallyStoppedUsers.has(config.user_id)) {
+            console.log(`Skipping auto-start for manually stopped user: ${config.user_id}`);
+            continue;
+          }
+
           if (!this.isRunningForUser(config.user_id)) {
             await this.startTradingForUser(config.user_id);
           }

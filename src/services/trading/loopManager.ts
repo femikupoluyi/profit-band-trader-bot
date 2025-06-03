@@ -76,9 +76,10 @@ export class LoopManager {
       console.log('🔄 STARTING TRADING CYCLE at', new Date().toISOString());
       console.log('='.repeat(80));
 
-      // 0. SYNC CHECK: Ensure all trades are synced with Bybit
-      console.log('\n🔄 STEP 0: TRADE SYNCHRONIZATION...');
+      // 0. ENHANCED SYNC: Ensure all trades are synced with Bybit and detect closed positions
+      console.log('\n🔄 STEP 0: COMPREHENSIVE TRADE SYNCHRONIZATION...');
       await this.services.tradeSyncService.syncAllActiveTrades();
+      await this.services.tradeSyncService.detectAndRecordClosedPositions();
 
       // 1. FIRST PRIORITY: Monitor positions and fill pending orders
       console.log('\n📊 STEP 1: MONITORING POSITIONS...');

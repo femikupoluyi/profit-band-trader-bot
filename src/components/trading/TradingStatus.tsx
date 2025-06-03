@@ -17,6 +17,9 @@ const TradingStatus = () => {
   useEffect(() => {
     if (user) {
       checkTradingStatus();
+      // Check status every 10 seconds to reflect actual state
+      const interval = setInterval(checkTradingStatus, 10000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -57,7 +60,7 @@ const TradingStatus = () => {
       setIsRunning(false);
       toast({
         title: "Trading Stopped",
-        description: "Your trading bot has been stopped.",
+        description: "Your trading bot has been stopped and will not auto-restart.",
       });
     } catch (error) {
       toast({
@@ -146,6 +149,12 @@ const TradingStatus = () => {
         {isRunning && (
           <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
             ✅ Trading bot is actively monitoring markets and executing trades based on your configuration.
+          </div>
+        )}
+
+        {!isRunning && (
+          <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+            ⏸️ Trading bot is stopped and will not auto-restart until manually started.
           </div>
         )}
       </CardContent>
