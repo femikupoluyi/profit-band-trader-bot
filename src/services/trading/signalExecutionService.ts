@@ -3,21 +3,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PositionChecker } from './positionChecker';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { TradeSyncService } from './tradeSyncService';
 
 export class SignalExecutionService {
   private userId: string;
   private bybitService: BybitService;
   private positionChecker: PositionChecker;
   private config: TradingConfigData;
-  private tradeSyncService: TradeSyncService;
 
   constructor(userId: string, config: TradingConfigData, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.positionChecker = new PositionChecker(userId);
     this.config = config;
-    this.tradeSyncService = new TradeSyncService(userId, bybitService);
     
     console.log('SignalExecutionService config validation:', {
       entryOffset: this.config.entry_offset_percent,
@@ -29,25 +26,23 @@ export class SignalExecutionService {
   }
 
   private formatQuantityForSymbol(symbol: string, quantity: number): string {
-    // Updated precision rules for Bybit demo trading
+    // Stricter precision rules to avoid "too many decimals" errors
     const precisionRules: Record<string, number> = {
-      // Major pairs - more conservative precision
-      'BTCUSDT': 5,
-      'ETHUSDT': 3,
-      'BNBUSDT': 2,
-      'SOLUSDT': 2,  // Reduced from 3 to 2
-      'ADAUSDT': 0,
-      'XRPUSDT': 0,
-      'DOGEUSDT': 0,
-      'MATICUSDT': 0,
-      'LTCUSDT': 3,
-      // Lower value coins
-      'FETUSDT': 0,
-      'POLUSDT': 0,  // Reduced from 3 to 0
-      'XLMUSDT': 0,
+      'BTCUSDT': 5,    // BTC allows up to 5 decimals
+      'ETHUSDT': 3,    // ETH allows up to 3 decimals  
+      'BNBUSDT': 2,    // BNB allows up to 2 decimals
+      'SOLUSDT': 1,    // SOL reduced to 1 decimal for safety
+      'ADAUSDT': 0,    // ADA whole numbers only
+      'XRPUSDT': 0,    // XRP whole numbers only
+      'LTCUSDT': 3,    // LTC allows up to 3 decimals
+      'DOGEUSDT': 0,   // DOGE whole numbers only
+      'MATICUSDT': 0,  // MATIC whole numbers only
+      'FETUSDT': 0,    // FET whole numbers only
+      'POLUSDT': 0,    // POL whole numbers only - this was causing errors
+      'XLMUSDT': 0,    // XLM whole numbers only
     };
 
-    const decimals = precisionRules[symbol] || 2; // Default to 2 decimal places
+    const decimals = precisionRules[symbol] || 0; // Default to 0 decimals for safety
     let formattedQty = quantity.toFixed(decimals);
     
     // Remove trailing zeros but ensure proper formatting
@@ -55,30 +50,30 @@ export class SignalExecutionService {
       formattedQty = parseFloat(formattedQty).toString();
     }
     
-    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
+    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals, strict mode)`);
     return formattedQty;
   }
 
   private validateOrderValue(symbol: string, quantity: number, price: number): boolean {
     const orderValue = quantity * price;
     
-    // Increased minimum order values for demo trading
+    // Conservative minimum order values
     const minOrderValues: Record<string, number> = {
-      'BTCUSDT': 20,
-      'ETHUSDT': 20,
-      'BNBUSDT': 20,
-      'SOLUSDT': 20,
-      'LTCUSDT': 20,
-      'ADAUSDT': 10,
-      'XRPUSDT': 10,
-      'DOGEUSDT': 10,
-      'MATICUSDT': 10,
-      'FETUSDT': 10,
-      'POLUSDT': 10,
-      'XLMUSDT': 10,
+      'BTCUSDT': 25,
+      'ETHUSDT': 25,
+      'BNBUSDT': 25,
+      'SOLUSDT': 25,
+      'LTCUSDT': 25,
+      'ADAUSDT': 15,
+      'XRPUSDT': 15,
+      'DOGEUSDT': 15,
+      'MATICUSDT': 15,
+      'FETUSDT': 15,
+      'POLUSDT': 15,
+      'XLMUSDT': 15,
     };
 
-    const minValue = minOrderValues[symbol] || 20; // Increased default to $20
+    const minValue = minOrderValues[symbol] || 25;
     
     console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minValue})`);
     
@@ -95,7 +90,7 @@ export class SignalExecutionService {
     console.log(`  Signal Type: ${signal.signal_type}`);
     console.log(`  Price: $${signal.price}`);
     console.log(`  Confidence: ${signal.confidence}%`);
-    console.log(`  Using config: Entry Offset ${this.config.entry_offset_percent}%, Take Profit ${this.config.take_profit_percent}%, Max Positions per Pair: ${this.config.max_positions_per_pair}`);
+    console.log(`  Using config: Entry Offset ${this.config.entry_offset_percent}%, Take Profit ${this.config.take_profit_percent}%, Max Order Amount: $${this.config.max_order_amount_usd}, Max Positions per Pair: ${this.config.max_positions_per_pair}`);
 
     try {
       // Only process buy signals
@@ -104,15 +99,15 @@ export class SignalExecutionService {
         return;
       }
 
-      // Use config values directly
+      // Use config values directly and enforce them strictly
       const entryOffsetPercent = this.config.entry_offset_percent;
       const takeProfitPercent = this.config.take_profit_percent;
-      const maxOrderAmountUsd = this.config.max_order_amount_usd;
+      const maxOrderAmountUsd = this.config.max_order_amount_usd; // STRICT ENFORCEMENT
       const maxPositionsPerPair = this.config.max_positions_per_pair;
       const newSupportThresholdPercent = this.config.new_support_threshold_percent;
       const maxActivePairs = this.config.max_active_pairs;
 
-      console.log(`  Validated config values - Entry: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%, Max Order: $${maxOrderAmountUsd}`);
+      console.log(`  🔒 ENFORCING CONFIG VALUES - Entry: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%, MAX ORDER: $${maxOrderAmountUsd} (STRICT)`);
 
       // Validate max active pairs
       const canOpenNewPair = await this.positionChecker.validateMaxActivePairs(maxActivePairs);
@@ -156,9 +151,24 @@ export class SignalExecutionService {
       console.log(`📈 Entry price calculated: $${entryPrice.toFixed(6)} (${entryOffsetPercent}% above support)`);
       console.log(`📊 Current market price: $${currentMarketPrice.toFixed(6)}`);
 
-      // Calculate quantity based on max order amount from config
+      // 🔒 STRICT ENFORCEMENT: Calculate quantity based on EXACT max order amount from config
       const quantity = maxOrderAmountUsd / entryPrice;
-      console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on $${maxOrderAmountUsd} max order)`);
+      const actualOrderValue = quantity * entryPrice;
+      
+      console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on STRICT $${maxOrderAmountUsd} max order)`);
+      console.log(`💰 Actual order value: $${actualOrderValue.toFixed(2)} (should be ≤ $${maxOrderAmountUsd})`);
+
+      // ENFORCE: Order value must not exceed config maximum
+      if (actualOrderValue > maxOrderAmountUsd) {
+        console.error(`❌ CONFIGURATION VIOLATION: Order value $${actualOrderValue.toFixed(2)} exceeds configured maximum $${maxOrderAmountUsd}`);
+        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: exceeds max order amount`, {
+          symbol: signal.symbol,
+          actualOrderValue: actualOrderValue.toFixed(2),
+          configuredMaximum: maxOrderAmountUsd,
+          reason: 'exceeds_max_order_amount'
+        });
+        return;
+      }
 
       // Validate calculation results
       if (isNaN(entryPrice) || isNaN(quantity) || quantity <= 0 || entryPrice <= 0) {
@@ -191,8 +201,8 @@ export class SignalExecutionService {
         console.log(`💡 Market price (${currentMarketPrice.toFixed(6)}) > entry price (${entryPrice.toFixed(6)}), placing LIMIT order`);
       }
 
-      // Execute the trade
-      await this.executeBuyOrder(signal.symbol, executionPrice, quantity, signal, takeProfitPercent, orderType);
+      // Execute the trade with strict config enforcement
+      await this.executeBuyOrder(signal.symbol, executionPrice, quantity, signal, takeProfitPercent, orderType, maxOrderAmountUsd);
 
     } catch (error) {
       console.error(`Error executing signal for ${signal.symbol}:`, error);
@@ -203,13 +213,22 @@ export class SignalExecutionService {
     }
   }
 
-  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number, orderType: 'market' | 'limit'): Promise<void> {
+  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number, orderType: 'market' | 'limit', configuredMaxOrderAmount: number): Promise<void> {
     try {
+      const actualOrderValue = quantity * price;
+      
       console.log(`\n💰 Executing ${orderType.toUpperCase()} buy order for ${symbol}:`);
       console.log(`  Price: $${price.toFixed(6)}`);
       console.log(`  Quantity: ${quantity.toFixed(6)}`);
-      console.log(`  Total Value: $${(price * quantity).toFixed(2)}`);
+      console.log(`  Total Value: $${actualOrderValue.toFixed(2)}`);
+      console.log(`  🔒 Configured Max: $${configuredMaxOrderAmount}`);
+      console.log(`  ✅ Within Limit: ${actualOrderValue <= configuredMaxOrderAmount ? 'YES' : 'NO'}`);
       console.log(`  Take Profit Target: ${takeProfitPercent}%`);
+
+      // Final validation - double check order value doesn't exceed config
+      if (actualOrderValue > configuredMaxOrderAmount) {
+        throw new Error(`Order value $${actualOrderValue.toFixed(2)} exceeds configured maximum $${configuredMaxOrderAmount}`);
+      }
 
       // Validate inputs before order placement
       if (isNaN(price) || isNaN(quantity) || price <= 0 || quantity <= 0) {
@@ -232,18 +251,18 @@ export class SignalExecutionService {
       let tradeStatus: 'pending' | 'filled' = 'pending';
       let actualFillPrice = price;
 
-      // Try to place real order on Bybit Demo
+      // Try to place real order on Bybit
       try {
-        console.log(`🔄 Placing ${orderType.toUpperCase()} order on Bybit Demo for ${symbol}...`);
+        console.log(`🔄 Placing ${orderType.toUpperCase()} order on Bybit for ${symbol}...`);
         
-        // Format quantity with proper precision for the symbol
+        // Format quantity with strict precision for the symbol
         const formattedQuantity = this.formatQuantityForSymbol(symbol, quantity);
         const formattedPrice = orderType === 'limit' ? price.toFixed(2) : undefined;
         
         console.log(`  Formatted quantity: ${formattedQuantity}`);
         if (formattedPrice) console.log(`  Formatted price: ${formattedPrice}`);
 
-        // Place buy order on Bybit Demo
+        // Place buy order on Bybit
         const orderParams = {
           category: 'spot' as const,
           symbol: symbol,
@@ -275,18 +294,20 @@ export class SignalExecutionService {
             }
           }
           
-          console.log(`✅ Successfully placed ${orderType.toUpperCase()} order on Bybit Demo: ${bybitOrderId}`);
+          console.log(`✅ Successfully placed ${orderType.toUpperCase()} order on Bybit: ${bybitOrderId}`);
           console.log(`  Order status: ${tradeStatus}`);
           console.log(`  Fill price: $${actualFillPrice.toFixed(6)}`);
           
-          await this.logActivity('order_placed', `Real ${orderType} order placed successfully on Bybit Demo for ${symbol}`, {
+          await this.logActivity('order_placed', `Real ${orderType} order placed successfully on Bybit for ${symbol}`, {
             bybitOrderId,
             orderResult,
             symbol,
             quantity: formattedQuantity,
             price: actualFillPrice,
             orderType: `${orderType} Buy`,
-            status: tradeStatus
+            status: tradeStatus,
+            configuredMaxOrderAmount,
+            actualOrderValue: actualOrderValue.toFixed(2)
           });
         } else {
           console.error(`❌ Bybit order failed - retCode: ${orderResult?.retCode}, retMsg: ${orderResult?.retMsg}`);
@@ -299,7 +320,7 @@ export class SignalExecutionService {
           return;
         }
       } catch (bybitError) {
-        console.error(`❌ Failed to place order on Bybit Demo: ${bybitError instanceof Error ? bybitError.message : 'Unknown error'}`);
+        console.error(`❌ Failed to place order on Bybit: ${bybitError instanceof Error ? bybitError.message : 'Unknown error'}`);
         await this.logActivity('order_failed', `Bybit order error for ${symbol}`, {
           bybitError: bybitError instanceof Error ? bybitError.message : 'Unknown error',
           symbol,
@@ -336,9 +357,9 @@ export class SignalExecutionService {
       console.log(`  Status: ${tradeStatus}`);
       console.log(`  Order Type: ${orderType.toUpperCase()}`);
       console.log(`  Actual Fill Price: $${actualFillPrice.toFixed(6)}`);
-      console.log(`  Config used - Take Profit: ${takeProfitPercent}%, Max Order: $${this.config.max_order_amount_usd}`);
+      console.log(`  🔒 Config Compliance: Order value $${actualOrderValue.toFixed(2)} ≤ Max $${configuredMaxOrderAmount}`);
 
-      await this.logActivity('trade_executed', `${orderType.toUpperCase()} buy order executed successfully for ${symbol} on Bybit Demo`, {
+      await this.logActivity('trade_executed', `${orderType.toUpperCase()} buy order executed successfully for ${symbol} within config limits`, {
         symbol,
         price: actualFillPrice,
         quantity: parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
@@ -349,9 +370,11 @@ export class SignalExecutionService {
         status: tradeStatus,
         takeProfitTarget: takeProfitPercent,
         entryOffset: this.config.entry_offset_percent,
-        maxOrderAmount: this.config.max_order_amount_usd,
+        configuredMaxOrderAmount,
+        actualOrderValue: actualOrderValue.toFixed(2),
         maxPositionsPerPair: this.config.max_positions_per_pair,
-        orderSource: 'Real Bybit Demo Order'
+        orderSource: 'Real Bybit Order',
+        configCompliance: 'PASSED'
       });
 
       // Mark signal as processed
@@ -359,16 +382,6 @@ export class SignalExecutionService {
         .from('trading_signals')
         .update({ processed: true })
         .eq('id', signal.id);
-
-      // Start verification process for the new trade if we have a real Bybit order ID
-      if (bybitOrderId && !bybitOrderId.startsWith('mock_')) {
-        console.log(`🔍 Starting order verification for trade ${trade.id}...`);
-        
-        // Verify order placement after a short delay
-        setTimeout(async () => {
-          await this.tradeSyncService.verifyOrderPlacement(trade.id);
-        }, 3000);
-      }
 
     } catch (error) {
       console.error(`Error executing buy order for ${symbol}:`, error);

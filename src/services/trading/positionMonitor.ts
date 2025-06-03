@@ -1,78 +1,78 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { OrderFillChecker } from './orderFillChecker';
-import { TradeSyncService } from './tradeSyncService';
 
 export class PositionMonitor {
   private userId: string;
   private bybitService: BybitService;
   private config: TradingConfigData;
   private orderFillChecker: OrderFillChecker;
-  private tradeSyncService: TradeSyncService;
 
   constructor(userId: string, bybitService: BybitService, config: TradingConfigData) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.config = config;
     this.orderFillChecker = new OrderFillChecker(userId, bybitService);
-    this.tradeSyncService = new TradeSyncService(userId, bybitService);
     
     console.log('PositionMonitor initialized with config:', {
       takeProfitPercent: this.config.take_profit_percent,
       entryOffsetPercent: this.config.entry_offset_percent,
-      maxPositionsPerPair: this.config.max_positions_per_pair
+      maxPositionsPerPair: this.config.max_positions_per_pair,
+      maxOrderAmountUsd: this.config.max_order_amount_usd
     });
   }
 
   private formatQuantityForSymbol(symbol: string, quantity: number): string {
-    // Enhanced precision rules based on Bybit demo requirements
+    // Stricter precision rules to avoid "too many decimals" errors
     const precisionRules: Record<string, number> = {
-      'BTCUSDT': 5,
-      'ETHUSDT': 3,
-      'BNBUSDT': 2,
-      'SOLUSDT': 2,
-      'ADAUSDT': 0,
-      'XRPUSDT': 0,
-      'LTCUSDT': 3,
-      'DOGEUSDT': 0,
-      'MATICUSDT': 0,
-      'FETUSDT': 0,
-      'POLUSDT': 0,
-      'XLMUSDT': 0,
+      'BTCUSDT': 5,    // BTC allows up to 5 decimals
+      'ETHUSDT': 3,    // ETH allows up to 3 decimals  
+      'BNBUSDT': 2,    // BNB allows up to 2 decimals
+      'SOLUSDT': 1,    // SOL reduced to 1 decimal for safety
+      'ADAUSDT': 0,    // ADA whole numbers only
+      'XRPUSDT': 0,    // XRP whole numbers only
+      'LTCUSDT': 3,    // LTC allows up to 3 decimals
+      'DOGEUSDT': 0,   // DOGE whole numbers only
+      'MATICUSDT': 0,  // MATIC whole numbers only
+      'FETUSDT': 0,    // FET whole numbers only
+      'POLUSDT': 0,    // POL whole numbers only - this was causing errors
+      'XLMUSDT': 0,    // XLM whole numbers only
     };
 
-    const decimals = precisionRules[symbol] || 2;
+    const decimals = precisionRules[symbol] || 0; // Default to 0 decimals for safety
     let formattedQty = quantity.toFixed(decimals);
     
+    // Remove trailing zeros but ensure proper formatting
     if (decimals > 0) {
       formattedQty = parseFloat(formattedQty).toString();
     }
     
-    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
+    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals, strict mode)`);
     return formattedQty;
   }
 
   private validateMinOrderValue(symbol: string, quantity: number, price: number): boolean {
     const orderValue = quantity * price;
     
-    // Enhanced minimum order values for different symbols
+    // Conservative minimum order values
     const minOrderValues: Record<string, number> = {
-      'BTCUSDT': 20,
-      'ETHUSDT': 20,
-      'BNBUSDT': 20,
-      'SOLUSDT': 20,
-      'LTCUSDT': 20,
-      'ADAUSDT': 10,
-      'XRPUSDT': 10,
-      'DOGEUSDT': 10,
-      'MATICUSDT': 10,
-      'FETUSDT': 10,
-      'POLUSDT': 10,
-      'XLMUSDT': 10,
+      'BTCUSDT': 25,
+      'ETHUSDT': 25,
+      'BNBUSDT': 25,
+      'SOLUSDT': 25,
+      'LTCUSDT': 25,
+      'ADAUSDT': 15,
+      'XRPUSDT': 15,
+      'DOGEUSDT': 15,
+      'MATICUSDT': 15,
+      'FETUSDT': 15,
+      'POLUSDT': 15,
+      'XLMUSDT': 15,
     };
 
-    const minValue = minOrderValues[symbol] || 20;
+    const minValue = minOrderValues[symbol] || 25;
     
     console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minValue})`);
     
@@ -84,18 +84,45 @@ export class PositionMonitor {
     return true;
   }
 
+  private async checkAccountBalance(symbol: string): Promise<boolean> {
+    try {
+      console.log(`🔍 Checking account balance for ${symbol}...`);
+      
+      const balanceData = await this.bybitService.getAccountBalance();
+      
+      if (balanceData.retCode === 0 && balanceData.result?.list?.[0]?.coin) {
+        const coins = balanceData.result.list[0].coin;
+        const baseSymbol = symbol.replace('USDT', ''); // e.g., 'BTC' from 'BTCUSDT'
+        
+        const coinBalance = coins.find((coin: any) => coin.coin === baseSymbol);
+        
+        if (coinBalance) {
+          const availableBalance = parseFloat(coinBalance.walletBalance || '0');
+          console.log(`💰 ${baseSymbol} balance: ${availableBalance}`);
+          return availableBalance > 0;
+        } else {
+          console.log(`❌ No ${baseSymbol} balance found in account`);
+          return false;
+        }
+      }
+      
+      console.log(`❌ Failed to get balance data from Bybit`);
+      return false;
+    } catch (error) {
+      console.error(`Error checking account balance for ${symbol}:`, error);
+      return false;
+    }
+  }
+
   async monitorPositions(): Promise<void> {
     console.log('🔍 Starting position monitoring...');
     console.log(`Using take profit percentage from config: ${this.config.take_profit_percent}%`);
+    console.log(`Max order amount from config: $${this.config.max_order_amount_usd}`);
     
     try {
-      // Check and fill any pending orders first with Bybit sync
+      // Check and fill any pending orders first
       console.log('🔄 Checking pending orders for fill conditions...');
       await this.orderFillChecker.checkAndFillPendingOrders();
-
-      // Sync all active trades with Bybit to ensure accurate status
-      console.log('🔄 Syncing all active trades with Bybit...');
-      await this.tradeSyncService.syncAllActiveTrades();
 
       // Then monitor filled positions for take profit
       const { data: filledTrades } = await supabase
@@ -131,7 +158,7 @@ export class PositionMonitor {
       console.log(`  Quantity: ${trade.quantity}`);
       console.log(`  Take Profit Target: ${this.config.take_profit_percent}%`);
 
-      // Get fresh market price from Bybit testnet
+      // Get fresh market price from Bybit
       const marketData = await this.bybitService.getMarketPrice(trade.symbol);
       const currentPrice = marketData.price;
       
@@ -160,7 +187,20 @@ export class PositionMonitor {
 
       // Check if profit target is reached
       if (profitPercent >= this.config.take_profit_percent) {
-        console.log(`🎯 PROFIT TARGET REACHED! Closing position for ${trade.symbol} (${profitPercent.toFixed(2)}% >= ${this.config.take_profit_percent}%)`);
+        console.log(`🎯 PROFIT TARGET REACHED! Checking if we can close position for ${trade.symbol} (${profitPercent.toFixed(2)}% >= ${this.config.take_profit_percent}%)`);
+        
+        // Check account balance before attempting to close
+        const hasBalance = await this.checkAccountBalance(trade.symbol);
+        if (!hasBalance) {
+          console.log(`❌ Insufficient balance to close ${trade.symbol} position - skipping closure`);
+          await this.logActivity('execution_error', `Cannot close ${trade.symbol}: insufficient balance in account`, {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            reason: 'insufficient_account_balance'
+          });
+          return;
+        }
+        
         await this.closePosition(trade, currentPrice, dollarProfitLoss);
       } else {
         console.log(`  📈 Position still under target (${profitPercent.toFixed(2)}% < ${this.config.take_profit_percent}%)`);
@@ -214,17 +254,17 @@ export class PositionMonitor {
         return;
       }
 
-      // Format quantity properly for close order
+      // Format quantity properly for close order - use stricter formatting
       const formattedQuantity = this.formatQuantityForSymbol(trade.symbol, quantity);
       
       // Validate minimum order value before placing sell order
-      if (!this.validateMinOrderValue(trade.symbol, quantity, currentPrice)) {
+      if (!this.validateMinOrderValue(trade.symbol, parseFloat(formattedQuantity), currentPrice)) {
         console.log(`❌ Cannot close ${trade.symbol}: order value below minimum`);
         await this.logActivity('order_rejected', `Cannot close ${trade.symbol}: order value below minimum`, {
           tradeId: trade.id,
           quantity: formattedQuantity,
           currentPrice,
-          orderValue: quantity * currentPrice,
+          orderValue: parseFloat(formattedQuantity) * currentPrice,
           reason: 'order_value_too_low'
         });
         return;
@@ -234,7 +274,9 @@ export class PositionMonitor {
       let closeSuccessful = false;
 
       try {
-        // Place sell order on Bybit testnet
+        console.log(`🔄 Placing sell order on Bybit for ${trade.symbol} with quantity: ${formattedQuantity}`);
+        
+        // Place sell order on Bybit
         const sellOrder = await this.bybitService.placeOrder({
           category: 'spot',
           symbol: trade.symbol,
@@ -302,19 +344,6 @@ export class PositionMonitor {
           tradeId: trade.id,
           sellOrderId: closeOrderId
         });
-
-        // Verify the close order after a delay
-        if (closeOrderId) {
-          setTimeout(async () => {
-            console.log(`🔍 Verifying close order ${closeOrderId} for ${trade.symbol}...`);
-            try {
-              const orderStatus = await this.bybitService.getOrderStatus(closeOrderId);
-              console.log(`Close order ${closeOrderId} status:`, orderStatus);
-            } catch (error) {
-              console.error('Error verifying close order:', error);
-            }
-          }, 3000);
-        }
       }
 
     } catch (error) {
