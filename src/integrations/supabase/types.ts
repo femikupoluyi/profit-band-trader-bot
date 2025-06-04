@@ -899,54 +899,78 @@ export type Database = {
       }
       trading_configs: {
         Row: {
+          auto_close_at_end_of_day: boolean | null
           chart_timeframe: string | null
           created_at: string | null
           daily_reset_time: string | null
           entry_offset_percent: number | null
+          eod_close_premium_percent: number | null
           id: string
           is_active: boolean | null
+          main_loop_interval_seconds: number | null
+          manual_close_premium_percent: number | null
           max_active_pairs: number | null
           max_order_amount_usd: number | null
           max_portfolio_exposure_percent: number | null
           max_positions_per_pair: number | null
+          minimum_notional_per_symbol: Json | null
           new_support_threshold_percent: number | null
+          quantity_increment_per_symbol: Json | null
           support_candle_count: number | null
+          support_lower_bound_percent: number | null
+          support_upper_bound_percent: number | null
           take_profit_percent: number | null
           trading_pairs: string[] | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
+          auto_close_at_end_of_day?: boolean | null
           chart_timeframe?: string | null
           created_at?: string | null
           daily_reset_time?: string | null
           entry_offset_percent?: number | null
+          eod_close_premium_percent?: number | null
           id?: string
           is_active?: boolean | null
+          main_loop_interval_seconds?: number | null
+          manual_close_premium_percent?: number | null
           max_active_pairs?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
           max_positions_per_pair?: number | null
+          minimum_notional_per_symbol?: Json | null
           new_support_threshold_percent?: number | null
+          quantity_increment_per_symbol?: Json | null
           support_candle_count?: number | null
+          support_lower_bound_percent?: number | null
+          support_upper_bound_percent?: number | null
           take_profit_percent?: number | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
+          auto_close_at_end_of_day?: boolean | null
           chart_timeframe?: string | null
           created_at?: string | null
           daily_reset_time?: string | null
           entry_offset_percent?: number | null
+          eod_close_premium_percent?: number | null
           id?: string
           is_active?: boolean | null
+          main_loop_interval_seconds?: number | null
+          manual_close_premium_percent?: number | null
           max_active_pairs?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
           max_positions_per_pair?: number | null
+          minimum_notional_per_symbol?: Json | null
           new_support_threshold_percent?: number | null
+          quantity_increment_per_symbol?: Json | null
           support_candle_count?: number | null
+          support_lower_bound_percent?: number | null
+          support_upper_bound_percent?: number | null
           take_profit_percent?: number | null
           trading_pairs?: string[] | null
           updated_at?: string | null

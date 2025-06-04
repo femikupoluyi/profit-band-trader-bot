@@ -5,6 +5,7 @@ import { MarketDataScannerService } from './MarketDataScannerService';
 import { SignalAnalysisService } from './SignalAnalysisService';
 import { SignalExecutionService } from './SignalExecutionService';
 import { EndOfDayManagerService } from './EndOfDayManagerService';
+import { ManualCloseService } from './ManualCloseService';
 import { BybitService } from '../../bybitService';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -21,6 +22,7 @@ export class MainTradingEngine {
   private signalAnalyzer: SignalAnalysisService;
   private signalExecutor: SignalExecutionService;
   private eodManager: EndOfDayManagerService;
+  private manualCloseService: ManualCloseService;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
@@ -33,6 +35,7 @@ export class MainTradingEngine {
     this.signalAnalyzer = new SignalAnalysisService(userId);
     this.signalExecutor = new SignalExecutionService(userId, bybitService);
     this.eodManager = new EndOfDayManagerService(userId, bybitService);
+    this.manualCloseService = new ManualCloseService(userId, bybitService);
   }
 
   async initialize(): Promise<void> {
@@ -98,6 +101,10 @@ export class MainTradingEngine {
 
     await this.logActivity('system_info', 'Trading engine stopped');
     console.log('✅ Main Trading Engine stopped');
+  }
+
+  async manualClosePosition(tradeId: string): Promise<void> {
+    return this.manualCloseService.closePosition(tradeId);
   }
 
   private scheduleMainLoop(intervalSeconds: number): void {

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
           <CardTitle>Trading Configuration</CardTitle>
           <CardDescription>
             Configure your automated trading bot parameters and risk management settings.
+            All limit-only orders with configurable take-profits and manual market-close options.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
