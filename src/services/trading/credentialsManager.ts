@@ -43,11 +43,11 @@ export class CredentialsManager {
         
         await this.logActivity('info', `Found API credentials for Bybit MAIN exchange (active: ${credentials.is_active})`);
         
-        const bybitService = new BybitService({
-          apiKey: credentials.api_key,
-          apiSecret: credentials.api_secret,
-          testnet: false, // Force MAIN exchange
-        });
+        const bybitService = new BybitService(
+          credentials.api_key,
+          credentials.api_secret,
+          'https://api.bybit.com'
+        );
 
         // Test the connection to verify credentials work on MAIN exchange
         try {
