@@ -25,6 +25,30 @@ export class SignalExecutionService {
     });
   }
 
+  private formatPriceForSymbol(symbol: string, price: number): string {
+    // Price precision rules for different symbols
+    const pricePrecisionRules: Record<string, number> = {
+      'BTCUSDT': 1,    // BTC prices to 1 decimal place (e.g., 104776.8)
+      'ETHUSDT': 2,    // ETH prices to 2 decimal places
+      'BNBUSDT': 2,    // BNB prices to 2 decimal places
+      'SOLUSDT': 3,    // SOL prices to 3 decimal places
+      'ADAUSDT': 4,    // ADA prices to 4 decimal places
+      'XRPUSDT': 4,    // XRP prices to 4 decimal places
+      'LTCUSDT': 2,    // LTC prices to 2 decimal places
+      'DOGEUSDT': 5,   // DOGE prices to 5 decimal places
+      'MATICUSDT': 4,  // MATIC prices to 4 decimal places
+      'FETUSDT': 4,    // FET prices to 4 decimal places
+      'POLUSDT': 4,    // POL prices to 4 decimal places
+      'XLMUSDT': 5,    // XLM prices to 5 decimal places
+    };
+
+    const decimals = pricePrecisionRules[symbol] || 2; // Default to 2 decimals
+    const formattedPrice = price.toFixed(decimals);
+    
+    console.log(`Formatting price for ${symbol}: ${price} -> ${formattedPrice} (${decimals} decimals)`);
+    return formattedPrice;
+  }
+
   async executeSignal(signal: any): Promise<void> {
     console.log(`\n🎯 Processing signal for ${signal.symbol}:`);
     console.log(`  Signal Type: ${signal.signal_type}`);
@@ -219,10 +243,11 @@ export class SignalExecutionService {
         console.log(`🔄 Placing LIMIT order on Bybit for ${symbol} with take profit...`);
         
         const formattedQuantity = quantity.toString();
-        const formattedPrice = price.toFixed(2);
+        // Use the proper price formatting method for the symbol
+        const formattedPrice = this.formatPriceForSymbol(symbol, price);
         
         console.log(`  Formatted quantity: ${formattedQuantity}`);
-        console.log(`  Formatted price: ${formattedPrice}`);
+        console.log(`  Formatted price: ${formattedPrice} (original: ${price})`);
 
         // Place buy order on Bybit - ALWAYS LIMIT ORDER
         const orderParams = {
@@ -254,6 +279,7 @@ export class SignalExecutionService {
             symbol,
             quantity: formattedQuantity,
             price: actualFillPrice,
+            formattedPrice: formattedPrice,
             orderType: 'Limit Buy',
             status: tradeStatus,
             configuredMaxOrderAmount,
@@ -269,6 +295,8 @@ export class SignalExecutionService {
           await this.logActivity('order_failed', `Bybit order failed for ${symbol}`, {
             orderResult,
             symbol,
+            formattedPrice: formattedPrice,
+            originalPrice: price,
             reason: 'bybit_order_failed'
           });
           // Don't create a database record if Bybit order failed
