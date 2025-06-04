@@ -1,3 +1,4 @@
+
 import { buildGetRequest, buildPostRequest } from '../../supabase/functions/bybit-api/requestBuilder';
 import { BybitRequest } from '../../supabase/functions/bybit-api/types';
 
@@ -41,20 +42,32 @@ export class BybitService {
         }
       };
       const response = await this.makeRequest(request);
+      
+      console.log(`Raw API response for ${symbol}:`, response);
+      
       if (response.retCode === 0 && response.result?.list && response.result.list.length > 0) {
         const ticker = response.result.list[0];
-        console.log(`✅ Market price for ${symbol}: ${ticker.lastPrice}`);
+        const price = parseFloat(ticker.lastPrice);
+        
+        console.log(`✅ Market price for ${symbol}: $${price} (from lastPrice: ${ticker.lastPrice})`);
+        
+        // Validate that we got a valid price
+        if (isNaN(price) || price <= 0) {
+          console.error(`❌ Invalid price received for ${symbol}: ${ticker.lastPrice} -> ${price}`);
+          throw new Error(`Invalid price received for ${symbol}: ${price}`);
+        }
+        
         return {
           symbol: ticker.symbol,
-          price: parseFloat(ticker.lastPrice)
+          price: price
         };
       } else {
-        console.error(`Failed to get market price for ${symbol}:`, response);
-        return { symbol: symbol, price: 0 };
+        console.error(`❌ Failed to get market price for ${symbol}:`, response);
+        throw new Error(`Failed to get market price for ${symbol}: ${response.retMsg || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error(`Error getting market price for ${symbol}:`, error);
-      return { symbol: symbol, price: 0 };
+      console.error(`❌ Error getting market price for ${symbol}:`, error);
+      throw error;
     }
   }
 
