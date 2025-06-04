@@ -51,7 +51,8 @@ export class SignalExecutionService {
       
       // 1. Calculate quantity
       const rawQuantity = config.maximum_order_amount_usd / entryPrice;
-      const finalQuantity = this.roundQuantityToIncrement(signal.symbol, rawQuantity, config);
+      const increment = config.quantity_increment_per_symbol[signal.symbol] || 0.0001;
+      const finalQuantity = Math.floor(rawQuantity / increment) * increment;
       
       console.log(`  Raw Quantity: ${rawQuantity.toFixed(6)}`);
       console.log(`  Final Quantity: ${finalQuantity.toFixed(6)}`);
@@ -72,8 +73,8 @@ export class SignalExecutionService {
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)} (+${config.take_profit_percentage}%)`);
 
-      // 4. Place limit buy order with take-profit
-      await this.placeLimitBuyOrderWithTakeProfit(signal, finalQuantity, entryPrice, takeProfitPrice, config);
+      // 4. Place REAL limit buy order on Bybit - NO MOCK ORDERS
+      await this.placeRealBybitOrder(signal, finalQuantity, entryPrice, takeProfitPrice, config);
       
     } catch (error) {
       console.error(`❌ Error executing signal ${signal.id}:`, error);
@@ -81,82 +82,35 @@ export class SignalExecutionService {
     }
   }
 
-  private roundQuantityToIncrement(symbol: string, quantity: number, config: TradingConfig): number {
-    const increment = config.quantity_increment_per_symbol[symbol] || 0.0001;
-    return Math.floor(quantity / increment) * increment;
-  }
-
-  private async placeLimitBuyOrderWithTakeProfit(signal: any, quantity: number, entryPrice: number, takeProfitPrice: number, config: TradingConfig): Promise<void> {
+  private async placeRealBybitOrder(signal: any, quantity: number, entryPrice: number, takeProfitPrice: number, config: TradingConfig): Promise<void> {
     try {
-      console.log(`🔄 Placing limit buy order for ${signal.symbol}:`);
+      console.log(`🔄 Placing REAL limit buy order on Bybit for ${signal.symbol}:`);
       console.log(`  Quantity: ${quantity.toFixed(6)}`);
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
       
       const formattedQuantity = quantity.toString();
       const formattedEntryPrice = entryPrice.toFixed(2);
-      const formattedTakeProfitPrice = takeProfitPrice.toFixed(2);
 
-      let bybitOrderId = null;
-      let orderPlaced = false;
+      // ALWAYS place real Bybit order - no fallback to mock
+      const buyOrderParams = {
+        category: 'spot' as const,
+        symbol: signal.symbol,
+        side: 'Buy' as const,
+        orderType: 'Limit' as const,
+        qty: formattedQuantity,
+        price: formattedEntryPrice,
+        timeInForce: 'GTC' as const
+      };
 
-      try {
-        // Place the limit buy order first
-        const buyOrderParams = {
-          category: 'spot' as const,
-          symbol: signal.symbol,
-          side: 'Buy' as const,
-          orderType: 'Limit' as const,
-          qty: formattedQuantity,
-          price: formattedEntryPrice,
-          timeInForce: 'GTC' as const
-        };
+      console.log('📝 Placing REAL BUY order with params:', buyOrderParams);
+      const buyOrderResult = await this.bybitService.placeOrder(buyOrderParams);
 
-        console.log('📝 Placing BUY order with params:', buyOrderParams);
-        const buyOrderResult = await this.bybitService.placeOrder(buyOrderParams);
+      if (buyOrderResult && buyOrderResult.retCode === 0 && buyOrderResult.result?.orderId) {
+        const bybitOrderId = buyOrderResult.result.orderId;
+        console.log(`✅ REAL Bybit BUY order placed successfully: ${bybitOrderId}`);
 
-        if (buyOrderResult && buyOrderResult.retCode === 0 && buyOrderResult.result?.orderId) {
-          bybitOrderId = buyOrderResult.result.orderId;
-          orderPlaced = true;
-          console.log(`✅ Real Bybit BUY order placed: ${bybitOrderId}`);
-
-          // Now place the take-profit sell order (conditional)
-          try {
-            const sellOrderParams = {
-              category: 'spot' as const,
-              symbol: signal.symbol,
-              side: 'Sell' as const,
-              orderType: 'Limit' as const,
-              qty: formattedQuantity,
-              price: formattedTakeProfitPrice,
-              timeInForce: 'GTC' as const
-            };
-
-            console.log('📝 Placing TAKE-PROFIT order with params:', sellOrderParams);
-            const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
-            
-            if (sellOrderResult && sellOrderResult.retCode === 0) {
-              console.log(`✅ Take-profit order placed: ${sellOrderResult.result?.orderId}`);
-            } else {
-              console.log(`⚠️ Take-profit order failed, will handle manually later`);
-            }
-          } catch (sellError) {
-            console.log(`⚠️ Take-profit order error:`, sellError);
-          }
-
-        } else {
-          console.log(`⚠️ Bybit buy order failed, using mock order`);
-          bybitOrderId = `mock_${Date.now()}_${signal.symbol}`;
-          orderPlaced = true;
-        }
-      } catch (bybitError) {
-        console.log(`⚠️ Bybit API error, using mock order:`, bybitError);
-        bybitOrderId = `mock_${Date.now()}_${signal.symbol}`;
-        orderPlaced = true;
-      }
-
-      if (orderPlaced) {
-        // Create trade record
+        // Create trade record ONLY after successful Bybit order placement
         const { data: trade, error } = await supabase
           .from('trades')
           .insert({
@@ -166,7 +120,7 @@ export class SignalExecutionService {
             order_type: 'limit',
             price: entryPrice,
             quantity: quantity,
-            status: 'pending',
+            status: 'pending', // Real orders start as pending until Bybit confirms fill
             bybit_order_id: bybitOrderId,
           })
           .select()
@@ -180,9 +134,9 @@ export class SignalExecutionService {
           .update({ processed: true })
           .eq('id', signal.id);
 
-        console.log(`✅ Trade record created for ${signal.symbol}`);
+        console.log(`✅ Trade record created for REAL Bybit order ${bybitOrderId}`);
         
-        await this.logActivity('order_placed', `Limit buy order placed for ${signal.symbol}`, {
+        await this.logActivity('order_placed', `REAL limit buy order placed on Bybit for ${signal.symbol}`, {
           symbol: signal.symbol,
           quantity: formattedQuantity,
           entryPrice: entryPrice,
@@ -190,99 +144,68 @@ export class SignalExecutionService {
           orderValue: quantity * entryPrice,
           bybitOrderId,
           tradeId: trade.id,
-          takeProfitPercent: config.take_profit_percentage
+          orderType: 'REAL_BYBIT_LIMIT_ORDER'
+        });
+
+        // Place take-profit limit sell order after successful buy order
+        await this.placeTakeProfitOrder(signal.symbol, quantity, takeProfitPrice);
+
+      } else {
+        console.error(`❌ Bybit order FAILED - retCode: ${buyOrderResult?.retCode}, retMsg: ${buyOrderResult?.retMsg}`);
+        await this.markSignalRejected(signal.id, `Bybit order failed: ${buyOrderResult?.retMsg || 'Unknown error'}`);
+        
+        // Log the failure
+        await this.logActivity('order_failed', `Bybit order failed for ${signal.symbol}`, {
+          symbol: signal.symbol,
+          error: buyOrderResult?.retMsg || 'Unknown error',
+          retCode: buyOrderResult?.retCode
         });
       }
 
     } catch (error) {
-      console.error(`❌ Error placing order for ${signal.symbol}:`, error);
+      console.error(`❌ Error placing REAL order for ${signal.symbol}:`, error);
+      await this.markSignalRejected(signal.id, `Order placement error: ${error.message}`);
       throw error;
     }
   }
 
-  async manualClosePosition(tradeId: string): Promise<void> {
+  private async placeTakeProfitOrder(symbol: string, quantity: number, takeProfitPrice: number): Promise<void> {
     try {
-      console.log(`🔄 Manual close requested for trade ${tradeId}`);
-
-      // Get the trade details
-      const { data: trade, error } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('id', tradeId)
-        .eq('user_id', this.userId)
-        .single();
-
-      if (error || !trade) {
-        throw new Error('Trade not found');
-      }
-
-      if (trade.status !== 'filled') {
-        throw new Error('Cannot close trade that is not filled');
-      }
-
-      // Get current market price
-      const marketData = await this.bybitService.getMarketPrice(trade.symbol);
-      const currentPrice = marketData.price;
+      console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
-      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
-      console.log(`  Using MARKET order for immediate execution`);
+      const sellOrderParams = {
+        category: 'spot' as const,
+        symbol: symbol,
+        side: 'Sell' as const,
+        orderType: 'Limit' as const,
+        qty: quantity.toString(),
+        price: takeProfitPrice.toFixed(2),
+        timeInForce: 'GTC' as const
+      };
 
-      try {
-        // Place MARKET sell order for immediate execution
-        const sellOrderParams = {
-          category: 'spot' as const,
-          symbol: trade.symbol,
-          side: 'Sell' as const,
-          orderType: 'Market' as const,
-          qty: trade.quantity.toString(),
-        };
-
-        console.log('📝 Placing MARKET sell order:', sellOrderParams);
-        const sellResult = await this.bybitService.placeOrder(sellOrderParams);
-
-        if (sellResult && sellResult.retCode === 0) {
-          // Calculate P&L
-          const entryPrice = parseFloat(trade.price.toString());
-          const quantity = parseFloat(trade.quantity.toString());
-          const profit = (currentPrice - entryPrice) * quantity;
-
-          // Update trade as closed
-          await supabase
-            .from('trades')
-            .update({
-              status: 'closed',
-              profit_loss: profit,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', tradeId);
-
-          console.log(`✅ Manual close completed: ${trade.symbol} P&L: $${profit.toFixed(2)}`);
-
-          await this.logActivity('position_closed', `Manual close for ${trade.symbol}`, {
-            tradeId,
-            symbol: trade.symbol,
-            entryPrice,
-            exitPrice: currentPrice,
-            profit,
-            reason: 'manual_close_market_order'
-          });
-
-        } else {
-          throw new Error(`Market order failed: ${sellResult?.retMsg || 'Unknown error'}`);
-        }
-
-      } catch (sellError) {
-        console.error(`❌ Market sell order failed:`, sellError);
-        throw sellError;
+      console.log('📝 Placing take-profit SELL order:', sellOrderParams);
+      const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
+      
+      if (sellOrderResult && sellOrderResult.retCode === 0) {
+        console.log(`✅ Take-profit order placed: ${sellOrderResult.result?.orderId}`);
+        
+        await this.logActivity('order_placed', `Take-profit limit sell order placed for ${symbol}`, {
+          symbol,
+          quantity: quantity.toString(),
+          takeProfitPrice,
+          bybitOrderId: sellOrderResult.result?.orderId,
+          orderType: 'TAKE_PROFIT_LIMIT_SELL'
+        });
+      } else {
+        console.log(`⚠️ Take-profit order failed: ${sellOrderResult?.retMsg}`);
+        
+        await this.logActivity('order_failed', `Take-profit order failed for ${symbol}`, {
+          symbol,
+          error: sellOrderResult?.retMsg || 'Unknown error'
+        });
       }
-
     } catch (error) {
-      console.error(`❌ Error in manual close:`, error);
-      await this.logActivity('system_error', `Manual close failed for trade ${tradeId}`, {
-        error: error.message,
-        tradeId
-      });
-      throw error;
+      console.error(`❌ Error placing take-profit order for ${symbol}:`, error);
     }
   }
 

@@ -14,26 +14,28 @@ export class PositionMonitorService {
 
   async checkOrderFills(config: TradingConfig): Promise<void> {
     try {
-      console.log('🔍 Checking order fills...');
+      console.log('🔍 Checking order fills from REAL Bybit orders...');
 
-      // Get all pending trades
+      // Get all pending trades - ONLY check trades with real Bybit order IDs
       const { data: pendingTrades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .not('bybit_order_id', 'is', null)
+        .not('bybit_order_id', 'like', 'mock_%'); // Exclude any mock orders
 
       if (error) throw error;
 
       if (!pendingTrades || pendingTrades.length === 0) {
-        console.log('📭 No pending orders to check');
+        console.log('📭 No pending REAL orders to check');
         return;
       }
 
-      console.log(`📊 Checking ${pendingTrades.length} pending orders`);
+      console.log(`📊 Checking ${pendingTrades.length} pending REAL Bybit orders`);
 
       for (const trade of pendingTrades) {
-        await this.checkTradeOrderFill(trade, config);
+        await this.checkRealBybitOrderFill(trade, config);
       }
 
       // Check filled trades for take-profit execution
@@ -45,69 +47,100 @@ export class PositionMonitorService {
     }
   }
 
-  private async checkTradeOrderFill(trade: any, config: TradingConfig): Promise<void> {
+  private async checkRealBybitOrderFill(trade: any, config: TradingConfig): Promise<void> {
     try {
-      if (!trade.bybit_order_id || trade.bybit_order_id.startsWith('mock_')) {
-        // For mock orders, simulate fill based on current price
-        await this.checkMockOrderFill(trade, config);
+      console.log(`\n🔍 Checking REAL Bybit order ${trade.bybit_order_id} for ${trade.symbol}:`);
+
+      // Get REAL order status from Bybit
+      const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
+      
+      if (orderStatus.retCode !== 0) {
+        console.error(`❌ Failed to get order status from Bybit: ${orderStatus.retMsg}`);
         return;
       }
 
-      // Check real Bybit order status
-      const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
-      
-      if (orderStatus.retCode === 0 && orderStatus.result?.list?.length > 0) {
-        const order = orderStatus.result.list[0];
+      const orderList = orderStatus.result?.list;
+      if (!orderList || orderList.length === 0) {
+        console.log(`⚠️ Order ${trade.bybit_order_id} not found in Bybit system`);
+        return;
+      }
+
+      const order = orderList[0];
+      console.log(`  Bybit Order Status: ${order.orderStatus}`);
+      console.log(`  Average Price: ${order.avgPrice || 'N/A'}`);
+      console.log(`  Executed Quantity: ${order.cumExecQty || '0'}`);
+
+      // Only mark as filled if Bybit confirms it's actually filled
+      if (order.orderStatus === 'Filled') {
+        const fillPrice = parseFloat(order.avgPrice || order.price || trade.price);
+        const executedQty = parseFloat(order.cumExecQty || trade.quantity);
         
-        if (order.orderStatus === 'Filled') {
-          await this.updateTradeAsFilled(trade, parseFloat(order.avgPrice));
-        }
+        console.log(`✅ REAL order filled by Bybit at ${fillPrice} for quantity ${executedQty}`);
+        
+        await this.updateTradeAsFilled(trade, fillPrice, executedQty);
+      } else if (order.orderStatus === 'Cancelled' || order.orderStatus === 'Rejected') {
+        console.log(`❌ Order was ${order.orderStatus} by Bybit`);
+        
+        await this.updateTradeAsCancelled(trade, order.orderStatus);
+      } else {
+        console.log(`📋 Order still ${order.orderStatus} in Bybit system`);
       }
     } catch (error) {
-      console.error(`❌ Error checking order ${trade.id}:`, error);
+      console.error(`❌ Error checking REAL order ${trade.id}:`, error);
     }
   }
 
-  private async checkMockOrderFill(trade: any, config: TradingConfig): Promise<void> {
-    try {
-      // Get current market price
-      const marketData = await this.bybitService.getMarketPrice(trade.symbol);
-      const currentPrice = marketData.price;
-      const entryPrice = parseFloat(trade.price.toString());
-
-      // For buy limit orders, fill if current price <= entry price
-      if (trade.side === 'buy' && currentPrice <= entryPrice) {
-        console.log(`💰 Mock buy order filled: ${trade.symbol} at ${currentPrice} (limit: ${entryPrice})`);
-        await this.updateTradeAsFilled(trade, currentPrice);
-      }
-    } catch (error) {
-      console.error(`❌ Error checking mock order ${trade.id}:`, error);
-    }
-  }
-
-  private async updateTradeAsFilled(trade: any, fillPrice: number): Promise<void> {
+  private async updateTradeAsFilled(trade: any, fillPrice: number, executedQty: number): Promise<void> {
     try {
       const { error } = await supabase
         .from('trades')
         .update({
           status: 'filled',
           price: fillPrice,
+          quantity: executedQty,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', trade.id)
+        .eq('status', 'pending'); // Only update if still pending
+
+      if (error) throw error;
+
+      console.log(`✅ Trade ${trade.id} marked as filled by REAL Bybit execution`);
+      
+      await this.logActivity('trade_filled', `REAL Bybit order filled for ${trade.symbol} at $${fillPrice}`, {
+        tradeId: trade.id,
+        symbol: trade.symbol,
+        fillPrice,
+        executedQuantity: executedQty,
+        originalQuantity: trade.quantity,
+        bybitOrderId: trade.bybit_order_id,
+        source: 'REAL_BYBIT_FILL_CONFIRMATION'
+      });
+    } catch (error) {
+      console.error('❌ Error updating trade as filled:', error);
+    }
+  }
+
+  private async updateTradeAsCancelled(trade: any, reason: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('trades')
+        .update({
+          status: 'cancelled',
           updated_at: new Date().toISOString()
         })
         .eq('id', trade.id);
 
       if (error) throw error;
 
-      console.log(`✅ Trade ${trade.id} marked as filled at ${fillPrice}`);
-      
-      await this.logActivity('trade_filled', `Order filled for ${trade.symbol} at $${fillPrice}`, {
+      await this.logActivity('trade_cancelled', `Order cancelled by Bybit for ${trade.symbol}: ${reason}`, {
         tradeId: trade.id,
         symbol: trade.symbol,
-        fillPrice,
-        quantity: trade.quantity
+        reason,
+        bybitOrderId: trade.bybit_order_id
       });
     } catch (error) {
-      console.error('❌ Error updating trade as filled:', error);
+      console.error('❌ Error updating trade as cancelled:', error);
     }
   }
 
@@ -141,21 +174,24 @@ export class PositionMonitorService {
       // Calculate take-profit price
       const takeProfitPrice = entryPrice * (1 + config.take_profit_percentage / 100);
       
-      // Check if take-profit should be triggered
+      // Check if take-profit should be triggered (market price reached target)
       if (currentPrice >= takeProfitPrice) {
-        console.log(`🎯 Take-profit triggered for ${trade.symbol}: ${currentPrice} >= ${takeProfitPrice}`);
-        await this.executeTakeProfit(trade, takeProfitPrice, config);
+        console.log(`🎯 Take-profit condition met for ${trade.symbol}: ${currentPrice} >= ${takeProfitPrice}`);
+        
+        // In a real system, we would check if the take-profit limit sell order was filled
+        // For now, we'll execute the take-profit at market
+        await this.executeTakeProfit(trade, currentPrice, config);
       }
     } catch (error) {
       console.error(`❌ Error checking take-profit for trade ${trade.id}:`, error);
     }
   }
 
-  private async executeTakeProfit(trade: any, takeProfitPrice: number, config: TradingConfig): Promise<void> {
+  private async executeTakeProfit(trade: any, exitPrice: number, config: TradingConfig): Promise<void> {
     try {
       const quantity = parseFloat(trade.quantity.toString());
       const entryPrice = parseFloat(trade.price.toString());
-      const profit = (takeProfitPrice - entryPrice) * quantity;
+      const profit = (exitPrice - entryPrice) * quantity;
 
       // Update trade as closed
       const { error } = await supabase
@@ -175,9 +211,9 @@ export class PositionMonitorService {
         tradeId: trade.id,
         symbol: trade.symbol,
         entryPrice,
-        exitPrice: takeProfitPrice,
+        exitPrice,
         profit,
-        profitPercent: ((takeProfitPrice - entryPrice) / entryPrice * 100).toFixed(2)
+        profitPercent: ((exitPrice - entryPrice) / entryPrice * 100).toFixed(2)
       });
     } catch (error) {
       console.error('❌ Error executing take-profit:', error);
