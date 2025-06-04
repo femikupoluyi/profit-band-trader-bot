@@ -46,7 +46,7 @@ export class CredentialsManager {
         const bybitService = new BybitService(
           credentials.api_key,
           credentials.api_secret,
-          'https://api.bybit.com'
+          true // isDemoTrading = true for demo trading
         );
 
         // Test the connection to verify credentials work on MAIN exchange
