@@ -31,7 +31,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
     try {
       console.log(`Manually closing trade ${trade.id} for ${trade.symbol}`);
       
-      // First, verify the trade exists and get current status
+      // Verify the trade exists and get current status
       const { data: currentTrade, error: fetchError } = await supabase
         .from('trades')
         .select('*')
@@ -74,15 +74,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
 
       console.log(`Updating trade ${trade.id} status from ${currentTrade.status} to closed with P&L: ${profitLoss}`);
 
-      // Update trade status to closed - allow closing from any valid status
-      const validStatusesToClose = ['pending', 'filled', 'partial_filled'];
-      
-      if (!validStatusesToClose.includes(currentTrade.status)) {
-        // If status is not in the valid list, still allow manual close but warn user
-        console.warn(`Unusual status ${currentTrade.status} for manual close, proceeding anyway`);
-      }
-
-      // Use upsert to handle any constraint issues
+      // Update trade status to closed - more permissive approach
       const { error: updateError } = await supabase
         .from('trades')
         .update({
@@ -95,18 +87,10 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
       if (updateError) {
         console.error('Error updating trade status:', updateError);
         
-        // Try to provide more specific error handling
-        let errorMessage = `Failed to close trade: ${updateError.message}`;
-        
-        if (updateError.message.includes('constraint')) {
-          errorMessage = "Database constraint prevented closing trade. The trade may have been modified by another process.";
-        } else if (updateError.message.includes('not found')) {
-          errorMessage = "Trade record not found or already modified.";
-        }
-        
+        // More user-friendly error message
         toast({
           title: "Error",
-          description: errorMessage,
+          description: "Failed to close trade. Please try again or contact support.",
           variant: "destructive",
         });
         return;
@@ -148,7 +132,7 @@ const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) 
       console.error('Error in manual close:', error);
       toast({
         title: "Error",
-        description: `Failed to close trade: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        description: "An unexpected error occurred while closing the trade",
         variant: "destructive",
       });
     }
