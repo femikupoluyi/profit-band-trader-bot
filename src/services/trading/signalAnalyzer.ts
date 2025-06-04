@@ -34,7 +34,7 @@ export class SignalAnalyzer {
       takeProfitPercent: this.config.take_profit_percent,
       maxActivePairs: this.config.max_active_pairs,
       maxPositionsPerPair: this.config.max_positions_per_pair,
-      supportAnalysisCandles: this.config.support_analysis_candles
+      supportCandleCount: this.config.support_candle_count
     });
     
     let signalsGenerated = 0;
@@ -73,18 +73,18 @@ export class SignalAnalyzer {
         console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(4)}`);
 
         // Use support analysis based on historical candles from config
-        const supportAnalysisCandles = this.config.support_analysis_candles || 20;
-        console.log(`📊 Analyzing ${supportAnalysisCandles} candles for support level detection`);
+        const supportCandleCount = this.config.support_candle_count || 20;
+        console.log(`📊 Analyzing ${supportCandleCount} candles for support level detection`);
 
         // Get historical data for proper support analysis
-        const candleData = await this.candleDataService.getCandleData(symbol, supportAnalysisCandles);
+        const candleData = await this.candleDataService.getCandleData(symbol, supportCandleCount);
         
         let supportLevel;
         if (candleData && candleData.length >= 5) {
           // Use proper support level analysis with historical data
-          const supportLevels = await this.supportLevelAnalyzer.findSupportLevels(candleData, currentPrice);
-          supportLevel = supportLevels.length > 0 ? supportLevels[0] : null;
-          console.log(`🎯 Historical support analysis found ${supportLevels.length} support levels`);
+          const identifiedSupport = this.supportLevelAnalyzer.identifySupportLevel(candleData);
+          supportLevel = identifiedSupport;
+          console.log(`🎯 Historical support analysis result: ${supportLevel ? 'Found support level' : 'No support found'}`);
         } else {
           console.log(`⚠️  Limited historical data for ${symbol}, using simplified support calculation`);
           // Fallback to simplified support calculation
