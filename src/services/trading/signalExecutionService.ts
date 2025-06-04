@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PositionChecker } from './positionChecker';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { TradeValidation } from './tradeValidation';
 
 export class SignalExecutionService {
   private userId: string;
@@ -23,66 +24,6 @@ export class SignalExecutionService {
       maxPositionsPerPair: this.config.max_positions_per_pair,
       newSupportThreshold: this.config.new_support_threshold_percent
     });
-  }
-
-  private formatQuantityForSymbol(symbol: string, quantity: number): string {
-    // Stricter precision rules to avoid "too many decimals" errors
-    const precisionRules: Record<string, number> = {
-      'BTCUSDT': 5,    // BTC allows up to 5 decimals
-      'ETHUSDT': 3,    // ETH allows up to 3 decimals  
-      'BNBUSDT': 2,    // BNB allows up to 2 decimals
-      'SOLUSDT': 1,    // SOL reduced to 1 decimal for safety
-      'ADAUSDT': 0,    // ADA whole numbers only
-      'XRPUSDT': 0,    // XRP whole numbers only
-      'LTCUSDT': 3,    // LTC allows up to 3 decimals
-      'DOGEUSDT': 0,   // DOGE whole numbers only
-      'MATICUSDT': 0,  // MATIC whole numbers only
-      'FETUSDT': 0,    // FET whole numbers only
-      'POLUSDT': 0,    // POL whole numbers only - this was causing errors
-      'XLMUSDT': 0,    // XLM whole numbers only
-    };
-
-    const decimals = precisionRules[symbol] || 0; // Default to 0 decimals for safety
-    let formattedQty = quantity.toFixed(decimals);
-    
-    // Remove trailing zeros but ensure proper formatting
-    if (decimals > 0) {
-      formattedQty = parseFloat(formattedQty).toString();
-    }
-    
-    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals, strict mode)`);
-    return formattedQty;
-  }
-
-  private validateOrderValue(symbol: string, quantity: number, price: number): boolean {
-    const orderValue = quantity * price;
-    
-    // Conservative minimum order values
-    const minOrderValues: Record<string, number> = {
-      'BTCUSDT': 25,
-      'ETHUSDT': 25,
-      'BNBUSDT': 25,
-      'SOLUSDT': 25,
-      'LTCUSDT': 25,
-      'ADAUSDT': 15,
-      'XRPUSDT': 15,
-      'DOGEUSDT': 15,
-      'MATICUSDT': 15,
-      'FETUSDT': 15,
-      'POLUSDT': 15,
-      'XLMUSDT': 15,
-    };
-
-    const minValue = minOrderValues[symbol] || 25;
-    
-    console.log(`Order value validation for ${symbol}: ${orderValue.toFixed(2)} USD (min: ${minValue})`);
-    
-    if (orderValue < minValue) {
-      console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minValue}`);
-      return false;
-    }
-    
-    return true;
   }
 
   async executeSignal(signal: any): Promise<void> {
@@ -142,14 +83,9 @@ export class SignalExecutionService {
         return;
       }
 
-      // Get current market price to determine if we should place a market or limit order
-      const marketData = await this.bybitService.getMarketPrice(signal.symbol);
-      const currentMarketPrice = marketData.price;
-      
-      // Calculate entry price with offset using config value
+      // Calculate entry price with offset using config value (support-based entry)
       const entryPrice = signal.price * (1 + entryOffsetPercent / 100);
-      console.log(`📈 Entry price calculated: $${entryPrice.toFixed(6)} (${entryOffsetPercent}% above support)`);
-      console.log(`📊 Current market price: $${currentMarketPrice.toFixed(6)}`);
+      console.log(`📈 Support-based entry price calculated: $${entryPrice.toFixed(6)} (${entryOffsetPercent}% above support)`);
 
       // 🔒 STRICT ENFORCEMENT: Calculate quantity based on EXACT max order amount from config
       const quantity = maxOrderAmountUsd / entryPrice;
@@ -158,14 +94,44 @@ export class SignalExecutionService {
       console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on STRICT $${maxOrderAmountUsd} max order)`);
       console.log(`💰 Actual order value: $${actualOrderValue.toFixed(2)} (should be ≤ $${maxOrderAmountUsd})`);
 
-      // ENFORCE: Order value must not exceed config maximum
-      if (actualOrderValue > maxOrderAmountUsd) {
+      // ENFORCE: Order value must not exceed config maximum - BEFORE any formatting
+      if (actualOrderValue > maxOrderAmountUsd * 1.001) { // Allow tiny rounding tolerance
         console.error(`❌ CONFIGURATION VIOLATION: Order value $${actualOrderValue.toFixed(2)} exceeds configured maximum $${maxOrderAmountUsd}`);
         await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: exceeds max order amount`, {
           symbol: signal.symbol,
           actualOrderValue: actualOrderValue.toFixed(2),
           configuredMaximum: maxOrderAmountUsd,
           reason: 'exceeds_max_order_amount'
+        });
+        return;
+      }
+
+      // Format quantity for Bybit precision requirements
+      const formattedQuantity = TradeValidation.getFormattedQuantity(signal.symbol, quantity);
+      const formattedOrderValue = parseFloat(formattedQuantity) * entryPrice;
+
+      // Final validation after formatting - ensure we still comply with limits
+      if (formattedOrderValue > maxOrderAmountUsd * 1.01) { // Allow small formatting tolerance
+        console.error(`❌ POST-FORMATTING VIOLATION: Formatted order value $${formattedOrderValue.toFixed(2)} exceeds configured maximum $${maxOrderAmountUsd}`);
+        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: formatted quantity exceeds max order amount`, {
+          symbol: signal.symbol,
+          formattedOrderValue: formattedOrderValue.toFixed(2),
+          configuredMaximum: maxOrderAmountUsd,
+          originalQuantity: quantity,
+          formattedQuantity,
+          reason: 'formatted_quantity_exceeds_max'
+        });
+        return;
+      }
+
+      // Validate minimum order value
+      if (!TradeValidation.isValidOrderValue(signal.symbol, parseFloat(formattedQuantity), entryPrice)) {
+        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: value below minimum`, {
+          symbol: signal.symbol,
+          quantity: formattedQuantity,
+          price: entryPrice,
+          orderValue: parseFloat(formattedQuantity) * entryPrice,
+          reason: 'order_value_too_low'
         });
         return;
       }
@@ -185,24 +151,11 @@ export class SignalExecutionService {
         return;
       }
 
-      // Determine order type and execution price
-      let orderType: 'market' | 'limit';
-      let executionPrice: number;
+      // 🔒 ALWAYS USE LIMIT ORDERS for support-based trading - never market orders
+      console.log(`💡 Using LIMIT order for support-based entry at $${entryPrice.toFixed(6)} (configured strategy)`);
 
-      if (currentMarketPrice <= entryPrice) {
-        // Market price is below or at our entry price, place market order for immediate fill
-        orderType = 'market';
-        executionPrice = currentMarketPrice;
-        console.log(`💡 Market price (${currentMarketPrice.toFixed(6)}) <= entry price (${entryPrice.toFixed(6)}), placing MARKET order`);
-      } else {
-        // Market price is above our entry price, place limit order to wait for better price
-        orderType = 'limit';
-        executionPrice = entryPrice;
-        console.log(`💡 Market price (${currentMarketPrice.toFixed(6)}) > entry price (${entryPrice.toFixed(6)}), placing LIMIT order`);
-      }
-
-      // Execute the trade with strict config enforcement
-      await this.executeBuyOrder(signal.symbol, executionPrice, quantity, signal, takeProfitPercent, orderType, maxOrderAmountUsd);
+      // Execute the trade with strict config enforcement - ALWAYS LIMIT ORDER
+      await this.executeBuyOrder(signal.symbol, entryPrice, parseFloat(formattedQuantity), signal, takeProfitPercent, 'limit', maxOrderAmountUsd);
 
     } catch (error) {
       console.error(`Error executing signal for ${signal.symbol}:`, error);
@@ -213,11 +166,11 @@ export class SignalExecutionService {
     }
   }
 
-  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number, orderType: 'market' | 'limit', configuredMaxOrderAmount: number): Promise<void> {
+  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number, orderType: 'limit', configuredMaxOrderAmount: number): Promise<void> {
     try {
       const actualOrderValue = quantity * price;
       
-      console.log(`\n💰 Executing ${orderType.toUpperCase()} buy order for ${symbol}:`);
+      console.log(`\n💰 Executing LIMIT buy order for ${symbol}:`);
       console.log(`  Price: $${price.toFixed(6)}`);
       console.log(`  Quantity: ${quantity.toFixed(6)}`);
       console.log(`  Total Value: $${actualOrderValue.toFixed(2)}`);
@@ -225,7 +178,7 @@ export class SignalExecutionService {
       console.log(`  ✅ Within Limit: ${actualOrderValue <= configuredMaxOrderAmount ? 'YES' : 'NO'}`);
       console.log(`  Take Profit Target: ${takeProfitPercent}%`);
 
-      // Final validation - double check order value doesn't exceed config
+      // Final validation - triple check order value doesn't exceed config
       if (actualOrderValue > configuredMaxOrderAmount) {
         throw new Error(`Order value $${actualOrderValue.toFixed(2)} exceeds configured maximum $${configuredMaxOrderAmount}`);
       }
@@ -235,45 +188,32 @@ export class SignalExecutionService {
         throw new Error(`Invalid trade parameters: price=${price}, quantity=${quantity}`);
       }
 
-      // Validate minimum order value
-      if (!this.validateOrderValue(symbol, quantity, price)) {
-        await this.logActivity('order_rejected', `Order rejected for ${symbol}: value below minimum`, {
-          symbol,
-          quantity,
-          price,
-          orderValue: quantity * price,
-          reason: 'order_value_too_low'
-        });
-        return;
-      }
-
       let bybitOrderId = null;
-      let tradeStatus: 'pending' | 'filled' = 'pending';
+      let tradeStatus: 'pending' = 'pending'; // Limit orders start as pending
       let actualFillPrice = price;
 
       // Try to place real order on Bybit
       try {
-        console.log(`🔄 Placing ${orderType.toUpperCase()} order on Bybit for ${symbol}...`);
+        console.log(`🔄 Placing LIMIT order on Bybit for ${symbol}...`);
         
-        // Format quantity with strict precision for the symbol
-        const formattedQuantity = this.formatQuantityForSymbol(symbol, quantity);
-        const formattedPrice = orderType === 'limit' ? price.toFixed(2) : undefined;
+        const formattedQuantity = quantity.toString();
+        const formattedPrice = price.toFixed(2);
         
         console.log(`  Formatted quantity: ${formattedQuantity}`);
-        if (formattedPrice) console.log(`  Formatted price: ${formattedPrice}`);
+        console.log(`  Formatted price: ${formattedPrice}`);
 
-        // Place buy order on Bybit
+        // Place buy order on Bybit - ALWAYS LIMIT ORDER
         const orderParams = {
           category: 'spot' as const,
           symbol: symbol,
           side: 'Buy' as const,
-          orderType: orderType === 'market' ? 'Market' as const : 'Limit' as const,
+          orderType: 'Limit' as const,
           qty: formattedQuantity,
-          ...(orderType === 'limit' && formattedPrice ? { price: formattedPrice } : {}),
-          timeInForce: orderType === 'market' ? 'IOC' as const : 'GTC' as const
+          price: formattedPrice,
+          timeInForce: 'GTC' as const
         };
 
-        console.log('Sending order request to Bybit:', orderParams);
+        console.log('Sending LIMIT order request to Bybit:', orderParams);
 
         const orderResult = await this.bybitService.placeOrder(orderParams);
         console.log('Bybit order response:', orderResult);
@@ -281,33 +221,21 @@ export class SignalExecutionService {
         if (orderResult && orderResult.retCode === 0 && orderResult.result?.orderId) {
           bybitOrderId = orderResult.result.orderId;
           
-          // For market orders, they should be filled immediately
-          if (orderType === 'market') {
-            tradeStatus = 'filled';
-            // Use the actual execution price from Bybit if available
-            if (orderResult.result.price && !isNaN(parseFloat(orderResult.result.price))) {
-              actualFillPrice = parseFloat(orderResult.result.price);
-            } else {
-              // Fallback to current market price for market orders
-              const currentMarketData = await this.bybitService.getMarketPrice(symbol);
-              actualFillPrice = currentMarketData.price;
-            }
-          }
-          
-          console.log(`✅ Successfully placed ${orderType.toUpperCase()} order on Bybit: ${bybitOrderId}`);
+          console.log(`✅ Successfully placed LIMIT order on Bybit: ${bybitOrderId}`);
           console.log(`  Order status: ${tradeStatus}`);
-          console.log(`  Fill price: $${actualFillPrice.toFixed(6)}`);
+          console.log(`  Entry price: $${actualFillPrice.toFixed(6)}`);
           
-          await this.logActivity('order_placed', `Real ${orderType} order placed successfully on Bybit for ${symbol}`, {
+          await this.logActivity('order_placed', `LIMIT order placed successfully on Bybit for ${symbol} within config limits`, {
             bybitOrderId,
             orderResult,
             symbol,
             quantity: formattedQuantity,
             price: actualFillPrice,
-            orderType: `${orderType} Buy`,
+            orderType: 'Limit Buy',
             status: tradeStatus,
             configuredMaxOrderAmount,
-            actualOrderValue: actualOrderValue.toFixed(2)
+            actualOrderValue: actualOrderValue.toFixed(2),
+            orderStrategy: 'support_based_limit'
           });
         } else {
           console.error(`❌ Bybit order failed - retCode: ${orderResult?.retCode}, retMsg: ${orderResult?.retMsg}`);
@@ -337,9 +265,9 @@ export class SignalExecutionService {
           user_id: this.userId,
           symbol,
           side: 'buy',
-          order_type: orderType,
+          order_type: 'limit',
           price: actualFillPrice,
-          quantity: parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
+          quantity: quantity,
           status: tradeStatus,
           bybit_order_id: bybitOrderId,
         })
@@ -355,26 +283,27 @@ export class SignalExecutionService {
       console.log(`  Trade ID: ${trade.id}`);
       console.log(`  Bybit Order ID: ${bybitOrderId}`);
       console.log(`  Status: ${tradeStatus}`);
-      console.log(`  Order Type: ${orderType.toUpperCase()}`);
-      console.log(`  Actual Fill Price: $${actualFillPrice.toFixed(6)}`);
+      console.log(`  Order Type: LIMIT`);
+      console.log(`  Entry Price: $${actualFillPrice.toFixed(6)}`);
       console.log(`  🔒 Config Compliance: Order value $${actualOrderValue.toFixed(2)} ≤ Max $${configuredMaxOrderAmount}`);
 
-      await this.logActivity('trade_executed', `${orderType.toUpperCase()} buy order executed successfully for ${symbol} within config limits`, {
+      await this.logActivity('trade_executed', `LIMIT buy order executed successfully for ${symbol} within config limits`, {
         symbol,
         price: actualFillPrice,
-        quantity: parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
-        totalValue: actualFillPrice * parseFloat(this.formatQuantityForSymbol(symbol, quantity)),
+        quantity: quantity,
+        totalValue: actualOrderValue,
         tradeId: trade.id,
         bybitOrderId,
-        orderType,
+        orderType: 'limit',
         status: tradeStatus,
         takeProfitTarget: takeProfitPercent,
         entryOffset: this.config.entry_offset_percent,
         configuredMaxOrderAmount,
         actualOrderValue: actualOrderValue.toFixed(2),
         maxPositionsPerPair: this.config.max_positions_per_pair,
-        orderSource: 'Real Bybit Order',
-        configCompliance: 'PASSED'
+        orderSource: 'Real Bybit Limit Order',
+        configCompliance: 'PASSED',
+        orderStrategy: 'support_based_limit'
       });
 
       // Mark signal as processed

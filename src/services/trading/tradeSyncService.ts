@@ -33,6 +33,12 @@ export class TradeSyncService {
         return false;
       }
 
+      // Skip if already closed
+      if (trade.status === 'closed') {
+        console.log(`Trade ${trade.id} is already closed, skipping sync`);
+        return false;
+      }
+
       // Get order status from Bybit
       const bybitStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
       
@@ -201,42 +207,142 @@ export class TradeSyncService {
         return;
       }
 
-      // For each filled trade, check if there's a corresponding sell order on Bybit
+      console.log(`Checking ${filledTrades.length} filled trades for potential closure...`);
+
+      // Get current account balance to see which positions still exist
+      const balanceData = await this.bybitService.getAccountBalance();
+      
+      if (balanceData.retCode !== 0 || !balanceData.result?.list?.[0]?.coin) {
+        console.error('Failed to get account balance for position detection');
+        return;
+      }
+
+      const coins = balanceData.result.list[0].coin;
+      const coinBalances = new Map();
+      
+      // Create a map of current coin balances
+      coins.forEach((coin: any) => {
+        coinBalances.set(coin.coin, parseFloat(coin.walletBalance || '0'));
+      });
+
+      // Check each filled trade to see if position still exists
       for (const trade of filledTrades) {
         try {
-          // Get current account balance to see if position still exists
-          const balanceData = await this.bybitService.getAccountBalance();
+          const baseSymbol = trade.symbol.replace('USDT', '');
+          const currentBalance = coinBalances.get(baseSymbol) || 0;
           
-          if (balanceData.retCode === 0 && balanceData.result?.list?.[0]?.coin) {
-            const coins = balanceData.result.list[0].coin;
-            const baseSymbol = trade.symbol.replace('USDT', '');
-            const coinBalance = coins.find((coin: any) => coin.coin === baseSymbol);
+          console.log(`Checking ${trade.symbol}: Current ${baseSymbol} balance: ${currentBalance}, Trade quantity: ${trade.quantity}`);
+          
+          // If balance is zero or significantly less than trade quantity, position was likely closed
+          if (currentBalance === 0 || currentBalance < trade.quantity * 0.1) {
+            console.log(`🎯 Detected closed position for ${trade.symbol} - updating status (balance: ${currentBalance})`);
             
-            if (!coinBalance || parseFloat(coinBalance.walletBalance || '0') === 0) {
-              // Position was closed but we didn't detect it
-              console.log(`🎯 Detected closed position for ${trade.symbol} - updating status`);
-              
-              await supabase
-                .from('trades')
-                .update({
-                  status: 'closed',
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', trade.id);
+            // Update trade status to closed
+            const { error: updateError } = await supabase
+              .from('trades')
+              .update({
+                status: 'closed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', trade.id)
+              .eq('status', 'filled'); // Only update if still filled
 
-              await this.logActivity('position_closed', `Auto-detected closed position for ${trade.symbol}`, {
+            if (updateError) {
+              console.error(`Error updating trade ${trade.id} to closed:`, updateError);
+            } else {
+              await this.logActivity('position_closed', `Auto-detected closed position for ${trade.symbol} via balance check`, {
                 tradeId: trade.id,
                 symbol: trade.symbol,
-                detectionMethod: 'balance_check'
+                detectionMethod: 'balance_check',
+                currentBalance,
+                tradeQuantity: trade.quantity,
+                balanceRatio: currentBalance / trade.quantity
               });
             }
+          } else {
+            console.log(`Position ${trade.symbol} still active - balance: ${currentBalance} >= threshold`);
           }
         } catch (error) {
           console.error(`Error checking balance for ${trade.symbol}:`, error);
         }
       }
+
+      // Additional check: Look for sell orders in Bybit history that we might have missed
+      await this.detectClosedPositionsFromOrderHistory();
+
     } catch (error) {
       console.error('Error detecting closed positions:', error);
+    }
+  }
+
+  private async detectClosedPositionsFromOrderHistory(): Promise<void> {
+    try {
+      console.log('🔍 Checking Bybit order history for missed sell orders...');
+      
+      // Get recent order history from Bybit
+      const orderHistory = await this.bybitService.getOrderHistory();
+      
+      if (orderHistory.retCode !== 0 || !orderHistory.result?.list) {
+        console.log('No order history available');
+        return;
+      }
+
+      // Look for sell orders that might correspond to our filled trades
+      const sellOrders = orderHistory.result.list.filter((order: any) => 
+        order.side === 'Sell' && order.orderStatus === 'Filled'
+      );
+
+      if (sellOrders.length === 0) {
+        console.log('No filled sell orders found in recent history');
+        return;
+      }
+
+      console.log(`Found ${sellOrders.length} filled sell orders in Bybit history`);
+
+      // Get our filled trades to match against
+      const { data: filledTrades } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('status', 'filled');
+
+      if (!filledTrades || filledTrades.length === 0) {
+        return;
+      }
+
+      // Try to match sell orders with our positions
+      for (const sellOrder of sellOrders) {
+        const matchingTrade = filledTrades.find(trade => 
+          trade.symbol === sellOrder.symbol && 
+          Math.abs(parseFloat(sellOrder.qty) - trade.quantity) < trade.quantity * 0.05 // 5% tolerance
+        );
+
+        if (matchingTrade) {
+          console.log(`🎯 Found matching sell order for ${matchingTrade.symbol} - marking as closed`);
+          
+          const { error: updateError } = await supabase
+            .from('trades')
+            .update({
+              status: 'closed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', matchingTrade.id)
+            .eq('status', 'filled');
+
+          if (!updateError) {
+            await this.logActivity('position_closed', `Auto-detected closed position for ${matchingTrade.symbol} via order history`, {
+              tradeId: matchingTrade.id,
+              symbol: matchingTrade.symbol,
+              detectionMethod: 'order_history_match',
+              bybitSellOrderId: sellOrder.orderId,
+              sellQuantity: sellOrder.qty,
+              sellPrice: sellOrder.avgPrice
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking order history:', error);
     }
   }
 
