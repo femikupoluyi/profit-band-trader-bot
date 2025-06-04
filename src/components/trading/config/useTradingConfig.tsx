@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,6 +17,10 @@ export interface TradingConfigData {
   new_support_threshold_percent: number;
   trading_pairs: string[];
   is_active: boolean;
+  main_loop_interval_seconds: number;
+  auto_close_at_end_of_day: boolean;
+  eod_close_premium_percent: number;
+  manual_close_premium_percent: number;
 }
 
 const getDefaultConfig = (): TradingConfigData => ({
@@ -31,6 +36,10 @@ const getDefaultConfig = (): TradingConfigData => ({
   new_support_threshold_percent: 1.0,
   trading_pairs: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
   is_active: false,
+  main_loop_interval_seconds: 30,
+  auto_close_at_end_of_day: false,
+  eod_close_premium_percent: 0.1,
+  manual_close_premium_percent: 0.1,
 });
 
 export const useTradingConfig = (onConfigUpdate?: () => void) => {
@@ -75,13 +84,17 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           new_support_threshold_percent: parseFloat(data.new_support_threshold_percent?.toString() || '1.0'),
           trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
           is_active: data.is_active || false,
+          main_loop_interval_seconds: data.main_loop_interval_seconds || 30,
+          auto_close_at_end_of_day: data.auto_close_at_end_of_day || false,
+          eod_close_premium_percent: parseFloat(data.eod_close_premium_percent?.toString() || '0.1'),
+          manual_close_premium_percent: parseFloat(data.manual_close_premium_percent?.toString() || '0.1'),
         };
         
-        console.log('Loaded config from database with updated schema:', loadedConfig);
+        console.log('Loaded config from database with all fields:', loadedConfig);
         setConfig(loadedConfig);
       } else {
         setHasExistingConfig(false);
-        console.log('No existing config found, using updated defaults:', getDefaultConfig());
+        console.log('No existing config found, using defaults:', getDefaultConfig());
       }
     } catch (error) {
       console.error('Error fetching config:', error);
@@ -111,10 +124,14 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         new_support_threshold_percent: config.new_support_threshold_percent,
         trading_pairs: config.trading_pairs,
         is_active: config.is_active,
+        main_loop_interval_seconds: config.main_loop_interval_seconds,
+        auto_close_at_end_of_day: config.auto_close_at_end_of_day,
+        eod_close_premium_percent: config.eod_close_premium_percent,
+        manual_close_premium_percent: config.manual_close_premium_percent,
         updated_at: new Date().toISOString(),
       };
 
-      console.log('Saving config data with cleaned schema:', configData);
+      console.log('Saving config data with all fields:', configData);
 
       if (hasExistingConfig) {
         const { error } = await supabase

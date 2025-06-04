@@ -7,10 +7,13 @@ export class BybitService {
   private apiSecret: string;
   private baseUrl: string;
 
-  constructor(apiKey: string, apiSecret: string, baseUrl: string) {
+  constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
-    this.baseUrl = baseUrl;
+    // Use Bybit demo trading URL by default
+    this.baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
+    
+    console.log(`🔧 BybitService initialized with ${isDemoTrading ? 'DEMO' : 'MAINNET'} trading URL: ${this.baseUrl}`);
   }
 
   async getAccountBalance(): Promise<any> {
@@ -73,7 +76,8 @@ export class BybitService {
 
   async placeOrder(params: any): Promise<any> {
     try {
-      console.log(`📝 Placing order on Bybit for ${params.symbol}...`);
+      console.log(`📝 Placing order on Bybit DEMO for ${params.symbol}...`);
+      console.log(`🔧 Using Demo Trading URL: ${this.baseUrl}`);
       const request = {
         endpoint: '/v5/order/create',
         method: 'POST' as const,
@@ -88,7 +92,7 @@ export class BybitService {
 
   async getOrderStatus(orderId: string): Promise<any> {
     try {
-      console.log(`🔍 Getting order status for ${orderId} from Bybit...`);
+      console.log(`🔍 Getting order status for ${orderId} from Bybit DEMO...`);
       const request = {
         endpoint: '/v5/order/history',
         method: 'GET' as const,
@@ -106,7 +110,7 @@ export class BybitService {
 
   private async makeRequest(request: BybitRequest): Promise<any> {
     try {
-      console.log(`🌐 Making Bybit API request to ${request.endpoint}...`);
+      console.log(`🌐 Making Bybit DEMO API request to ${request.endpoint}...`);
       let url: string, headers: Record<string, string>, body: string | undefined = undefined;
 
       if (request.method === 'GET') {
@@ -148,7 +152,7 @@ export class BybitService {
 
   async getOrderHistory(limit: number = 50): Promise<any> {
     try {
-      console.log(`📊 Getting order history from Bybit (limit: ${limit})...`);
+      console.log(`📊 Getting order history from Bybit DEMO (limit: ${limit})...`);
       
       const request = {
         endpoint: '/v5/order/history',

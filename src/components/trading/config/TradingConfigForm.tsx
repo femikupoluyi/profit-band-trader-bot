@@ -21,6 +21,10 @@ interface TradingConfigData {
   new_support_threshold_percent: number;
   trading_pairs: string[];
   is_active: boolean;
+  main_loop_interval_seconds: number;
+  auto_close_at_end_of_day: boolean;
+  eod_close_premium_percent: number;
+  manual_close_premium_percent: number;
 }
 
 interface TradingConfigFormProps {
@@ -66,6 +70,20 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Main Loop Interval */}
+        <div className="space-y-2">
+          <Label htmlFor="main_loop_interval_seconds">Main Loop Interval (seconds)</Label>
+          <Input
+            id="main_loop_interval_seconds"
+            type="number"
+            min="10"
+            max="300"
+            value={config.main_loop_interval_seconds}
+            onChange={(e) => onIntegerInput('main_loop_interval_seconds', e.target.value)}
+          />
+          <p className="text-xs text-gray-500">How often the bot checks for new opportunities (10-300 seconds)</p>
+        </div>
+
         {/* Max Active Pairs */}
         <div className="space-y-2">
           <Label htmlFor="max_active_pairs">Maximum Active Pairs</Label>
@@ -200,6 +218,60 @@ export const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
             onChange={(e) => onNumberInput('new_support_threshold_percent', e.target.value)}
           />
           <p className="text-xs text-gray-500">Min % drop from entry to allow new position</p>
+        </div>
+
+        {/* Manual Close Premium */}
+        <div className="space-y-2">
+          <Label htmlFor="manual_close_premium_percent">Manual Close Premium (%)</Label>
+          <Input
+            id="manual_close_premium_percent"
+            type="number"
+            step="0.01"
+            min="0.0"
+            max="5.0"
+            value={config.manual_close_premium_percent}
+            onChange={(e) => onNumberInput('manual_close_premium_percent', e.target.value)}
+          />
+          <p className="text-xs text-gray-500">Premium above current price for manual market closes</p>
+        </div>
+      </div>
+
+      {/* End-of-Day Management Section */}
+      <div className="space-y-4 border-t pt-6">
+        <h3 className="text-lg font-semibold">End-of-Day Management</h3>
+        
+        <div className="space-y-4">
+          {/* Auto Close at End of Day */}
+          <div className="space-y-2">
+            <Label>Auto Close at End of Day</Label>
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={config.auto_close_at_end_of_day}
+                onCheckedChange={(checked) => onInputChange('auto_close_at_end_of_day', checked)}
+              />
+              <span className="text-sm text-gray-600">
+                {config.auto_close_at_end_of_day ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">Automatically close all positions at end of trading day</p>
+          </div>
+
+          {/* EOD Close Premium */}
+          {config.auto_close_at_end_of_day && (
+            <div className="space-y-2">
+              <Label htmlFor="eod_close_premium_percent">EOD Close Premium (%)</Label>
+              <Input
+                id="eod_close_premium_percent"
+                type="number"
+                step="0.01"
+                min="0.0"
+                max="5.0"
+                value={config.eod_close_premium_percent}
+                onChange={(e) => onNumberInput('eod_close_premium_percent', e.target.value)}
+              />
+              <p className="text-xs text-gray-500">Premium above current price for end-of-day market closes</p>
+            </div>
+          )}
         </div>
       </div>
 
