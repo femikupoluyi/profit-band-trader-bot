@@ -12,6 +12,30 @@ export class SignalExecutionService {
     this.bybitService = bybitService;
   }
 
+  private formatPriceForSymbol(symbol: string, price: number): string {
+    // Price precision rules for different symbols
+    const pricePrecisionRules: Record<string, number> = {
+      'BTCUSDT': 1,    // BTC prices to 1 decimal place (e.g., 104776.8)
+      'ETHUSDT': 2,    // ETH prices to 2 decimal places
+      'BNBUSDT': 2,    // BNB prices to 2 decimal places
+      'SOLUSDT': 3,    // SOL prices to 3 decimal places
+      'ADAUSDT': 4,    // ADA prices to 4 decimal places
+      'XRPUSDT': 4,    // XRP prices to 4 decimal places
+      'LTCUSDT': 2,    // LTC prices to 2 decimal places
+      'DOGEUSDT': 5,   // DOGE prices to 5 decimal places
+      'MATICUSDT': 4,  // MATIC prices to 4 decimal places
+      'FETUSDT': 4,    // FET prices to 4 decimal places
+      'POLUSDT': 4,    // POL prices to 4 decimal places
+      'XLMUSDT': 5,    // XLM prices to 5 decimal places
+    };
+
+    const decimals = pricePrecisionRules[symbol] || 2; // Default to 2 decimals
+    const formattedPrice = price.toFixed(decimals);
+    
+    console.log(`Formatting price for ${symbol}: ${price} -> ${formattedPrice} (${decimals} decimals)`);
+    return formattedPrice;
+  }
+
   async executeSignals(config: TradingConfig): Promise<void> {
     try {
       console.log('⚡ Executing unprocessed signals...');
@@ -138,7 +162,8 @@ export class SignalExecutionService {
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
       
       const formattedQuantity = quantity.toString();
-      const formattedEntryPrice = entryPrice.toFixed(2);
+      // Format price with correct decimal precision for the symbol
+      const formattedEntryPrice = this.formatPriceForSymbol(signal.symbol, entryPrice);
 
       // ALWAYS place real Bybit order - no fallback to mock
       const buyOrderParams = {
@@ -151,7 +176,7 @@ export class SignalExecutionService {
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing REAL BUY order with params:', buyOrderParams);
+      console.log('📝 Placing REAL BUY order with formatted price:', buyOrderParams);
       const buyOrderResult = await this.bybitService.placeOrder(buyOrderParams);
 
       if (buyOrderResult && buyOrderResult.retCode === 0 && buyOrderResult.result?.orderId) {
@@ -188,6 +213,7 @@ export class SignalExecutionService {
           symbol: signal.symbol,
           quantity: formattedQuantity,
           entryPrice: entryPrice,
+          formattedPrice: formattedEntryPrice,
           takeProfitPrice: takeProfitPrice,
           orderValue: quantity * entryPrice,
           bybitOrderId,
@@ -206,7 +232,9 @@ export class SignalExecutionService {
         await this.logActivity('order_failed', `Bybit order failed for ${signal.symbol}`, {
           symbol: signal.symbol,
           error: buyOrderResult?.retMsg || 'Unknown error',
-          retCode: buyOrderResult?.retCode
+          retCode: buyOrderResult?.retCode,
+          formattedPrice: formattedEntryPrice,
+          originalPrice: entryPrice
         });
       }
 
@@ -221,17 +249,20 @@ export class SignalExecutionService {
     try {
       console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
+      // Format take-profit price with correct decimal precision
+      const formattedTakeProfitPrice = this.formatPriceForSymbol(symbol, takeProfitPrice);
+      
       const sellOrderParams = {
         category: 'spot' as const,
         symbol: symbol,
         side: 'Sell' as const,
         orderType: 'Limit' as const,
         qty: quantity.toString(),
-        price: takeProfitPrice.toFixed(2),
+        price: formattedTakeProfitPrice,
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing take-profit SELL order:', sellOrderParams);
+      console.log('📝 Placing take-profit SELL order with formatted price:', sellOrderParams);
       const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
       
       if (sellOrderResult && sellOrderResult.retCode === 0) {
@@ -241,6 +272,7 @@ export class SignalExecutionService {
           symbol,
           quantity: quantity.toString(),
           takeProfitPrice,
+          formattedPrice: formattedTakeProfitPrice,
           bybitOrderId: sellOrderResult.result?.orderId,
           orderType: 'TAKE_PROFIT_LIMIT_SELL'
         });
@@ -249,7 +281,9 @@ export class SignalExecutionService {
         
         await this.logActivity('order_failed', `Take-profit order failed for ${symbol}`, {
           symbol,
-          error: sellOrderResult?.retMsg || 'Unknown error'
+          error: sellOrderResult?.retMsg || 'Unknown error',
+          formattedPrice: formattedTakeProfitPrice,
+          originalPrice: takeProfitPrice
         });
       }
     } catch (error) {
