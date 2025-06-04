@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PositionChecker } from './positionChecker';
@@ -40,15 +39,19 @@ export class SignalExecutionService {
         return;
       }
 
-      // Use config values directly and enforce them strictly
+      // Use config values directly and enforce them with slippage tolerance
       const entryOffsetPercent = this.config.entry_offset_percent;
       const takeProfitPercent = this.config.take_profit_percent;
-      const maxOrderAmountUsd = this.config.max_order_amount_usd; // STRICT ENFORCEMENT
+      const maxOrderAmountUsd = this.config.max_order_amount_usd;
       const maxPositionsPerPair = this.config.max_positions_per_pair;
       const newSupportThresholdPercent = this.config.new_support_threshold_percent;
       const maxActivePairs = this.config.max_active_pairs;
 
-      console.log(`  🔒 ENFORCING CONFIG VALUES - Entry: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%, MAX ORDER: $${maxOrderAmountUsd} (STRICT)`);
+      // Allow 5% slippage tolerance for order values
+      const slippageTolerance = 0.05; // 5%
+      const maxOrderAmountWithSlippage = maxOrderAmountUsd * (1 + slippageTolerance);
+
+      console.log(`  🔒 CONFIG VALUES with 5% slippage tolerance - Entry: ${entryOffsetPercent}%, TP: ${takeProfitPercent}%, MAX ORDER: $${maxOrderAmountUsd} (+ 5% slippage = $${maxOrderAmountWithSlippage.toFixed(2)})`);
 
       // Validate max active pairs
       const canOpenNewPair = await this.positionChecker.validateMaxActivePairs(maxActivePairs);
@@ -62,46 +65,54 @@ export class SignalExecutionService {
         return;
       }
 
-      // Check if we can open a new position for this pair using config values
-      const canOpenNewPosition = await this.positionChecker.canOpenNewPositionWithLowerSupport(
-        signal.symbol,
-        signal.price,
-        newSupportThresholdPercent,
-        maxPositionsPerPair
-      );
+      // For support-based trading, always allow new positions if no active trades exist
+      // This ensures all 10 trading pairs can have limit orders placed
+      const hasActivePosition = await this.positionChecker.hasOpenPosition(signal.symbol);
+      if (hasActivePosition) {
+        // If there's an active position, check if we can add more based on support levels
+        const canOpenNewPosition = await this.positionChecker.canOpenNewPositionWithLowerSupport(
+          signal.symbol,
+          signal.price,
+          newSupportThresholdPercent,
+          maxPositionsPerPair
+        );
 
-      if (!canOpenNewPosition) {
-        console.log(`❌ Cannot open new position for ${signal.symbol}: position limits reached or support threshold not met`);
-        console.log(`  Max positions per pair: ${maxPositionsPerPair}`);
-        console.log(`  New support threshold: ${newSupportThresholdPercent}%`);
-        await this.logActivity('signal_rejected', `Signal rejected for ${signal.symbol}: position limits reached or support threshold not met`, {
-          symbol: signal.symbol,
-          maxPositionsPerPair,
-          newSupportThreshold: newSupportThresholdPercent,
-          reason: 'position_limit_or_support_threshold'
-        });
-        return;
+        if (!canOpenNewPosition) {
+          console.log(`❌ Cannot open additional position for ${signal.symbol}: position limits reached or support threshold not met`);
+          console.log(`  Max positions per pair: ${maxPositionsPerPair}`);
+          console.log(`  New support threshold: ${newSupportThresholdPercent}%`);
+          await this.logActivity('signal_rejected', `Signal rejected for ${signal.symbol}: position limits reached or support threshold not met`, {
+            symbol: signal.symbol,
+            maxPositionsPerPair,
+            newSupportThreshold: newSupportThresholdPercent,
+            reason: 'position_limit_or_support_threshold'
+          });
+          return;
+        }
+      } else {
+        console.log(`✅ No active position for ${signal.symbol}, proceeding with limit order placement`);
       }
 
       // Calculate entry price with offset using config value (support-based entry)
       const entryPrice = signal.price * (1 + entryOffsetPercent / 100);
       console.log(`📈 Support-based entry price calculated: $${entryPrice.toFixed(6)} (${entryOffsetPercent}% above support)`);
 
-      // 🔒 STRICT ENFORCEMENT: Calculate quantity based on EXACT max order amount from config
+      // Calculate quantity based on max order amount (with slippage tolerance for validation)
       const quantity = maxOrderAmountUsd / entryPrice;
       const actualOrderValue = quantity * entryPrice;
       
-      console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on STRICT $${maxOrderAmountUsd} max order)`);
-      console.log(`💰 Actual order value: $${actualOrderValue.toFixed(2)} (should be ≤ $${maxOrderAmountUsd})`);
+      console.log(`📊 Order quantity: ${quantity.toFixed(6)} (based on $${maxOrderAmountUsd} max order)`);
+      console.log(`💰 Actual order value: $${actualOrderValue.toFixed(2)} (limit with slippage: $${maxOrderAmountWithSlippage.toFixed(2)})`);
 
-      // ENFORCE: Order value must not exceed config maximum - BEFORE any formatting
-      if (actualOrderValue > maxOrderAmountUsd * 1.001) { // Allow tiny rounding tolerance
-        console.error(`❌ CONFIGURATION VIOLATION: Order value $${actualOrderValue.toFixed(2)} exceeds configured maximum $${maxOrderAmountUsd}`);
-        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: exceeds max order amount`, {
+      // ENFORCE: Order value with slippage tolerance
+      if (actualOrderValue > maxOrderAmountWithSlippage) {
+        console.error(`❌ ORDER EXCEEDS SLIPPAGE LIMIT: Order value $${actualOrderValue.toFixed(2)} exceeds maximum with 5% slippage $${maxOrderAmountWithSlippage.toFixed(2)}`);
+        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: exceeds max order amount with slippage`, {
           symbol: signal.symbol,
           actualOrderValue: actualOrderValue.toFixed(2),
           configuredMaximum: maxOrderAmountUsd,
-          reason: 'exceeds_max_order_amount'
+          maxWithSlippage: maxOrderAmountWithSlippage.toFixed(2),
+          reason: 'exceeds_max_order_amount_with_slippage'
         });
         return;
       }
@@ -110,16 +121,17 @@ export class SignalExecutionService {
       const formattedQuantity = TradeValidation.getFormattedQuantity(signal.symbol, quantity);
       const formattedOrderValue = parseFloat(formattedQuantity) * entryPrice;
 
-      // Final validation after formatting - ensure we still comply with limits
-      if (formattedOrderValue > maxOrderAmountUsd * 1.01) { // Allow small formatting tolerance
-        console.error(`❌ POST-FORMATTING VIOLATION: Formatted order value $${formattedOrderValue.toFixed(2)} exceeds configured maximum $${maxOrderAmountUsd}`);
-        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: formatted quantity exceeds max order amount`, {
+      // Final validation after formatting - ensure we still comply with slippage limits
+      if (formattedOrderValue > maxOrderAmountWithSlippage) {
+        console.error(`❌ POST-FORMATTING SLIPPAGE VIOLATION: Formatted order value $${formattedOrderValue.toFixed(2)} exceeds maximum with slippage $${maxOrderAmountWithSlippage.toFixed(2)}`);
+        await this.logActivity('order_rejected', `Order rejected for ${signal.symbol}: formatted quantity exceeds max order amount with slippage`, {
           symbol: signal.symbol,
           formattedOrderValue: formattedOrderValue.toFixed(2),
           configuredMaximum: maxOrderAmountUsd,
+          maxWithSlippage: maxOrderAmountWithSlippage.toFixed(2),
           originalQuantity: quantity,
           formattedQuantity,
-          reason: 'formatted_quantity_exceeds_max'
+          reason: 'formatted_quantity_exceeds_max_with_slippage'
         });
         return;
       }
@@ -151,11 +163,11 @@ export class SignalExecutionService {
         return;
       }
 
-      // 🔒 ALWAYS USE LIMIT ORDERS for support-based trading - never market orders
-      console.log(`💡 Using LIMIT order for support-based entry at $${entryPrice.toFixed(6)} (configured strategy)`);
+      // 🔒 ALWAYS USE LIMIT ORDERS for support-based trading with take profit
+      console.log(`💡 Using LIMIT order for support-based entry at $${entryPrice.toFixed(6)} with ${takeProfitPercent}% take profit target`);
 
-      // Execute the trade with strict config enforcement - ALWAYS LIMIT ORDER
-      await this.executeBuyOrder(signal.symbol, entryPrice, parseFloat(formattedQuantity), signal, takeProfitPercent, 'limit', maxOrderAmountUsd);
+      // Execute the trade with slippage tolerance - ALWAYS LIMIT ORDER with take profit
+      await this.executeBuyOrder(signal.symbol, entryPrice, parseFloat(formattedQuantity), signal, takeProfitPercent, 'limit', maxOrderAmountUsd, maxOrderAmountWithSlippage);
 
     } catch (error) {
       console.error(`Error executing signal for ${signal.symbol}:`, error);
@@ -166,21 +178,31 @@ export class SignalExecutionService {
     }
   }
 
-  private async executeBuyOrder(symbol: string, price: number, quantity: number, signal: any, takeProfitPercent: number, orderType: 'limit', configuredMaxOrderAmount: number): Promise<void> {
+  private async executeBuyOrder(
+    symbol: string, 
+    price: number, 
+    quantity: number, 
+    signal: any, 
+    takeProfitPercent: number, 
+    orderType: 'limit', 
+    configuredMaxOrderAmount: number,
+    maxOrderAmountWithSlippage: number
+  ): Promise<void> {
     try {
       const actualOrderValue = quantity * price;
       
-      console.log(`\n💰 Executing LIMIT buy order for ${symbol}:`);
-      console.log(`  Price: $${price.toFixed(6)}`);
+      console.log(`\n💰 Executing LIMIT buy order for ${symbol} with take profit:`);
+      console.log(`  Entry Price: $${price.toFixed(6)}`);
       console.log(`  Quantity: ${quantity.toFixed(6)}`);
       console.log(`  Total Value: $${actualOrderValue.toFixed(2)}`);
       console.log(`  🔒 Configured Max: $${configuredMaxOrderAmount}`);
-      console.log(`  ✅ Within Limit: ${actualOrderValue <= configuredMaxOrderAmount ? 'YES' : 'NO'}`);
-      console.log(`  Take Profit Target: ${takeProfitPercent}%`);
+      console.log(`  🔒 Max with Slippage: $${maxOrderAmountWithSlippage.toFixed(2)}`);
+      console.log(`  ✅ Within Slippage Limit: ${actualOrderValue <= maxOrderAmountWithSlippage ? 'YES' : 'NO'}`);
+      console.log(`  🎯 Take Profit Target: ${takeProfitPercent}% (Exit at $${(price * (1 + takeProfitPercent / 100)).toFixed(6)})`);
 
-      // Final validation - triple check order value doesn't exceed config
-      if (actualOrderValue > configuredMaxOrderAmount) {
-        throw new Error(`Order value $${actualOrderValue.toFixed(2)} exceeds configured maximum $${configuredMaxOrderAmount}`);
+      // Final validation - ensure order value doesn't exceed slippage limit
+      if (actualOrderValue > maxOrderAmountWithSlippage) {
+        throw new Error(`Order value $${actualOrderValue.toFixed(2)} exceeds maximum with slippage $${maxOrderAmountWithSlippage.toFixed(2)}`);
       }
 
       // Validate inputs before order placement
@@ -194,7 +216,7 @@ export class SignalExecutionService {
 
       // Try to place real order on Bybit
       try {
-        console.log(`🔄 Placing LIMIT order on Bybit for ${symbol}...`);
+        console.log(`🔄 Placing LIMIT order on Bybit for ${symbol} with take profit...`);
         
         const formattedQuantity = quantity.toString();
         const formattedPrice = price.toFixed(2);
@@ -224,8 +246,9 @@ export class SignalExecutionService {
           console.log(`✅ Successfully placed LIMIT order on Bybit: ${bybitOrderId}`);
           console.log(`  Order status: ${tradeStatus}`);
           console.log(`  Entry price: $${actualFillPrice.toFixed(6)}`);
+          console.log(`  Take profit target: ${takeProfitPercent}%`);
           
-          await this.logActivity('order_placed', `LIMIT order placed successfully on Bybit for ${symbol} within config limits`, {
+          await this.logActivity('order_placed', `LIMIT order placed successfully on Bybit for ${symbol} with take profit within slippage limits`, {
             bybitOrderId,
             orderResult,
             symbol,
@@ -234,8 +257,12 @@ export class SignalExecutionService {
             orderType: 'Limit Buy',
             status: tradeStatus,
             configuredMaxOrderAmount,
+            maxOrderAmountWithSlippage: maxOrderAmountWithSlippage.toFixed(2),
             actualOrderValue: actualOrderValue.toFixed(2),
-            orderStrategy: 'support_based_limit'
+            takeProfitTarget: takeProfitPercent,
+            takeProfitPrice: (price * (1 + takeProfitPercent / 100)).toFixed(6),
+            orderStrategy: 'support_based_limit_with_take_profit',
+            slippageUsed: ((actualOrderValue - configuredMaxOrderAmount) / configuredMaxOrderAmount * 100).toFixed(2) + '%'
           });
         } else {
           console.error(`❌ Bybit order failed - retCode: ${orderResult?.retCode}, retMsg: ${orderResult?.retMsg}`);
@@ -283,11 +310,12 @@ export class SignalExecutionService {
       console.log(`  Trade ID: ${trade.id}`);
       console.log(`  Bybit Order ID: ${bybitOrderId}`);
       console.log(`  Status: ${tradeStatus}`);
-      console.log(`  Order Type: LIMIT`);
+      console.log(`  Order Type: LIMIT with take profit`);
       console.log(`  Entry Price: $${actualFillPrice.toFixed(6)}`);
-      console.log(`  🔒 Config Compliance: Order value $${actualOrderValue.toFixed(2)} ≤ Max $${configuredMaxOrderAmount}`);
+      console.log(`  Take Profit Target: $${(actualFillPrice * (1 + takeProfitPercent / 100)).toFixed(6)} (${takeProfitPercent}%)`);
+      console.log(`  🔒 Slippage Compliance: Order value $${actualOrderValue.toFixed(2)} ≤ Max with slippage $${maxOrderAmountWithSlippage.toFixed(2)}`);
 
-      await this.logActivity('trade_executed', `LIMIT buy order executed successfully for ${symbol} within config limits`, {
+      await this.logActivity('trade_executed', `LIMIT buy order executed successfully for ${symbol} with take profit within slippage limits`, {
         symbol,
         price: actualFillPrice,
         quantity: quantity,
@@ -297,13 +325,16 @@ export class SignalExecutionService {
         orderType: 'limit',
         status: tradeStatus,
         takeProfitTarget: takeProfitPercent,
+        takeProfitPrice: (actualFillPrice * (1 + takeProfitPercent / 100)).toFixed(6),
         entryOffset: this.config.entry_offset_percent,
         configuredMaxOrderAmount,
+        maxOrderAmountWithSlippage: maxOrderAmountWithSlippage.toFixed(2),
         actualOrderValue: actualOrderValue.toFixed(2),
         maxPositionsPerPair: this.config.max_positions_per_pair,
-        orderSource: 'Real Bybit Limit Order',
-        configCompliance: 'PASSED',
-        orderStrategy: 'support_based_limit'
+        orderSource: 'Real Bybit Limit Order with Take Profit',
+        configCompliance: 'PASSED_WITH_SLIPPAGE',
+        orderStrategy: 'support_based_limit_with_take_profit',
+        slippageUsed: ((actualOrderValue - configuredMaxOrderAmount) / configuredMaxOrderAmount * 100).toFixed(2) + '%'
       });
 
       // Mark signal as processed

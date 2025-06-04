@@ -24,27 +24,35 @@ export class SignalAnalyzer {
   }
 
   async analyzeAndCreateSignals(): Promise<void> {
-    // Use trading pairs from config
-    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
+    // Use trading pairs from config - ensure all 10 pairs are analyzed
+    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT', 'LTCUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT'];
     
-    console.log('\n🔍 STARTING SIGNAL ANALYSIS...');
-    console.log('Trading pairs to analyze:', symbols);
+    console.log('\n🔍 STARTING COMPREHENSIVE SIGNAL ANALYSIS...');
+    console.log('All trading pairs to analyze:', symbols);
     console.log('Config values:', {
       entryOffset: this.config.entry_offset_percent,
       takeProfitPercent: this.config.take_profit_percent,
       maxActivePairs: this.config.max_active_pairs,
-      maxPositionsPerPair: this.config.max_positions_per_pair
+      maxPositionsPerPair: this.config.max_positions_per_pair,
+      supportAnalysisCandles: this.config.support_analysis_candles
     });
+    
+    let signalsGenerated = 0;
+    let pairsAnalyzed = 0;
     
     for (const symbol of symbols) {
       try {
-        console.log(`\n📈 ANALYZING ${symbol}...`);
+        pairsAnalyzed++;
+        console.log(`\n📈 ANALYZING ${symbol} (${pairsAnalyzed}/${symbols.length})...`);
         
-        // Check if we already have too many positions for this pair
+        // Always analyze all pairs - don't skip based on existing positions
+        // This ensures all 10 trading pairs can potentially have limit orders
         const hasOpenPosition = await this.positionChecker.hasOpenPosition(symbol);
+        
         if (hasOpenPosition) {
-          console.log(`⏭️  SKIPPING ${symbol} - already has open position`);
-          continue;
+          console.log(`⚠️  ${symbol} has open position, but continuing analysis for potential additional entries based on support levels`);
+        } else {
+          console.log(`✅ ${symbol} has no open position, proceeding with fresh analysis`);
         }
 
         // Get current price from latest market data
@@ -64,24 +72,47 @@ export class SignalAnalyzer {
         const currentPrice = parseFloat(latestPrice.price.toString());
         console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(4)}`);
 
-        // Create a simplified support level for signal generation
-        // This ensures we always have a support level to work with
-        const supportLevelPrice = currentPrice * 0.995; // Support 0.5% below current price
-        const supportLevel = {
-          price: supportLevelPrice,
-          strength: 0.8,
-          touchCount: 3
-        };
+        // Use support analysis based on historical candles from config
+        const supportAnalysisCandles = this.config.support_analysis_candles || 20;
+        console.log(`📊 Analyzing ${supportAnalysisCandles} candles for support level detection`);
 
-        console.log(`🎯 Using support level: $${supportLevelPrice.toFixed(4)} (0.5% below current price)`);
+        // Get historical data for proper support analysis
+        const candleData = await this.candleDataService.getCandleData(symbol, supportAnalysisCandles);
         
-        // Generate signal with relaxed conditions
-        const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
-        
-        if (signal) {
-          console.log(`🚀 SIGNAL GENERATED for ${symbol}!`);
+        let supportLevel;
+        if (candleData && candleData.length >= 5) {
+          // Use proper support level analysis with historical data
+          const supportLevels = await this.supportLevelAnalyzer.findSupportLevels(candleData, currentPrice);
+          supportLevel = supportLevels.length > 0 ? supportLevels[0] : null;
+          console.log(`🎯 Historical support analysis found ${supportLevels.length} support levels`);
         } else {
-          console.log(`📭 No signal generated for ${symbol}`);
+          console.log(`⚠️  Limited historical data for ${symbol}, using simplified support calculation`);
+          // Fallback to simplified support calculation
+          const supportLevelPrice = currentPrice * 0.995; // Support 0.5% below current price
+          supportLevel = {
+            price: supportLevelPrice,
+            strength: 0.8,
+            touchCount: 3
+          };
+        }
+
+        if (supportLevel) {
+          console.log(`🎯 Using support level: $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
+          
+          // Generate signal based on support level analysis
+          const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
+          
+          if (signal) {
+            signalsGenerated++;
+            console.log(`🚀 SIGNAL GENERATED for ${symbol}! (Total signals: ${signalsGenerated})`);
+            console.log(`  Entry strategy: Support-based limit order with take profit`);
+            console.log(`  Support price: $${supportLevel.price.toFixed(4)}`);
+            console.log(`  Current price: $${currentPrice.toFixed(4)}`);
+          } else {
+            console.log(`📭 No signal generated for ${symbol} at current market conditions`);
+          }
+        } else {
+          console.log(`❌ No valid support level found for ${symbol}`);
         }
         
       } catch (error) {
@@ -93,7 +124,9 @@ export class SignalAnalyzer {
       }
     }
     
-    console.log('✅ SIGNAL ANALYSIS COMPLETED\n');
+    console.log(`\n✅ COMPREHENSIVE SIGNAL ANALYSIS COMPLETED`);
+    console.log(`📊 Summary: ${signalsGenerated} signals generated from ${pairsAnalyzed} pairs analyzed`);
+    console.log(`🎯 Strategy: Support-based limit orders with take profit targeting all ${symbols.length} trading pairs\n`);
   }
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
