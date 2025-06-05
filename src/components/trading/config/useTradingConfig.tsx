@@ -98,6 +98,8 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           manual_close_premium_percent: parseFloat(data.manual_close_premium_percent?.toString() || '0.1'),
           support_lower_bound_percent: parseFloat(data.support_lower_bound_percent?.toString() || '5.0'),
           support_upper_bound_percent: parseFloat(data.support_upper_bound_percent?.toString() || '2.0'),
+          minimum_notional_per_symbol: data.minimum_notional_per_symbol || { 'BTCUSDT': 10, 'ETHUSDT': 10 },
+          quantity_increment_per_symbol: data.quantity_increment_per_symbol || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
         };
         
         console.log('Loaded config from database with all fields:', loadedConfig);
@@ -140,6 +142,8 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         manual_close_premium_percent: config.manual_close_premium_percent,
         support_lower_bound_percent: config.support_lower_bound_percent,
         support_upper_bound_percent: config.support_upper_bound_percent,
+        minimum_notional_per_symbol: config.minimum_notional_per_symbol,
+        quantity_increment_per_symbol: config.quantity_increment_per_symbol,
         updated_at: new Date().toISOString(),
       };
 
