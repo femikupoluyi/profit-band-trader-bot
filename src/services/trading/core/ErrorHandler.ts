@@ -6,6 +6,7 @@ export interface ErrorContext {
   symbol?: string;
   operation?: string;
   attempt?: number;
+  error?: string;
   data?: any;
 }
 
