@@ -89,7 +89,7 @@ export class LoopManager {
       console.log('\n🔍 STEP 2: SCANNING MARKETS...');
       await this.services.marketScanner.scanMarkets();
 
-      // 3. Analyze markets and generate signals - using the correct method name
+      // 3. Analyze markets and generate signals - fix method name
       console.log('\n📈 STEP 3: ANALYZING SIGNALS...');
       await this.services.signalAnalyzer.analyzeAndCreateSignals(this.config);
 

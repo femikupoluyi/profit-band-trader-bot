@@ -1,6 +1,12 @@
 
 import { TradingLogger } from './TradingLogger';
-import { StandardizedError } from './TypeDefinitions';
+
+export interface ErrorContext {
+  userId?: string;
+  symbol?: string;
+  operation?: string;
+  data?: any;
+}
 
 export class ErrorHandler {
   private logger: TradingLogger;
@@ -9,119 +15,91 @@ export class ErrorHandler {
     this.logger = new TradingLogger(userId);
   }
 
-  async handleTradingError(operation: string, error: any, context?: any): Promise<StandardizedError> {
-    const standardizedError: StandardizedError = {
-      message: error instanceof Error ? error.message : String(error),
-      code: error?.code || error?.retCode || 'UNKNOWN_ERROR',
-      details: error,
-      context: context || operation
-    };
+  async handleError(error: any, context: ErrorContext = {}): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
 
-    console.error(`❌ Trading Error in ${operation}:`, standardizedError);
+    console.error(`❌ [ErrorHandler] ${context.operation || 'Operation'} failed:`, {
+      message: errorMessage,
+      context,
+      stack: errorStack
+    });
 
-    try {
-      await this.logger.logError(`Trading error in ${operation}`, error, context);
-    } catch (logError) {
-      console.error('Failed to log error:', logError);
+    // Log to database
+    await this.logger.logError(
+      `${context.operation || 'Operation'} failed`,
+      error,
+      context
+    );
+  }
+
+  async handleWarning(message: string, context: ErrorContext = {}): Promise<void> {
+    console.warn(`⚠️ [ErrorHandler] ${message}:`, context);
+
+    await this.logger.logSuccess(`Warning: ${message}`, context);
+  }
+
+  createError(message: string, context: ErrorContext = {}): Error {
+    const error = new Error(message);
+    
+    // Add context to error object for debugging
+    (error as any).context = context;
+    
+    return error;
+  }
+
+  isRetryableError(error: any): boolean {
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      
+      // Network errors that can be retried
+      if (message.includes('timeout') || 
+          message.includes('network') || 
+          message.includes('connection') ||
+          message.includes('econnreset') ||
+          message.includes('enotfound')) {
+        return true;
+      }
+
+      // API rate limiting
+      if (message.includes('rate limit') || 
+          message.includes('too many requests')) {
+        return true;
+      }
     }
 
-    return standardizedError;
+    return false;
   }
 
-  async handleApiError(endpoint: string, error: any, requestData?: any): Promise<StandardizedError> {
-    const standardizedError: StandardizedError = {
-      message: `API Error at ${endpoint}: ${error instanceof Error ? error.message : String(error)}`,
-      code: error?.response?.status || error?.code || 'API_ERROR',
-      details: {
-        endpoint,
-        error,
-        requestData
-      },
-      context: 'api_request'
-    };
+  async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    delay: number = 1000,
+    context: ErrorContext = {}
+  ): Promise<T> {
+    let lastError: any;
 
-    console.error(`❌ API Error at ${endpoint}:`, standardizedError);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        
+        if (!this.isRetryableError(error) || attempt === maxRetries) {
+          await this.handleError(error, { ...context, attempt });
+          throw error;
+        }
 
-    try {
-      await this.logger.logError(`API error at ${endpoint}`, error, { endpoint, requestData });
-    } catch (logError) {
-      console.error('Failed to log API error:', logError);
+        await this.handleWarning(
+          `Attempt ${attempt} failed, retrying in ${delay}ms`,
+          { ...context, attempt, error: error.message }
+        );
+
+        // Wait before retry with exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delay * attempt));
+      }
     }
 
-    return standardizedError;
-  }
-
-  async handleDatabaseError(operation: string, error: any, query?: any): Promise<StandardizedError> {
-    const standardizedError: StandardizedError = {
-      message: `Database Error in ${operation}: ${error instanceof Error ? error.message : String(error)}`,
-      code: error?.code || 'DATABASE_ERROR',
-      details: {
-        operation,
-        error,
-        query
-      },
-      context: 'database_operation'
-    };
-
-    console.error(`❌ Database Error in ${operation}:`, standardizedError);
-
-    try {
-      await this.logger.logError(`Database error in ${operation}`, error, { operation, query });
-    } catch (logError) {
-      console.error('Failed to log database error:', logError);
-    }
-
-    return standardizedError;
-  }
-
-  async handleValidationError(field: string, value: any, constraint: string): Promise<StandardizedError> {
-    const standardizedError: StandardizedError = {
-      message: `Validation Error: ${field} value '${value}' violates constraint '${constraint}'`,
-      code: 'VALIDATION_ERROR',
-      details: {
-        field,
-        value,
-        constraint
-      },
-      context: 'validation'
-    };
-
-    console.error(`❌ Validation Error for ${field}:`, standardizedError);
-
-    try {
-      await this.logger.logError(`Validation error for ${field}`, new Error(standardizedError.message), { field, value, constraint });
-    } catch (logError) {
-      console.error('Failed to log validation error:', logError);
-    }
-
-    return standardizedError;
-  }
-
-  isRetryableError(error: StandardizedError): boolean {
-    const retryableCodes = [
-      'NETWORK_ERROR',
-      'TIMEOUT',
-      'RATE_LIMIT',
-      'SERVER_ERROR',
-      500,
-      502,
-      503,
-      504
-    ];
-
-    return retryableCodes.includes(error.code as any);
-  }
-
-  shouldStopTrading(error: StandardizedError): boolean {
-    const criticalCodes = [
-      'INSUFFICIENT_BALANCE',
-      'INVALID_API_KEY',
-      'API_KEY_EXPIRED',
-      'UNAUTHORIZED',
-      401,
-      403
-    ];
-
-    return criticalCodes.includes(error.code as any);
+    throw lastError;
   }
 }

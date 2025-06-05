@@ -50,6 +50,7 @@ export class ServiceInitializer {
     });
     
     const marketScanner = new MarketScanner(this.userId, bybitService, validatedConfig);
+    // Fix: Pass BybitService instead of TradingConfigData to SignalAnalyzer
     const signalAnalyzer = new SignalAnalyzer(this.userId, bybitService);
     const signalGenerator = new SignalGenerator(this.userId, validatedConfig);
     const tradeExecutor = new TradeExecutor(this.userId, validatedConfig, bybitService);

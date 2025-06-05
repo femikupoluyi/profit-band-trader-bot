@@ -1,148 +1,65 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
-import { TradingLogger } from './core/TradingLogger';
-
-export interface ApiCredentials {
-  id: string;
-  apiKey: string;
-  apiSecret: string;
-  exchangeName: string;
-  isActive: boolean;
-  testnet: boolean;
-}
 
 export class CredentialsManager {
   private userId: string;
-  private logger: TradingLogger;
 
   constructor(userId: string) {
     this.userId = userId;
-    this.logger = new TradingLogger(userId);
   }
 
   async fetchCredentials(): Promise<BybitService | null> {
     try {
-      const credentials = await this.getActiveCredentials();
+      console.log('🔑 Fetching API credentials for user:', this.userId);
+      
+      const { data: credentials, error } = await supabase
+        .from('api_credentials')
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('is_active', true)
+        .single();
+
+      if (error) {
+        console.error('❌ Error fetching credentials:', error);
+        return null;
+      }
+
       if (!credentials) {
-        await this.logger.logSystemInfo('No active credentials found');
+        console.log('⚠️ No active credentials found for user');
         return null;
       }
 
-      const isValid = await this.validateCredentials(credentials);
-      if (!isValid) {
-        await this.logger.logError('Invalid credentials', new Error('Credential validation failed'));
-        return null;
-      }
-
-      // Create and return BybitService instance
-      const bybitService = new BybitService(
-        credentials.apiKey,
-        credentials.apiSecret,
-        credentials.testnet
+      console.log('✅ Credentials found, initializing BybitService...');
+      
+      // Use testnet flag from credentials, default to true for safety
+      const isDemoTrading = credentials.testnet !== false;
+      
+      return new BybitService(
+        credentials.api_key,
+        credentials.api_secret,
+        isDemoTrading
       );
 
-      await this.logger.logSuccess('BybitService created successfully');
-      return bybitService;
-
     } catch (error) {
-      await this.logger.logError('Failed to fetch credentials', error);
+      console.error('❌ Error in fetchCredentials:', error);
       return null;
     }
   }
 
-  async getActiveCredentials(exchangeName: string = 'bybit'): Promise<ApiCredentials | null> {
+  async validateCredentials(): Promise<boolean> {
     try {
-      await this.logger.logSystemInfo(`Fetching active credentials for ${exchangeName}`);
-
-      const { data, error } = await supabase
-        .from('api_credentials')
-        .select('*')
-        .eq('user_id', this.userId)
-        .eq('exchange_name', exchangeName)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (error) {
-        await this.logger.logError('Failed to fetch credentials', error);
-        throw error;
-      }
-
-      if (!data) {
-        await this.logger.logSystemInfo(`No active credentials found for ${exchangeName}`);
-        return null;
-      }
-
-      await this.logger.logSystemInfo(`Active credentials found for ${exchangeName}`);
-      
-      return {
-        id: data.id,
-        apiKey: data.api_key,
-        apiSecret: data.api_secret,
-        exchangeName: data.exchange_name,
-        isActive: data.is_active,
-        testnet: data.testnet
-      };
-
-    } catch (error) {
-      await this.logger.logError('Error in getActiveCredentials', error);
-      throw error;
-    }
-  }
-
-  async validateCredentials(credentials: ApiCredentials): Promise<boolean> {
-    try {
-      // Basic validation
-      if (!credentials.apiKey || !credentials.apiSecret) {
-        await this.logger.logSystemInfo('Credentials validation failed: missing key or secret');
+      const bybitService = await this.fetchCredentials();
+      if (!bybitService) {
         return false;
       }
 
-      if (credentials.apiKey.length < 10 || credentials.apiSecret.length < 20) {
-        await this.logger.logSystemInfo('Credentials validation failed: key or secret too short');
-        return false;
-      }
-
-      await this.logger.logSystemInfo('Credentials validation passed');
-      return true;
-
+      // Test the credentials by getting account balance
+      const balance = await bybitService.getAccountBalance();
+      return balance && balance.retCode === 0;
     } catch (error) {
-      await this.logger.logError('Error validating credentials', error);
+      console.error('❌ Error validating credentials:', error);
       return false;
-    }
-  }
-
-  async saveCredentials(apiKey: string, apiSecret: string, exchangeName: string = 'bybit', testnet: boolean = true): Promise<void> {
-    try {
-      // Deactivate existing credentials
-      await supabase
-        .from('api_credentials')
-        .update({ is_active: false })
-        .eq('user_id', this.userId)
-        .eq('exchange_name', exchangeName);
-
-      // Insert new credentials
-      const { error } = await supabase
-        .from('api_credentials')
-        .insert({
-          user_id: this.userId,
-          api_key: apiKey,
-          api_secret: apiSecret,
-          exchange_name: exchangeName,
-          is_active: true,
-          testnet: testnet
-        });
-
-      if (error) {
-        await this.logger.logError('Failed to save credentials', error);
-        throw error;
-      }
-
-      await this.logger.logSystemInfo(`Credentials saved for ${exchangeName}`);
-
-    } catch (error) {
-      await this.logger.logError('Error saving credentials', error);
-      throw error;
     }
   }
 }
