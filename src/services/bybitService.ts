@@ -1,6 +1,5 @@
 
-import { buildGetRequest, buildPostRequest } from '../../supabase/functions/bybit-api/requestBuilder';
-import { BybitRequest } from '../../supabase/functions/bybit-api/types';
+import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './trading/core/TradingLogger';
 
 export class BybitService {
@@ -8,10 +7,12 @@ export class BybitService {
   private apiSecret: string;
   private baseUrl: string;
   private logger: TradingLogger | null = null;
+  private isDemoTrading: boolean;
 
   constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
+    this.isDemoTrading = isDemoTrading;
     this.baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
     
     console.log(`🔧 BybitService initialized with ${isDemoTrading ? 'DEMO' : 'MAINNET'} trading URL: ${this.baseUrl}`);
@@ -28,14 +29,14 @@ export class BybitService {
       console.log('💰 [BYBIT] Getting account balance...');
       await this.logger?.logSuccess('[BYBIT] Getting account balance');
       
-      const request = {
+      const result = await this.callBybitEdgeFunction({
         endpoint: '/v5/account/wallet-balance',
-        method: 'GET' as const,
+        method: 'GET',
         params: {
           accountType: 'SPOT'
         }
-      };
-      const result = await this.makeRequest(request);
+      });
+
       console.log('✅ [BYBIT] Account balance retrieved successfully');
       await this.logger?.logSuccess('[BYBIT] Account balance retrieved successfully');
       return result;
@@ -51,16 +52,14 @@ export class BybitService {
       console.log(`📊 [BYBIT] Getting market price for ${symbol}...`);
       await this.logger?.logSuccess(`[BYBIT] Getting market price for ${symbol}`);
       
-      const request = {
+      const response = await this.callBybitEdgeFunction({
         endpoint: '/v5/market/tickers',
-        method: 'GET' as const,
+        method: 'GET',
         params: {
           category: 'spot',
           symbol: symbol
         }
-      };
-      
-      const response = await this.makeRequest(request);
+      });
       
       console.log(`📈 [BYBIT] Raw API response for ${symbol}:`, response);
       
@@ -106,13 +105,11 @@ export class BybitService {
         tradingMode: this.baseUrl.includes('demo') ? 'DEMO' : 'MAINNET'
       });
       
-      const request = {
+      const result = await this.callBybitEdgeFunction({
         endpoint: '/v5/order/create',
-        method: 'POST' as const,
+        method: 'POST',
         params: params
-      };
-      
-      const result = await this.makeRequest(request);
+      });
       
       if (result.retCode === 0) {
         console.log(`✅ [BYBIT] Order placed successfully for ${params.symbol}:`, result);
@@ -136,15 +133,16 @@ export class BybitService {
   async getOrderStatus(orderId: string): Promise<any> {
     try {
       console.log(`🔍 [BYBIT] Getting order status for ${orderId}...`);
-      const request = {
+      
+      const result = await this.callBybitEdgeFunction({
         endpoint: '/v5/order/history',
-        method: 'GET' as const,
+        method: 'GET',
         params: {
           category: 'spot',
           orderId: orderId
         }
-      };
-      const result = await this.makeRequest(request);
+      });
+
       console.log(`✅ [BYBIT] Order status retrieved for ${orderId}:`, result);
       return result;
     } catch (error) {
@@ -153,100 +151,19 @@ export class BybitService {
     }
   }
 
-  private async makeRequest(request: BybitRequest): Promise<any> {
-    try {
-      console.log(`🌐 [BYBIT] Making API request to ${request.endpoint}...`);
-      console.log(`📡 [BYBIT] Method: ${request.method}, Params:`, request.params);
-      
-      let url: string, headers: Record<string, string>, body: string | undefined = undefined;
-
-      if (request.method === 'GET') {
-        const getRequest = await buildGetRequest(request, this.apiKey, this.apiSecret, this.baseUrl);
-        url = getRequest.url;
-        headers = getRequest.headers;
-      } else {
-        const postRequest = await buildPostRequest(request, this.apiKey, this.apiSecret, this.baseUrl);
-        url = postRequest.url;
-        headers = postRequest.headers;
-        body = postRequest.body;
-      }
-
-      console.log(`🔗 [BYBIT] Request URL: ${url}`);
-      if (body) console.log(`📦 [BYBIT] Request Body: ${body}`);
-
-      // Enhanced timeout and error handling
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // Reduced to 15 seconds
-
-      try {
-        const response = await fetch(url, {
-          method: request.method,
-          headers: headers,
-          body: body,
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Unable to read response');
-          const errorMsg = `HTTP ${response.status}: ${response.statusText} - ${errorText}`;
-          console.error(`❌ [BYBIT] ${errorMsg}`);
-          await this.logger?.logError(`[BYBIT] HTTP Error`, new Error(errorMsg), { 
-            status: response.status, 
-            statusText: response.statusText,
-            url: request.endpoint 
-          });
-          throw new Error(`Bybit API HTTP Error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log(`✅ [BYBIT] API Response:`, data);
-        
-        if (data.retCode !== 0) {
-          const errorMsg = `API Error Code ${data.retCode}: ${data.retMsg}`;
-          console.error(`❌ [BYBIT] ${errorMsg}`);
-          await this.logger?.logError(`[BYBIT] API Error`, new Error(errorMsg), { data });
-          throw new Error(`Bybit API Error: ${errorMsg}`);
-        }
-
-        return data;
-
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        
-        if (fetchError.name === 'AbortError') {
-          const timeoutMsg = 'Request timeout (15 seconds)';
-          console.error(`❌ [BYBIT] ${timeoutMsg}`);
-          await this.logger?.logError(`[BYBIT] ${timeoutMsg}`, fetchError);
-          throw new Error(`Bybit API timeout`);
-        }
-        
-        throw fetchError;
-      }
-
-    } catch (error) {
-      console.error('❌ [BYBIT] Request error:', error);
-      await this.logger?.logError('[BYBIT] Request error', error);
-      throw error;
-    }
-  }
-
   async getOrderHistory(limit: number = 50): Promise<any> {
     try {
       console.log(`📊 [BYBIT] Getting order history (limit: ${limit})...`);
       
-      const request = {
+      const response = await this.callBybitEdgeFunction({
         endpoint: '/v5/order/history',
-        method: 'GET' as const,
+        method: 'GET',
         params: {
           category: 'spot',
           limit: limit.toString(),
           orderStatus: 'Filled'
         }
-      };
-
-      const response = await this.makeRequest(request);
+      });
       
       if (response.retCode === 0) {
         console.log(`✅ [BYBIT] Retrieved ${response.result?.list?.length || 0} order history records`);
@@ -257,6 +174,36 @@ export class BybitService {
       return response;
     } catch (error) {
       console.error('❌ [BYBIT] Error getting order history:', error);
+      throw error;
+    }
+  }
+
+  private async callBybitEdgeFunction(request: any): Promise<any> {
+    try {
+      console.log(`🌐 [BYBIT] Calling edge function for ${request.endpoint}...`);
+      console.log(`📡 [BYBIT] Method: ${request.method}, Params:`, request.params);
+      
+      const { data: apiResponse, error: apiError } = await supabase.functions.invoke('bybit-api', {
+        body: {
+          endpoint: request.endpoint,
+          method: request.method,
+          params: request.params,
+          isDemoTrading: this.isDemoTrading
+        }
+      });
+      
+      if (apiError) {
+        console.error(`❌ [BYBIT] Edge function error:`, apiError);
+        await this.logger?.logError(`[BYBIT] Edge function error`, apiError);
+        throw new Error(`Bybit API Error: ${apiError.message}`);
+      }
+
+      console.log(`✅ [BYBIT] Edge function response:`, apiResponse);
+      return apiResponse;
+
+    } catch (error) {
+      console.error('❌ [BYBIT] Edge function call error:', error);
+      await this.logger?.logError('[BYBIT] Edge function call error', error);
       throw error;
     }
   }

@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -19,20 +18,20 @@ export class MarketDataScannerService {
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
     this.connectionManager = new ApiConnectionManager(userId);
-    this.rateLimiter = new RateLimiter(8, 60000); // 8 requests per minute to be conservative
+    this.rateLimiter = new RateLimiter(10, 60000); // 10 requests per minute for edge function
     this.bybitService.setLogger(this.logger);
   }
 
   async scanMarkets(config: TradingConfigData): Promise<void> {
     try {
-      console.log(`📊 Scanning ${config.trading_pairs.length} markets with enhanced error handling...`);
+      console.log(`📊 Scanning ${config.trading_pairs.length} markets using edge function...`);
       await this.logger.logSuccess(`Starting market scan for ${config.trading_pairs.length} pairs`);
 
       // Clear old market data
       await this.clearOldMarketData();
 
-      // Process symbols with controlled concurrency
-      const results = await this.processSymbolsBatch(config.trading_pairs, 3); // Max 3 concurrent requests
+      // Process symbols with controlled concurrency - reduced for edge function
+      const results = await this.processSymbolsBatch(config.trading_pairs, 2); // Max 2 concurrent requests
 
       const successCount = results.filter(r => r.success).length;
       const failureCount = results.length - successCount;
@@ -72,18 +71,18 @@ export class MarketDataScannerService {
         }
       });
 
-      // Add delay between batches to prevent overwhelming the API
+      // Add delay between batches
       if (i + batchSize < symbols.length) {
         console.log('⏳ Waiting between batches...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Increased delay for edge function
       }
     }
     
     return results;
   }
 
-  private async scanSymbolWithRetry(symbol: string, maxRetries: number = 3): Promise<boolean> {
-    const endpoint = 'bybit-market-data';
+  private async scanSymbolWithRetry(symbol: string, maxRetries: number = 2): Promise<boolean> {
+    const endpoint = 'bybit-edge-function';
     
     // Check circuit breaker
     if (!this.connectionManager.isConnectionHealthy(endpoint)) {
@@ -96,7 +95,7 @@ export class MarketDataScannerService {
         // Apply rate limiting
         await this.rateLimiter.waitForPermission();
         
-        console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol}...`);
+        console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol} via edge function...`);
         
         const marketPrice = await this.bybitService.getMarketPrice(symbol);
         const currentPrice = marketPrice.price;
@@ -169,7 +168,7 @@ export class MarketDataScannerService {
           symbol,
           price,
           timestamp: new Date().toISOString(),
-          source: 'bybit_demo_enhanced'
+          source: 'bybit_edge_function'
         });
 
       if (error) {
