@@ -50,6 +50,7 @@ export class TradingConfigManager {
       if (error) throw error;
       if (!data) throw new Error('No trading configuration found');
 
+      // Map database fields to service interface with correct field names
       this.config = {
         main_loop_interval_seconds: data.main_loop_interval_seconds || 30,
         trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT'],
@@ -74,7 +75,7 @@ export class TradingConfigManager {
         is_active: data.is_active || false
       };
 
-      console.log('✅ Trading config loaded:', this.config);
+      console.log('✅ Trading config loaded successfully');
       return this.config;
     } catch (error) {
       console.error('❌ Error loading trading config:', error);
@@ -91,5 +92,51 @@ export class TradingConfigManager {
       throw new Error('Configuration not loaded. Call loadConfig() first.');
     }
     return this.config;
+  }
+
+  /**
+   * Get config value by key with type safety
+   */
+  getConfigValue<K extends keyof TradingConfig>(key: K): TradingConfig[K] {
+    if (!this.config) {
+      throw new Error('Configuration not loaded. Call loadConfig() first.');
+    }
+    return this.config[key];
+  }
+
+  /**
+   * Check if config is properly loaded and valid
+   */
+  isConfigLoaded(): boolean {
+    return this.config !== null;
+  }
+
+  /**
+   * Validate config completeness
+   */
+  validateConfig(): { isValid: boolean; errors: string[] } {
+    if (!this.config) {
+      return { isValid: false, errors: ['Configuration not loaded'] };
+    }
+
+    const errors: string[] = [];
+
+    if (!this.config.trading_pairs || this.config.trading_pairs.length === 0) {
+      errors.push('No trading pairs configured');
+    }
+
+    if (this.config.maximum_order_amount_usd <= 0) {
+      errors.push('Maximum order amount must be greater than 0');
+    }
+
+    if (this.config.take_profit_percentage <= 0) {
+      errors.push('Take profit percentage must be greater than 0');
+    }
+
+    if (this.config.maximum_active_pairs <= 0) {
+      errors.push('Maximum active pairs must be greater than 0');
+    }
+
+    return { isValid: errors.length === 0, errors };
   }
 }

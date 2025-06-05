@@ -43,7 +43,7 @@ export class MainTradingEngine {
     this.manualCloseService = new ManualCloseService(userId, bybitService);
   }
 
-  // Convert TradingConfig to TradingConfigData
+  // Convert TradingConfig to TradingConfigData with correct field mapping
   private convertConfig(config: TradingConfig): TradingConfigData {
     return {
       max_active_pairs: config.maximum_active_pairs,

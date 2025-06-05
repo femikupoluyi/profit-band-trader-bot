@@ -1,53 +1,94 @@
 
 export class PriceFormatter {
-  private static readonly PRICE_PRECISION_RULES: Record<string, number> = {
-    'BTCUSDT': 1,    // BTC prices to 1 decimal place (e.g., 104776.8)
-    'ETHUSDT': 2,    // ETH prices to 2 decimal places
-    'BNBUSDT': 1,    // BNB prices to 1 decimal place (was 2, causing too many decimals error)
-    'SOLUSDT': 3,    // SOL prices to 3 decimal places
-    'ADAUSDT': 4,    // ADA prices to 4 decimal places
-    'XRPUSDT': 4,    // XRP prices to 4 decimal places
-    'LTCUSDT': 2,    // LTC prices to 2 decimal places
-    'DOGEUSDT': 5,   // DOGE prices to 5 decimal places
-    'MATICUSDT': 4,  // MATIC prices to 4 decimal places
-    'FETUSDT': 4,    // FET prices to 4 decimal places
-    'POLUSDT': 4,    // POL prices to 4 decimal places
-    'XLMUSDT': 5,    // XLM prices to 5 decimal places
+  // Symbol-specific precision mapping for common trading pairs
+  private static readonly SYMBOL_PRECISION: Record<string, { price: number; quantity: number }> = {
+    'BTCUSDT': { price: 2, quantity: 5 },
+    'ETHUSDT': { price: 2, quantity: 4 },
+    'SOLUSDT': { price: 4, quantity: 2 },
+    'BNBUSDT': { price: 2, quantity: 3 },
+    'ADAUSDT': { price: 6, quantity: 0 },
+    'XRPUSDT': { price: 6, quantity: 1 },
+    'LTCUSDT': { price: 2, quantity: 2 },
+    'POLUSDT': { price: 6, quantity: 0 },
+    'FETUSDT': { price: 6, quantity: 0 },
+    'XLMUSDT': { price: 6, quantity: 0 }
   };
 
-  private static readonly QUANTITY_PRECISION_RULES: Record<string, number> = {
-    'BTCUSDT': 5,    // BTC allows up to 5 decimals
-    'ETHUSDT': 3,    // ETH allows up to 3 decimals  
-    'BNBUSDT': 1,    // BNB reduced to 1 decimal for safety (was 2)
-    'SOLUSDT': 1,    // SOL reduced to 1 decimal for safety
-    'ADAUSDT': 0,    // ADA whole numbers only
-    'XRPUSDT': 1,    // XRP 1 decimal place
-    'LTCUSDT': 2,    // LTC allows up to 2 decimals
-    'DOGEUSDT': 0,   // DOGE whole numbers only
-    'MATICUSDT': 0,  // MATIC whole numbers only
-    'FETUSDT': 0,    // FET whole numbers only
-    'POLUSDT': 0,    // POL whole numbers only
-    'XLMUSDT': 0,    // XLM whole numbers only
-  };
+  // Default precision for unknown symbols
+  private static readonly DEFAULT_PRECISION = { price: 4, quantity: 4 };
 
+  /**
+   * Format price for a specific symbol with correct decimal places
+   */
   static formatPriceForSymbol(symbol: string, price: number): string {
-    const decimals = this.PRICE_PRECISION_RULES[symbol] || 2; // Default to 2 decimals
-    const formattedPrice = price.toFixed(decimals);
-    
-    console.log(`Formatting price for ${symbol}: ${price} -> ${formattedPrice} (${decimals} decimals)`);
-    return formattedPrice;
+    const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
+    return price.toFixed(precision.price);
   }
 
+  /**
+   * Format quantity for a specific symbol with correct decimal places
+   */
   static formatQuantityForSymbol(symbol: string, quantity: number): string {
-    const decimals = this.QUANTITY_PRECISION_RULES[symbol] || 0; // Default to 0 decimals for safety
-    let formattedQty = quantity.toFixed(decimals);
-    
-    // Remove trailing zeros but ensure proper formatting
-    if (decimals > 0) {
-      formattedQty = parseFloat(formattedQty).toString();
-    }
-    
-    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
-    return formattedQty;
+    const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
+    return quantity.toFixed(precision.quantity);
+  }
+
+  /**
+   * Get the minimum notional value for a symbol
+   */
+  static getMinimumNotional(symbol: string): number {
+    // Default minimum notional values
+    const minimumNotionals: Record<string, number> = {
+      'BTCUSDT': 10,
+      'ETHUSDT': 10,
+      'SOLUSDT': 10,
+      'BNBUSDT': 10,
+      'ADAUSDT': 10,
+      'XRPUSDT': 10,
+      'LTCUSDT': 10,
+      'POLUSDT': 10,
+      'FETUSDT': 10,
+      'XLMUSDT': 10
+    };
+
+    return minimumNotionals[symbol] || 10;
+  }
+
+  /**
+   * Get the quantity increment for a symbol
+   */
+  static getQuantityIncrement(symbol: string): number {
+    const increments: Record<string, number> = {
+      'BTCUSDT': 0.00001,
+      'ETHUSDT': 0.0001,
+      'SOLUSDT': 0.01,
+      'BNBUSDT': 0.001,
+      'ADAUSDT': 1,
+      'XRPUSDT': 0.1,
+      'LTCUSDT': 0.01,
+      'POLUSDT': 1,
+      'FETUSDT': 1,
+      'XLMUSDT': 1
+    };
+
+    return increments[symbol] || 0.0001;
+  }
+
+  /**
+   * Validate if a price is properly formatted for a symbol
+   */
+  static validatePrice(symbol: string, price: number): boolean {
+    const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
+    const formattedPrice = parseFloat(price.toFixed(precision.price));
+    return Math.abs(price - formattedPrice) < Number.EPSILON;
+  }
+
+  /**
+   * Validate if a quantity is properly formatted for a symbol
+   */
+  static validateQuantity(symbol: string, quantity: number): boolean {
+    const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
+    const formattedQuantity = parseFloat(quantity.toFixed(precision.quantity));
+    return Math.abs(quantity - formattedQuantity) < Number.EPSILON;
   }
 }
