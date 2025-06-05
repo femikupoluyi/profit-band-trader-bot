@@ -1,3 +1,4 @@
+
 import { TradingEngine } from './trading/tradingEngine';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { CredentialsManager } from './trading/credentialsManager';
@@ -236,6 +237,8 @@ class TradingManager {
         manual_close_premium_percent: config.manual_close_premium_percent || 0.1,
         support_lower_bound_percent: config.support_lower_bound_percent || 5.0,
         support_upper_bound_percent: config.support_upper_bound_percent || 2.0,
+        minimum_notional_per_symbol: (config.minimum_notional_per_symbol as Record<string, number>) || { 'BTCUSDT': 10, 'ETHUSDT': 10 },
+        quantity_increment_per_symbol: (config.quantity_increment_per_symbol as Record<string, number>) || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
       };
     } catch (error) {
       console.error('Error in getUserTradingConfig:', error);
