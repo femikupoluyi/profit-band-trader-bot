@@ -261,11 +261,17 @@ const TradesReport = () => {
   }, 0);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
   const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
+  
+  // Calculate closed positions profit
+  const closedPositionsProfit = trades
+    .filter(t => ['closed', 'cancelled'].includes(t.status))
+    .reduce((sum, trade) => sum + (trade.actualPL || 0), 0);
 
   console.log('Summary calculations with actual P&L:', {
     totalTrades,
     totalVolume: totalVolume.toFixed(2),
     totalPL: totalPL.toFixed(2),
+    closedPositionsProfit: closedPositionsProfit.toFixed(2),
     activeTrades,
     closedTrades
   });
@@ -382,7 +388,7 @@ const TradesReport = () => {
         </div>
 
         {/* Summary Statistics */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <div className="bg-muted/50 p-3 rounded-lg">
             <div className="text-sm text-muted-foreground">Total Trades</div>
             <div className="text-2xl font-bold">{totalTrades}</div>
@@ -400,9 +406,15 @@ const TradesReport = () => {
             <div className="text-2xl font-bold">{formatCurrency(totalVolume)}</div>
           </div>
           <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Actual P&L</div>
+            <div className="text-sm text-muted-foreground">Total P&L</div>
             <div className={`text-2xl font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(totalPL)}
+            </div>
+          </div>
+          <div className="bg-muted/50 p-3 rounded-lg">
+            <div className="text-sm text-muted-foreground">Closed P&L</div>
+            <div className={`text-2xl font-bold ${closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(closedPositionsProfit)}
             </div>
           </div>
         </div>

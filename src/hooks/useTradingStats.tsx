@@ -7,6 +7,7 @@ interface TradingStats {
   totalTrades: number;
   activePairs: number;
   totalProfit: number;
+  closedPositionsProfit: number;
   isActive: boolean;
   totalActive: number;
   totalClosed: number;
@@ -33,6 +34,7 @@ export const useTradingStats = (userId?: string) => {
     totalTrades: 0,
     activePairs: 0,
     totalProfit: 0,
+    closedPositionsProfit: 0,
     isActive: false,
     totalActive: 0,
     totalClosed: 0,
@@ -154,6 +156,7 @@ export const useTradingStats = (userId?: string) => {
       const closedTrades = tradesWithActualPL.filter(t => ['closed', 'cancelled'].includes(t.status));
       
       let totalProfit = 0;
+      let closedPositionsProfit = 0;
       let totalVolume = 0;
       let profitableClosedCount = 0;
 
@@ -168,9 +171,14 @@ export const useTradingStats = (userId?: string) => {
         totalProfit += actualPL;
         totalVolume += volume;
         
-        // Count closed and cancelled trades with positive actual P&L as profitable
-        if (['closed', 'cancelled'].includes(trade.status) && actualPL > 0) {
-          profitableClosedCount++;
+        // Add to closed positions profit only if trade is closed
+        if (['closed', 'cancelled'].includes(trade.status)) {
+          closedPositionsProfit += actualPL;
+          
+          // Count closed and cancelled trades with positive actual P&L as profitable
+          if (actualPL > 0) {
+            profitableClosedCount++;
+          }
         }
       });
 
@@ -185,6 +193,7 @@ export const useTradingStats = (userId?: string) => {
         totalTrades,
         activePairs,
         totalProfit: Math.round(totalProfit * 100) / 100,
+        closedPositionsProfit: Math.round(closedPositionsProfit * 100) / 100,
         isActive: config?.is_active || false,
         totalActive: totalActiveCount,
         totalClosed: closedTrades.length,
