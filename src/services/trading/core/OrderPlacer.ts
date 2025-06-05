@@ -76,8 +76,8 @@ export class OrderPlacer {
           orderType: 'REAL_BYBIT_LIMIT_ORDER'
         });
 
-        // Place take-profit limit sell order after successful buy order
-        await this.placeTakeProfitOrder(signal.symbol, parseFloat(formattedQuantity), takeProfitPrice);
+        // CRITICAL: Place take-profit limit sell order after successful buy order
+        await this.placeTakeProfitOrder(signal.symbol, parseFloat(formattedQuantity), takeProfitPrice, trade.id);
 
       } else {
         console.error(`❌ Bybit order FAILED - retCode: ${buyOrderResult?.retCode}, retMsg: ${buyOrderResult?.retMsg}`);
@@ -90,7 +90,7 @@ export class OrderPlacer {
     }
   }
 
-  private async placeTakeProfitOrder(symbol: string, quantity: number, takeProfitPrice: number): Promise<void> {
+  private async placeTakeProfitOrder(symbol: string, quantity: number, takeProfitPrice: number, relatedTradeId: string): Promise<void> {
     try {
       console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
@@ -114,15 +114,38 @@ export class OrderPlacer {
       console.log('📝 Placing take-profit SELL order with formatted values:', sellOrderParams);
       const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
       
-      if (sellOrderResult && sellOrderResult.retCode === 0) {
-        console.log(`✅ Take-profit order placed: ${sellOrderResult.result?.orderId}`);
+      if (sellOrderResult && sellOrderResult.retCode === 0 && sellOrderResult.result?.orderId) {
+        console.log(`✅ Take-profit order placed: ${sellOrderResult.result.orderId}`);
+        
+        // Create a separate trade record for the take-profit order
+        const { data: takeProfitTrade, error: tpError } = await supabase
+          .from('trades')
+          .insert({
+            user_id: this.userId,
+            symbol: symbol,
+            side: 'sell',
+            order_type: 'limit',
+            price: takeProfitPrice,
+            quantity: parseFloat(formattedQuantity),
+            status: 'pending',
+            bybit_order_id: sellOrderResult.result.orderId,
+          })
+          .select()
+          .single();
+
+        if (tpError) {
+          console.error('Error creating take-profit trade record:', tpError);
+        } else {
+          console.log(`✅ Take-profit trade record created: ${takeProfitTrade.id}`);
+        }
         
         await this.logActivity('order_placed', `Take-profit limit sell order placed for ${symbol}`, {
           symbol,
           quantity: formattedQuantity,
           takeProfitPrice,
           formattedPrice: formattedTakeProfitPrice,
-          bybitOrderId: sellOrderResult.result?.orderId,
+          bybitOrderId: sellOrderResult.result.orderId,
+          relatedTradeId,
           orderType: 'TAKE_PROFIT_LIMIT_SELL'
         });
       } else {
@@ -133,11 +156,17 @@ export class OrderPlacer {
           error: sellOrderResult?.retMsg || 'Unknown error',
           formattedPrice: formattedTakeProfitPrice,
           originalPrice: takeProfitPrice,
-          formattedQuantity: formattedQuantity
+          formattedQuantity: formattedQuantity,
+          relatedTradeId
         });
       }
     } catch (error) {
       console.error(`❌ Error placing take-profit order for ${symbol}:`, error);
+      await this.logActivity('order_failed', `Take-profit order error for ${symbol}`, {
+        symbol,
+        error: error.message,
+        relatedTradeId
+      });
     }
   }
 

@@ -1,25 +1,37 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { SignalGenerator } from '../signalGenerator';
+import { SupportLevelAnalyzer } from '../supportLevelAnalyzer';
 
 export class SignalAnalysisService {
   private userId: string;
+  private bybitService: BybitService;
+  private signalGenerator: SignalGenerator;
+  private supportLevelAnalyzer: SupportLevelAnalyzer;
 
-  constructor(userId: string) {
+  constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
+    this.bybitService = bybitService;
+    this.signalGenerator = new SignalGenerator(userId, {} as TradingConfigData); // Will be updated per call
+    this.supportLevelAnalyzer = new SupportLevelAnalyzer();
   }
 
-  async analyzeSignals(config: TradingConfigData): Promise<void> {
+  async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
     try {
-      console.log('🔍 Analyzing signals...');
+      console.log('📈 Starting signal analysis...');
       
+      // Update signal generator with current config
+      this.signalGenerator = new SignalGenerator(this.userId, config);
+
       for (const symbol of config.trading_pairs) {
         await this.analyzeSymbol(symbol, config);
       }
 
       console.log('✅ Signal analysis completed');
     } catch (error) {
-      console.error('❌ Error analyzing signals:', error);
+      console.error('❌ Error in signal analysis:', error);
       throw error;
     }
   }
@@ -28,157 +40,59 @@ export class SignalAnalysisService {
     try {
       console.log(`\n🔍 Analyzing ${symbol}...`);
 
-      // Get latest market data for this symbol
-      const { data: marketData, error: marketError } = await supabase
+      // Get current market price
+      const marketData = await this.bybitService.getMarketPrice(symbol);
+      const currentPrice = marketData.price;
+      
+      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
+
+      // Get recent market data for support analysis
+      const { data: recentData, error } = await supabase
         .from('market_data')
         .select('*')
         .eq('symbol', symbol)
         .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(config.support_candle_count || 128);
 
-      if (marketError || !marketData) {
-        console.log(`❌ No market data found for ${symbol}`);
+      if (error) {
+        console.error(`❌ Error fetching market data for ${symbol}:`, error);
         return;
       }
 
-      const currentPrice = parseFloat(marketData.price.toString());
-      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
-
-      // Simple support level calculation (using historical data)
-      const supportLevel = await this.calculateSupportLevel(symbol, config);
-      
-      if (!supportLevel) {
-        console.log(`❌ Could not calculate support level for ${symbol}`);
+      if (!recentData || recentData.length < 10) {
+        console.log(`  ⚠️ Insufficient market data for ${symbol} (${recentData?.length || 0} records)`);
         return;
       }
 
-      console.log(`  Support Level: $${supportLevel.toFixed(4)}`);
+      // Analyze support levels
+      const priceHistory = recentData.map(d => parseFloat(d.price.toString()));
+      const supportLevel = this.supportLevelAnalyzer.findStrongestSupportLevel(
+        priceHistory,
+        currentPrice,
+        config.support_lower_bound_percent || 5.0,
+        config.support_upper_bound_percent || 2.0
+      );
 
-      // Check if we should generate a signal
-      const entryPrice = supportLevel * (1 + config.entry_offset_percent / 100);
-      console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
-
-      // Risk constraints check
-      const lowerBound = supportLevel * (1 - 5.0 / 100); // 5% below support
-      const upperBound = supportLevel * (1 + 2.0 / 100); // 2% above support
-      
-      console.log(`  Lower Bound: $${lowerBound.toFixed(4)}`);
-      console.log(`  Upper Bound: $${upperBound.toFixed(4)}`);
-
-      // Check position limits before generating signal
-      const canTrade = await this.checkPositionLimits(symbol, config);
-      if (!canTrade) {
-        console.log(`❌ Risk constraints failed for ${symbol}`);
-        return;
-      }
-
-      // Generate signal if price is near support
-      if (currentPrice <= entryPrice && currentPrice >= lowerBound) {
-        await this.generateBuySignal(symbol, entryPrice, supportLevel);
+      if (supportLevel) {
+        console.log(`  📊 Support found at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
+        
+        // Generate signal if conditions are met
+        const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
+        if (signal) {
+          console.log(`  🎯 Signal generated for ${symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
+        } else {
+          console.log(`  📭 No signal generated for ${symbol}`);
+        }
       } else {
-        console.log(`  No signal: Price $${currentPrice.toFixed(4)} not in range [$${lowerBound.toFixed(4)} - $${entryPrice.toFixed(4)}]`);
+        console.log(`  📭 No valid support level found for ${symbol}`);
       }
 
     } catch (error) {
       console.error(`❌ Error analyzing ${symbol}:`, error);
-    }
-  }
-
-  private async calculateSupportLevel(symbol: string, config: TradingConfigData): Promise<number | null> {
-    try {
-      // Get recent price data for support calculation
-      const { data: recentPrices, error } = await supabase
-        .from('market_data')
-        .select('price, timestamp')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false })
-        .limit(config.support_candle_count);
-
-      if (error || !recentPrices || recentPrices.length < 10) {
-        console.log(`❌ Insufficient price data for ${symbol} support calculation`);
-        return null;
-      }
-
-      // Simple support calculation: find lowest price in recent data
-      const prices = recentPrices.map(p => parseFloat(p.price.toString()));
-      const supportLevel = Math.min(...prices);
-      
-      return supportLevel;
-    } catch (error) {
-      console.error(`Error calculating support level for ${symbol}:`, error);
-      return null;
-    }
-  }
-
-  private async checkPositionLimits(symbol: string, config: TradingConfigData): Promise<boolean> {
-    try {
-      // Check max active pairs
-      const { data: activePairs } = await supabase
-        .from('trades')
-        .select('symbol')
-        .eq('user_id', this.userId)
-        .in('status', ['pending', 'filled', 'partial_filled']);
-
-      const uniquePairs = new Set(activePairs?.map(trade => trade.symbol) || []);
-      const activePairCount = uniquePairs.size;
-      
-      // If this symbol is new and we're at max pairs, reject
-      if (!uniquePairs.has(symbol) && activePairCount >= config.max_active_pairs) {
-        console.log(`❌ Max active pairs limit reached: ${activePairCount}/${config.max_active_pairs}`);
-        return false;
-      }
-
-      // Check max positions per pair for this specific symbol
-      const { count: currentPositions } = await supabase
-        .from('trades')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', this.userId)
-        .eq('symbol', symbol)
-        .in('status', ['pending', 'filled', 'partial_filled']);
-
-      if ((currentPositions || 0) >= config.max_positions_per_pair) {
-        console.log(`❌ Max positions per pair reached for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
-        return false;
-      }
-
-      console.log(`✅ Position limits check passed for ${symbol}: ${currentPositions}/${config.max_positions_per_pair} positions, ${activePairCount}/${config.max_active_pairs} pairs`);
-      return true;
-
-    } catch (error) {
-      console.error('Error checking position limits:', error);
-      return false;
-    }
-  }
-
-  private async generateBuySignal(symbol: string, entryPrice: number, supportLevel: number): Promise<void> {
-    try {
-      console.log(`🚀 Generating BUY signal for ${symbol} at $${entryPrice.toFixed(4)}`);
-
-      const { error } = await supabase
-        .from('trading_signals')
-        .insert({
-          user_id: this.userId,
-          symbol,
-          signal_type: 'buy',
-          price: entryPrice,
-          confidence: 0.8,
-          reasoning: `Price near support level of $${supportLevel.toFixed(4)}`,
-          processed: false
-        });
-
-      if (error) {
-        console.error(`❌ Error generating signal for ${symbol}:`, error);
-      } else {
-        console.log(`✅ Signal generated for ${symbol}`);
-        await this.logActivity('signal_generated', `Buy signal generated for ${symbol}`, {
-          symbol,
-          entryPrice,
-          supportLevel
-        });
-      }
-    } catch (error) {
-      console.error(`❌ Error generating signal for ${symbol}:`, error);
+      await this.logActivity('system_error', `Failed to analyze ${symbol}`, {
+        symbol,
+        error: error.message
+      });
     }
   }
 

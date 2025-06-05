@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -57,30 +58,37 @@ export class PositionMonitorService {
       // Get order status from Bybit - only pass the order ID
       const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
       
-      if (orderStatus.orderStatus === 'Filled') {
-        console.log(`✅ Order ${trade.bybit_order_id} is filled`);
+      // Check if the response has the expected structure
+      if (orderStatus && orderStatus.retCode === 0 && orderStatus.result?.list?.length > 0) {
+        const order = orderStatus.result.list[0];
         
-        // Update trade status in database
-        const { error } = await supabase
-          .from('trades')
-          .update({ 
-            status: 'filled',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', trade.id);
+        if (order.orderStatus === 'Filled') {
+          console.log(`✅ Order ${trade.bybit_order_id} is filled`);
+          
+          // Update trade status in database
+          const { error } = await supabase
+            .from('trades')
+            .update({ 
+              status: 'filled',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', trade.id);
 
-        if (error) {
-          console.error(`❌ Error updating trade ${trade.id}:`, error);
+          if (error) {
+            console.error(`❌ Error updating trade ${trade.id}:`, error);
+          } else {
+            console.log(`✅ Updated trade ${trade.id} status to filled`);
+            await this.logActivity('trade_filled', `Order filled for ${trade.symbol}`, {
+              tradeId: trade.id,
+              symbol: trade.symbol,
+              bybitOrderId: trade.bybit_order_id
+            });
+          }
         } else {
-          console.log(`✅ Updated trade ${trade.id} status to filled`);
-          await this.logActivity('order_filled', `Order filled for ${trade.symbol}`, {
-            tradeId: trade.id,
-            symbol: trade.symbol,
-            bybitOrderId: trade.bybit_order_id
-          });
+          console.log(`⏳ Order ${trade.bybit_order_id} status: ${order.orderStatus}`);
         }
       } else {
-        console.log(`⏳ Order ${trade.bybit_order_id} status: ${orderStatus.orderStatus}`);
+        console.log(`⚠️ Invalid response for order ${trade.bybit_order_id}:`, orderStatus);
       }
 
     } catch (error) {
