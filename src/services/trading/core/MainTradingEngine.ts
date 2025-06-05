@@ -131,6 +131,27 @@ export class MainTradingEngine {
     return this.manualCloseService.closePosition(tradeId);
   }
 
+  async simulateEndOfDay(): Promise<void> {
+    try {
+      console.log('🌅 Manual End-of-Day Simulation Started...');
+      await this.logActivity('system_info', 'Manual end-of-day simulation started');
+      
+      // Get current config
+      const config = this.configManager.getConfig();
+      const configData = this.convertConfig(config);
+      
+      // Execute end-of-day management
+      await this.eodManager.manageEndOfDay(configData);
+      
+      console.log('✅ Manual End-of-Day Simulation Completed');
+      await this.logActivity('system_info', 'Manual end-of-day simulation completed successfully');
+    } catch (error) {
+      console.error('❌ Error in manual end-of-day simulation:', error);
+      await this.logActivity('system_error', 'Manual end-of-day simulation failed', { error: error.message });
+      throw error;
+    }
+  }
+
   private scheduleMainLoop(intervalSeconds: number): void {
     if (!this.isRunning) return;
 

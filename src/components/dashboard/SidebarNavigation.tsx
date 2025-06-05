@@ -55,10 +55,12 @@ const navigationItems = [
 
 export function AppSidebar({ activeTab, onTabChange }: SidebarNavigationProps) {
   return (
-    <Sidebar>
+    <Sidebar className="border-r bg-gradient-to-b from-slate-50 to-slate-100 shadow-sm">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Trading Dashboard</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-slate-700 font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            Trading Dashboard
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navigationItems.map((item) => (
@@ -66,14 +68,21 @@ export function AppSidebar({ activeTab, onTabChange }: SidebarNavigationProps) {
                   <SidebarMenuButton 
                     asChild
                     isActive={activeTab === item.id}
+                    className="group"
                   >
                     <Button
                       variant={activeTab === item.id ? "default" : "ghost"}
-                      className="w-full justify-start"
+                      className={`w-full justify-start transition-all duration-200 ${
+                        activeTab === item.id 
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md hover:from-blue-700 hover:to-indigo-700" 
+                          : "text-slate-700 hover:bg-blue-50 hover:text-blue-700 border-l-4 border-transparent hover:border-blue-500"
+                      }`}
                       onClick={() => onTabChange(item.id)}
                     >
-                      <item.icon className="h-4 w-4 mr-2" />
-                      <span>{item.title}</span>
+                      <item.icon className={`h-4 w-4 mr-3 transition-colors ${
+                        activeTab === item.id ? "text-white" : "text-slate-600 group-hover:text-blue-600"
+                      }`} />
+                      <span className="font-medium">{item.title}</span>
                     </Button>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

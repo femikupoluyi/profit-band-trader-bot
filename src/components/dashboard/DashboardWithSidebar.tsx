@@ -46,13 +46,13 @@ const DashboardWithSidebar = () => {
       case 'status':
         return (
           <div className="space-y-8">
-            <TradingStatus />
             <TradingStats 
               stats={stats} 
               isLoading={isLoading} 
               timeRange={timeRange}
               onTimeRangeChange={setTimeRange}
             />
+            <TradingStatus />
             <ActivePairsTable onTradeUpdate={handleDataRefresh} />
           </div>
         );
@@ -69,13 +69,13 @@ const DashboardWithSidebar = () => {
       default:
         return (
           <div className="space-y-8">
-            <TradingStatus />
             <TradingStats 
               stats={stats} 
               isLoading={isLoading} 
               timeRange={timeRange}
               onTimeRangeChange={setTimeRange}
             />
+            <TradingStatus />
             <ActivePairsTable onTradeUpdate={handleDataRefresh} />
           </div>
         );

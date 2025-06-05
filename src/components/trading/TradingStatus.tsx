@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { tradingManager } from '@/services/tradingManager';
-import { Play, Square, RotateCcw, Activity } from 'lucide-react';
+import { Play, Square, RotateCcw, Activity, Sunset } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const TradingStatus = () => {
@@ -13,6 +13,7 @@ const TradingStatus = () => {
   const { toast } = useToast();
   const [isRunning, setIsRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEodLoading, setIsEodLoading] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -95,6 +96,38 @@ const TradingStatus = () => {
     }
   };
 
+  const handleEndOfDaySimulation = async () => {
+    if (!user) return;
+    
+    setIsEodLoading(true);
+    try {
+      // Get the trading engine instance and trigger manual end-of-day
+      const engine = tradingManager.getEngineForUser(user.id);
+      if (engine) {
+        // Simulate end-of-day operation by calling the EOD manager directly
+        await engine.simulateEndOfDay();
+        toast({
+          title: "End-of-Day Simulation Complete",
+          description: "Manual end-of-day operation has been executed successfully.",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "Trading engine is not running. Please start the bot first.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to execute end-of-day simulation.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEodLoading(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -114,7 +147,7 @@ const TradingStatus = () => {
           </Badge>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {!isRunning ? (
             <Button 
               onClick={handleStart} 
@@ -143,6 +176,16 @@ const TradingStatus = () => {
           >
             <RotateCcw className="mr-2 h-4 w-4" />
             Restart
+          </Button>
+
+          <Button 
+            onClick={handleEndOfDaySimulation} 
+            disabled={isEodLoading || !isRunning}
+            variant="outline"
+            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+          >
+            <Sunset className="mr-2 h-4 w-4" />
+            {isEodLoading ? "Running..." : "Simulate EOD"}
           </Button>
         </div>
 
