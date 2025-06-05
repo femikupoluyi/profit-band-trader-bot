@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -214,23 +213,6 @@ const TradingStats = ({ stats, isLoading, timeRange, onTimeRangeChange }: Tradin
             ) : (
               <div className="text-lg sm:text-xl font-bold">
                 ${stats.totalVolume.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* New Closed Positions Profit Card */}
-        <Card className="col-span-2 lg:col-span-1">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Closed P&L</CardTitle>
-            <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="animate-pulse bg-gray-200 h-8 w-20 rounded"></div>
-            ) : (
-              <div className={`text-lg sm:text-2xl font-bold ${stats.closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                ${stats.closedPositionsProfit.toFixed(2)}
               </div>
             )}
           </CardContent>
