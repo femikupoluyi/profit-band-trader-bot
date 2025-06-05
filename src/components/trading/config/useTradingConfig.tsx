@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,6 +20,8 @@ export interface TradingConfigData {
   auto_close_at_end_of_day: boolean;
   eod_close_premium_percent: number;
   manual_close_premium_percent: number;
+  support_lower_bound_percent: number;
+  support_upper_bound_percent: number;
 }
 
 const getDefaultConfig = (): TradingConfigData => ({
@@ -40,6 +41,8 @@ const getDefaultConfig = (): TradingConfigData => ({
   auto_close_at_end_of_day: false,
   eod_close_premium_percent: 0.1,
   manual_close_premium_percent: 0.1,
+  support_lower_bound_percent: 5.0,
+  support_upper_bound_percent: 2.0,
 });
 
 export const useTradingConfig = (onConfigUpdate?: () => void) => {
@@ -88,6 +91,8 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           auto_close_at_end_of_day: data.auto_close_at_end_of_day || false,
           eod_close_premium_percent: parseFloat(data.eod_close_premium_percent?.toString() || '0.1'),
           manual_close_premium_percent: parseFloat(data.manual_close_premium_percent?.toString() || '0.1'),
+          support_lower_bound_percent: parseFloat(data.support_lower_bound_percent?.toString() || '5.0'),
+          support_upper_bound_percent: parseFloat(data.support_upper_bound_percent?.toString() || '2.0'),
         };
         
         console.log('Loaded config from database with all fields:', loadedConfig);
@@ -128,6 +133,8 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         auto_close_at_end_of_day: config.auto_close_at_end_of_day,
         eod_close_premium_percent: config.eod_close_premium_percent,
         manual_close_premium_percent: config.manual_close_premium_percent,
+        support_lower_bound_percent: config.support_lower_bound_percent,
+        support_upper_bound_percent: config.support_upper_bound_percent,
         updated_at: new Date().toISOString(),
       };
 
