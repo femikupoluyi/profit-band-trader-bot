@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { TestResult } from './types';
 import { TestRunner } from './testRunner';
+import { TRADING_ENVIRONMENT } from '@/services/trading/core/TypeDefinitions';
 
 export const useTradingSystemTests = () => {
   const { user } = useAuth();
@@ -28,7 +29,7 @@ export const useTradingSystemTests = () => {
       if (successCount === totalTests) {
         toast({
           title: "System Test Complete",
-          description: `All ${totalTests} tests passed! Bybit DEMO account trading system is ready.`,
+          description: `All ${totalTests} tests passed! Bybit ${TRADING_ENVIRONMENT.isDemoTrading ? 'DEMO' : 'LIVE'} account trading system is ready.`,
         });
       } else {
         toast({
