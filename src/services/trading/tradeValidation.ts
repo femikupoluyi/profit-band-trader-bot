@@ -1,34 +1,15 @@
 
 import { TRADING_ENVIRONMENT } from './core/TypeDefinitions';
+import { PriceFormatter } from './core/PriceFormatter';
 
 export class TradeValidation {
-  private static formatQuantityForSymbol(symbol: string, quantity: number): string {
-    // Consistent precision rules based on Bybit requirements
-    const precisionRules: Record<string, number> = {
-      'BTCUSDT': 5,    // BTC allows up to 5 decimals
-      'ETHUSDT': 3,    // ETH allows up to 3 decimals  
-      'BNBUSDT': 2,    // BNB allows up to 2 decimals
-      'SOLUSDT': 1,    // SOL reduced to 1 decimal for safety
-      'ADAUSDT': 0,    // ADA whole numbers only
-      'XRPUSDT': 0,    // XRP whole numbers only
-      'LTCUSDT': 3,    // LTC allows up to 3 decimals
-      'DOGEUSDT': 0,   // DOGE whole numbers only
-      'MATICUSDT': 0,  // MATIC whole numbers only
-      'FETUSDT': 0,    // FET whole numbers only
-      'POLUSDT': 0,    // POL whole numbers only
-      'XLMUSDT': 0,    // XLM whole numbers only
-    };
+  static getFormattedQuantity(symbol: string, quantity: number): string {
+    // Use PriceFormatter for consistent formatting
+    return PriceFormatter.formatQuantityForSymbol(symbol, quantity);
+  }
 
-    const decimals = precisionRules[symbol] || 0; // Default to 0 decimals for safety
-    let formattedQty = quantity.toFixed(decimals);
-    
-    // Remove trailing zeros but ensure proper formatting
-    if (decimals > 0) {
-      formattedQty = parseFloat(formattedQty).toString();
-    }
-    
-    console.log(`[${TRADING_ENVIRONMENT.isDemoTrading ? 'DEMO' : 'LIVE'}] Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
-    return formattedQty;
+  static isValidOrderValue(symbol: string, quantity: number, price: number): boolean {
+    return this.validateMinOrderValue(symbol, quantity, price);
   }
 
   private static validateMinOrderValue(symbol: string, quantity: number, price: number): boolean {
@@ -60,14 +41,6 @@ export class TradeValidation {
     }
     
     return true;
-  }
-
-  static getFormattedQuantity(symbol: string, quantity: number): string {
-    return this.formatQuantityForSymbol(symbol, quantity);
-  }
-
-  static isValidOrderValue(symbol: string, quantity: number, price: number): boolean {
-    return this.validateMinOrderValue(symbol, quantity, price);
   }
 
   static validateSymbol(symbol: string): boolean {

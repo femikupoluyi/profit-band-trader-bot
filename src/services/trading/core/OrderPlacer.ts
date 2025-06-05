@@ -19,12 +19,21 @@ export class OrderPlacer {
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
       
-      // Format quantity and price with correct decimal precision for the symbol
+      // CRITICAL: Use PriceFormatter for ALL price and quantity formatting
       const formattedQuantity = PriceFormatter.formatQuantityForSymbol(signal.symbol, quantity);
       const formattedEntryPrice = PriceFormatter.formatPriceForSymbol(signal.symbol, entryPrice);
 
       console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
       console.log(`  🔧 Formatted Entry Price: ${formattedEntryPrice}`);
+
+      // Validate the formatted values
+      if (!PriceFormatter.validatePrice(signal.symbol, parseFloat(formattedEntryPrice))) {
+        throw new Error(`Invalid price format for ${signal.symbol}: ${formattedEntryPrice}`);
+      }
+
+      if (!PriceFormatter.validateQuantity(signal.symbol, parseFloat(formattedQuantity))) {
+        throw new Error(`Invalid quantity format for ${signal.symbol}: ${formattedQuantity}`);
+      }
 
       // ALWAYS place real Bybit order - no fallback to mock
       const buyOrderParams = {
@@ -52,7 +61,7 @@ export class OrderPlacer {
             symbol: signal.symbol,
             side: 'buy',
             order_type: 'limit',
-            price: entryPrice,
+            price: parseFloat(formattedEntryPrice), // Use the formatted price value
             quantity: parseFloat(formattedQuantity), // Use the formatted quantity value
             status: 'pending', // Real orders start as pending until Bybit confirms fill
             bybit_order_id: bybitOrderId,
@@ -67,10 +76,10 @@ export class OrderPlacer {
         await this.logActivity('order_placed', `REAL limit buy order placed on Bybit for ${signal.symbol}`, {
           symbol: signal.symbol,
           quantity: formattedQuantity,
-          entryPrice: entryPrice,
+          entryPrice: parseFloat(formattedEntryPrice),
           formattedPrice: formattedEntryPrice,
           takeProfitPrice: takeProfitPrice,
-          orderValue: parseFloat(formattedQuantity) * entryPrice,
+          orderValue: parseFloat(formattedQuantity) * parseFloat(formattedEntryPrice),
           bybitOrderId,
           tradeId: trade.id,
           orderType: 'REAL_BYBIT_LIMIT_ORDER'
@@ -94,12 +103,17 @@ export class OrderPlacer {
     try {
       console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
-      // Format take-profit price and quantity with correct decimal precision
+      // CRITICAL: Use PriceFormatter for take-profit price formatting
       const formattedTakeProfitPrice = PriceFormatter.formatPriceForSymbol(symbol, takeProfitPrice);
       const formattedQuantity = PriceFormatter.formatQuantityForSymbol(symbol, quantity);
       
       console.log(`  🔧 Formatted Take-Profit Price: ${formattedTakeProfitPrice}`);
       console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
+      
+      // Validate the formatted take-profit price
+      if (!PriceFormatter.validatePrice(symbol, parseFloat(formattedTakeProfitPrice))) {
+        throw new Error(`Invalid take-profit price format for ${symbol}: ${formattedTakeProfitPrice}`);
+      }
       
       const sellOrderParams = {
         category: 'spot' as const,
@@ -125,7 +139,7 @@ export class OrderPlacer {
             symbol: symbol,
             side: 'sell',
             order_type: 'limit',
-            price: takeProfitPrice,
+            price: parseFloat(formattedTakeProfitPrice), // Use formatted price
             quantity: parseFloat(formattedQuantity),
             status: 'pending',
             bybit_order_id: sellOrderResult.result.orderId,
@@ -142,7 +156,7 @@ export class OrderPlacer {
         await this.logActivity('order_placed', `Take-profit limit sell order placed for ${symbol}`, {
           symbol,
           quantity: formattedQuantity,
-          takeProfitPrice,
+          takeProfitPrice: parseFloat(formattedTakeProfitPrice),
           formattedPrice: formattedTakeProfitPrice,
           bybitOrderId: sellOrderResult.result.orderId,
           relatedTradeId,
