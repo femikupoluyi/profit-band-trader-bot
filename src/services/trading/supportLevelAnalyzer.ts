@@ -1,57 +1,92 @@
 
-import { CandleData, SupportLevel } from './types';
+export interface CandleData {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  timestamp: number;
+}
+
+export interface SupportLevel {
+  price: number;
+  strength: number;
+  timestamp: number;
+  touches: number;
+}
 
 export class SupportLevelAnalyzer {
+  /**
+   * Identify support levels from historical price data
+   */
   identifySupportLevel(candles: CandleData[]): SupportLevel | null {
-    try {
-      // Extract all low points
-      const lows = candles.map(c => c.low);
-      
-      // Group similar price levels (within 0.5% of each other)
-      const tolerance = 0.005; // 0.5%
-      const supportLevels: Map<number, { count: number; prices: number[] }> = new Map();
-
-      for (const low of lows) {
-        let foundGroup = false;
-        
-        for (const [level, data] of supportLevels.entries()) {
-          if (Math.abs(low - level) / level <= tolerance) {
-            data.count++;
-            data.prices.push(low);
-            foundGroup = true;
-            break;
-          }
-        }
-        
-        if (!foundGroup) {
-          supportLevels.set(low, { count: 1, prices: [low] });
-        }
-      }
-
-      // Find the support level with the most touches
-      let bestSupport: SupportLevel | null = null;
-      let maxTouches = 0;
-
-      for (const [level, data] of supportLevels.entries()) {
-        if (data.count >= 3 && data.count > maxTouches) { // At least 3 touches
-          const avgPrice = data.prices.reduce((sum, p) => sum + p, 0) / data.prices.length;
-          bestSupport = {
-            price: avgPrice,
-            strength: Math.min(data.count / 10, 1), // Normalize to 0-1
-            touchCount: data.count
-          };
-          maxTouches = data.count;
-        }
-      }
-
-      if (bestSupport) {
-        console.log(`Found support level: ${bestSupport.price.toFixed(4)} with ${bestSupport.touchCount} touches`);
-      }
-
-      return bestSupport;
-    } catch (error) {
-      console.error('Error identifying support level:', error);
+    if (candles.length < 10) {
       return null;
     }
+
+    // Simple support level identification
+    // Look for price levels that have been tested multiple times
+    const lowPrices = candles.map(c => c.low).sort((a, b) => a - b);
+    const priceGroups: { [key: string]: number } = {};
+    
+    // Group similar prices (within 0.5% tolerance)
+    for (const price of lowPrices) {
+      const key = Math.round(price * 200) / 200; // Round to nearest 0.005
+      priceGroups[key] = (priceGroups[key] || 0) + 1;
+    }
+
+    // Find the price level with most touches
+    let bestSupport: SupportLevel | null = null;
+    let maxTouches = 2; // Minimum touches to be considered support
+
+    for (const [priceStr, touches] of Object.entries(priceGroups)) {
+      const price = parseFloat(priceStr);
+      if (touches >= maxTouches) {
+        maxTouches = touches;
+        bestSupport = {
+          price,
+          strength: touches / candles.length, // Normalize strength
+          timestamp: Date.now(),
+          touches
+        };
+      }
+    }
+
+    return bestSupport;
+  }
+
+  /**
+   * Check if current price is near a support level
+   */
+  isPriceNearSupport(currentPrice: number, supportLevel: SupportLevel, tolerancePercent: number = 0.5): boolean {
+    const tolerance = supportLevel.price * (tolerancePercent / 100);
+    return Math.abs(currentPrice - supportLevel.price) <= tolerance;
+  }
+
+  /**
+   * Calculate support strength based on multiple factors
+   */
+  calculateSupportStrength(level: SupportLevel, recentCandles: CandleData[]): number {
+    let strength = level.touches * 0.3; // Base strength from touches
+    
+    // Add recency factor
+    const age = Date.now() - level.timestamp;
+    const ageHours = age / (1000 * 60 * 60);
+    const recencyFactor = Math.max(0, 1 - (ageHours / 24)); // Decay over 24 hours
+    
+    strength += recencyFactor * 0.4;
+    
+    // Add volume factor if available
+    const nearbyCandles = recentCandles.filter(c => 
+      Math.abs(c.low - level.price) / level.price < 0.01
+    );
+    
+    if (nearbyCandles.length > 0) {
+      const avgVolume = nearbyCandles.reduce((sum, c) => sum + c.volume, 0) / nearbyCandles.length;
+      const volumeFactor = Math.min(1, avgVolume / 1000000); // Normalize volume
+      strength += volumeFactor * 0.3;
+    }
+
+    return Math.min(1, strength); // Cap at 1.0
   }
 }

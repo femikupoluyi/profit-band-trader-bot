@@ -1,25 +1,19 @@
 
-export type TradeStatus = 'pending' | 'filled' | 'closed' | 'cancelled' | 'rejected';
-export type TradeSide = 'buy' | 'sell';
-export type OrderType = 'market' | 'limit';
-export type SignalType = 'buy' | 'sell' | 'hold' | 'support_break' | 'resistance_break';
+// Core type definitions for the trading system
 
 export type LogType = 
+  | 'success'
+  | 'error' 
+  | 'system_info'
+  | 'trade_executed'
   | 'signal_processed'
-  | 'trade_executed' 
-  | 'trade_filled'
-  | 'position_closed'
-  | 'system_error'
   | 'order_placed'
   | 'order_failed'
+  | 'position_closed'
   | 'calculation_error'
   | 'execution_error'
   | 'signal_rejected'
-  | 'order_rejected'
-  | 'info'
-  | 'error' 
-  | 'success'
-  | 'system_info';
+  | 'trade_filled';
 
 export interface StandardizedError {
   message: string;
@@ -28,60 +22,69 @@ export interface StandardizedError {
   context: string;
 }
 
-export interface TradingEnvironment {
-  isDemoTrading: true; // Always demo trading
-  baseUrl: 'https://api-demo.bybit.com';
-  wsUrl: 'wss://stream-demo.bybit.com';
-}
-
-export const TRADING_ENVIRONMENT: TradingEnvironment = {
-  isDemoTrading: true,
-  baseUrl: 'https://api-demo.bybit.com',
-  wsUrl: 'wss://stream-demo.bybit.com'
-};
-
-export const VALID_CHART_TIMEFRAMES = [
-  '1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d'
-] as const;
-
+export const VALID_CHART_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '6h', '12h', '1d'] as const;
 export type ChartTimeframe = typeof VALID_CHART_TIMEFRAMES[number];
 
-// Add missing interfaces for better type safety
-export interface TradeRecord {
+export const TRADING_ENVIRONMENT = {
+  isDemoTrading: true, // Always use demo trading for safety
+  baseUrl: 'https://api-demo.bybit.com'
+} as const;
+
+export interface TradingSignal {
+  id: string;
+  symbol: string;
+  signal_type: string;
+  price: number;
+  confidence: number;
+  reasoning?: string;
+  processed: boolean;
+  user_id: string;
+  created_at: string;
+}
+
+export interface Trade {
   id: string;
   user_id: string;
   symbol: string;
-  side: TradeSide;
-  order_type: OrderType;
-  quantity: number;
+  side: 'buy' | 'sell';
+  order_type: 'limit' | 'market';
   price: number;
-  status: TradeStatus;
+  quantity: number;
+  status: 'pending' | 'filled' | 'partial_filled' | 'closed' | 'cancelled';
   bybit_order_id?: string;
   profit_loss?: number;
   created_at: string;
   updated_at: string;
 }
 
-export interface TradingSignal {
-  id: string;
-  user_id: string;
+export interface MarketData {
   symbol: string;
-  signal_type: SignalType;
   price: number;
-  confidence?: number;
-  reasoning?: string;
-  processed: boolean;
-  created_at: string;
+  timestamp: string;
+  source: string;
+  volume?: number;
 }
 
-export interface ApiCredentials {
-  id: string;
-  user_id: string;
-  exchange_name: string;
-  api_key: string;
-  api_secret: string;
-  testnet: boolean;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+export interface SupportLevel {
+  price: number;
+  strength: number;
+  timestamp: number;
+  touches: number;
+}
+
+export interface OrderParams {
+  category: 'spot';
+  symbol: string;
+  side: 'Buy' | 'Sell';
+  orderType: 'Limit' | 'Market';
+  qty: string;
+  price?: string;
+  timeInForce?: 'GTC' | 'IOC' | 'FOK';
+}
+
+export interface BybitApiResponse {
+  retCode: number;
+  retMsg: string;
+  result?: any;
+  time?: number;
 }
