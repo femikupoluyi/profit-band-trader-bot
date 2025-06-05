@@ -19,7 +19,7 @@ class TradingManager {
         await this.stopTradingForUser(userId);
       }
 
-      // Get user's API credentials with better error handling
+      // Get user's API credentials
       const { data: credentials, error } = await supabase
         .from('api_credentials')
         .select('*')
@@ -158,7 +158,7 @@ class TradingManager {
         await logger.logSuccess('Using existing running engine', { tradeId });
       }
       
-      // Execute manual close with enhanced logging
+      // Execute manual close
       console.log('🔄 EXECUTING MANUAL CLOSE...');
       await logger.logSuccess('Starting manual close execution', { tradeId });
       
@@ -232,7 +232,7 @@ class TradingManager {
         await logger.logSuccess('Using existing running engine for EOD');
       }
       
-      // Execute EOD simulation with enhanced logging
+      // Execute EOD simulation
       console.log('🌅 EXECUTING EOD SIMULATION...');
       await logger.logSuccess('Starting EOD simulation execution');
       

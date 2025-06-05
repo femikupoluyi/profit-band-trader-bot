@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -18,7 +19,7 @@ export class EndOfDayManagerService {
   async manageEndOfDay(config: TradingConfigData, forceSimulation: boolean = false): Promise<void> {
     try {
       console.log('🌅 EOD MANAGER SERVICE - Starting end-of-day management');
-      await this.logger.logSuccess(`[EOD] Starting end-of-day management (force: ${forceSimulation})`, {
+      await this.logger.logSuccess(`Starting end-of-day management (force: ${forceSimulation})`, {
         forceSimulation,
         autoCloseEnabled: config.auto_close_at_end_of_day,
         eodThreshold: config.eod_close_premium_percent
@@ -26,7 +27,7 @@ export class EndOfDayManagerService {
 
       if (!config.auto_close_at_end_of_day && !forceSimulation) {
         console.log('⏸️ End-of-day auto-close is disabled');
-        await this.logger.logSuccess('[EOD] End-of-day auto-close is disabled', {
+        await this.logger.logSuccess('End-of-day auto-close is disabled', {
           autoCloseEnabled: false,
           forceSimulation: false
         });
@@ -38,7 +39,7 @@ export class EndOfDayManagerService {
       const isEndOfDay = currentHour >= 22; // 10 PM UTC
 
       console.log(`🕐 Current UTC hour: ${currentHour}, End of day threshold: 22:00`);
-      await this.logger.logSuccess(`[EOD] Time check - Current hour: ${currentHour} UTC`, {
+      await this.logger.logSuccess(`Time check - Current hour: ${currentHour} UTC`, {
         currentHour,
         isEndOfDay,
         forceSimulation
@@ -47,7 +48,7 @@ export class EndOfDayManagerService {
       // For manual simulation, always proceed regardless of time
       if (!isEndOfDay && !forceSimulation) {
         console.log(`⏰ Not end of day yet (current hour: ${currentHour} UTC)`);
-        await this.logger.logSuccess(`[EOD] Not end of day yet (current hour: ${currentHour} UTC)`, {
+        await this.logger.logSuccess(`Not end of day yet (current hour: ${currentHour} UTC)`, {
           currentHour
         });
         return;
@@ -55,17 +56,17 @@ export class EndOfDayManagerService {
 
       if (forceSimulation) {
         console.log('🔄 MANUAL EOD SIMULATION - Processing all positions regardless of time');
-        await this.logger.logSuccess('[EOD] Manual EOD simulation - processing all positions', {
+        await this.logger.logSuccess('Manual EOD simulation - processing all positions', {
           currentHour
         });
       } else {
         console.log('🌅 End of day detected, checking positions to close...');
-        await this.logger.logSuccess(`[EOD] End of day detected (hour: ${currentHour}), checking positions`, {
+        await this.logger.logSuccess(`End of day detected (hour: ${currentHour}), checking positions`, {
           currentHour
         });
       }
 
-      // Get all active positions with enhanced error handling
+      // Get all active positions
       console.log('🔍 Fetching active trades...');
       const { data: activeTrades, error } = await supabase
         .from('trades')
@@ -75,20 +76,20 @@ export class EndOfDayManagerService {
 
       if (error) {
         console.error('❌ Error fetching active trades:', error);
-        await this.logger.logError('[EOD] Error fetching active trades', error);
+        await this.logger.logError('Error fetching active trades', error);
         return;
       }
 
       if (!activeTrades || activeTrades.length === 0) {
         console.log('📭 No active positions to close');
-        await this.logger.logSuccess('[EOD] No active positions found for EOD closure', {
+        await this.logger.logSuccess('No active positions found for EOD closure', {
           activeTradeCount: 0
         });
         return;
       }
 
       console.log(`📊 Found ${activeTrades.length} active positions to evaluate for EOD closure`);
-      await this.logger.logSuccess(`[EOD] Found ${activeTrades.length} active positions for EOD evaluation`, {
+      await this.logger.logSuccess(`Found ${activeTrades.length} active positions for EOD evaluation`, {
         activeTradeCount: activeTrades.length,
         tradeSymbols: activeTrades.map(t => t.symbol),
         tradeIds: activeTrades.map(t => t.id)
@@ -100,7 +101,7 @@ export class EndOfDayManagerService {
 
       for (const trade of activeTrades) {
         console.log(`\n🔍 Evaluating trade ${trade.id} (${trade.symbol}) for EOD closure...`);
-        await this.logger.logSuccess(`[EOD] Evaluating trade: ${trade.symbol}`, {
+        await this.logger.logSuccess(`Evaluating trade: ${trade.symbol}`, {
           tradeId: trade.id,
           symbol: trade.symbol,
           status: trade.status
@@ -126,7 +127,7 @@ export class EndOfDayManagerService {
             closed: false,
             error: tradeError instanceof Error ? tradeError.message : 'Unknown error'
           });
-          await this.logger.logError(`[EOD] Error processing trade ${trade.symbol}`, tradeError, {
+          await this.logger.logError(`Error processing trade ${trade.symbol}`, tradeError, {
             tradeId: trade.id
           });
         }
@@ -135,7 +136,7 @@ export class EndOfDayManagerService {
       console.log('✅ End-of-day management completed');
       console.log(`📊 Summary: ${closedTrades.length} trades closed, ${keptTrades.length} trades kept open, ${failedTrades.length} trades failed`);
       
-      await this.logger.logSuccess('[EOD] End-of-day management completed', {
+      await this.logger.logSuccess('End-of-day management completed', {
         totalTrades: activeTrades.length,
         closedCount: closedTrades.length,
         keptCount: keptTrades.length,
@@ -155,7 +156,7 @@ export class EndOfDayManagerService {
 
     } catch (error) {
       console.error('❌ Error in end-of-day management:', error);
-      await this.logger.logError('[EOD] Error in end-of-day management', error, { forceSimulation });
+      await this.logger.logError('Error in end-of-day management', error, { forceSimulation });
       throw error;
     }
   }
@@ -163,18 +164,18 @@ export class EndOfDayManagerService {
   private async evaluateTradeForEODClosure(trade: any, config: TradingConfigData, forceSimulation: boolean = false): Promise<any> {
     try {
       console.log(`🔍 Evaluating ${trade.symbol} for EOD closure...`);
-      await this.logger.logSuccess(`[EOD] Evaluating ${trade.symbol} for closure`, {
+      await this.logger.logSuccess(`Evaluating ${trade.symbol} for closure`, {
         tradeId: trade.id,
         symbol: trade.symbol,
         forceSimulation
       });
 
-      // Get current market price with enhanced error handling
+      // Get current market price
       let marketPrice;
       try {
         marketPrice = await this.bybitService.getMarketPrice(trade.symbol);
         console.log(`✅ Market price for ${trade.symbol}: $${marketPrice.price}`);
-        await this.logger.logSuccess(`[EOD] Market price retrieved for ${trade.symbol}: $${marketPrice.price}`, {
+        await this.logger.logSuccess(`Market price retrieved for ${trade.symbol}: $${marketPrice.price}`, {
           tradeId: trade.id,
           symbol: trade.symbol,
           marketPrice: marketPrice.price
@@ -182,7 +183,7 @@ export class EndOfDayManagerService {
       } catch (priceError) {
         const errorMsg = `Failed to get market price for ${trade.symbol}: ${priceError instanceof Error ? priceError.message : 'Unknown error'}`;
         console.error('❌ Market price error:', priceError);
-        await this.logger.logError(`[EOD] ${errorMsg}`, priceError, {
+        await this.logger.logError(errorMsg, priceError, {
           tradeId: trade.id,
           symbol: trade.symbol
         });
@@ -199,7 +200,7 @@ export class EndOfDayManagerService {
       const plPercentage = ((currentPrice - entryPrice) / entryPrice) * 100;
       
       console.log(`  Entry: $${entryPrice.toFixed(4)}, Current: $${currentPrice.toFixed(4)}, P&L: ${plPercentage.toFixed(2)}%`);
-      await this.logger.logSuccess(`[EOD] P&L calculated for ${trade.symbol}: ${plPercentage.toFixed(2)}%`, {
+      await this.logger.logSuccess(`P&L calculated for ${trade.symbol}: ${plPercentage.toFixed(2)}%`, {
         tradeId: trade.id,
         symbol: trade.symbol,
         entryPrice,
@@ -221,7 +222,7 @@ export class EndOfDayManagerService {
         console.log(`  Regular EOD: ${shouldClose ? 'CLOSING' : 'KEEPING'} (threshold: ${config.eod_close_premium_percent}%)`);
       }
       
-      await this.logger.logSuccess(`[EOD] Close decision for ${trade.symbol}: ${shouldClose ? 'CLOSING' : 'KEEPING'}`, {
+      await this.logger.logSuccess(`Close decision for ${trade.symbol}: ${shouldClose ? 'CLOSING' : 'KEEPING'}`, {
         tradeId: trade.id,
         symbol: trade.symbol,
         shouldClose,
@@ -234,7 +235,7 @@ export class EndOfDayManagerService {
         const reason = forceSimulation ? 'manual_eod_simulation' : 'eod_auto_close';
         console.log(`🔄 Closing position for ${reason}: ${trade.symbol} (P&L: ${plPercentage.toFixed(2)}%)`);
         
-        await this.logger.logSuccess(`[EOD] Closing position for ${reason}: ${trade.symbol}`, {
+        await this.logger.logSuccess(`Closing position for ${reason}: ${trade.symbol}`, {
           tradeId: trade.id,
           symbol: trade.symbol,
           entryPrice,
@@ -258,7 +259,7 @@ export class EndOfDayManagerService {
         const thresholdMsg = forceSimulation ? '0%' : `${config.eod_close_premium_percent}%`;
         console.log(`✅ Keeping position open: ${trade.symbol} (P&L ${forceSimulation ? 'not above' : 'above'} ${thresholdMsg})`);
         
-        await this.logger.logSuccess(`[EOD] Keeping position open: ${trade.symbol}`, {
+        await this.logger.logSuccess(`Keeping position open: ${trade.symbol}`, {
           tradeId: trade.id,
           symbol: trade.symbol,
           entryPrice,
@@ -281,7 +282,7 @@ export class EndOfDayManagerService {
 
     } catch (error) {
       console.error(`❌ Error evaluating trade ${trade.id} for EOD closure:`, error);
-      await this.logger.logError(`[EOD] Error evaluating trade for EOD closure: ${trade.symbol}`, error, {
+      await this.logger.logError(`Error evaluating trade for EOD closure: ${trade.symbol}`, error, {
         tradeId: trade.id
       });
       return {
@@ -296,7 +297,7 @@ export class EndOfDayManagerService {
   private async closePosition(trade: any, closePrice: number, reason: string): Promise<any> {
     try {
       console.log(`📤 Placing market sell order for ${trade.symbol}...`);
-      await this.logger.logSuccess(`[EOD] Placing market sell order for ${trade.symbol}`, {
+      await this.logger.logSuccess(`Placing market sell order for ${trade.symbol}`, {
         tradeId: trade.id,
         symbol: trade.symbol,
         closePrice,
@@ -318,7 +319,7 @@ export class EndOfDayManagerService {
       try {
         sellOrder = await this.bybitService.placeOrder(sellOrderParams);
         console.log('✅ Bybit sell order response:', sellOrder);
-        await this.logger.logSuccess(`[EOD] Bybit sell order response received for ${trade.symbol}`, {
+        await this.logger.logSuccess(`Bybit sell order response received for ${trade.symbol}`, {
           tradeId: trade.id,
           symbol: trade.symbol,
           sellOrder: {
@@ -330,7 +331,7 @@ export class EndOfDayManagerService {
       } catch (orderError) {
         const errorMsg = `Bybit sell order failed for ${trade.symbol}: ${orderError instanceof Error ? orderError.message : 'Unknown error'}`;
         console.error('❌ Bybit sell order error:', orderError);
-        await this.logger.log('order_failed', `[EOD] ${errorMsg}`, {
+        await this.logger.log('order_failed', errorMsg, {
           tradeId: trade.id,
           symbol: trade.symbol,
           error: orderError instanceof Error ? orderError.message : 'Unknown error',
@@ -345,7 +346,7 @@ export class EndOfDayManagerService {
         const profitLoss = (closePrice - entryPrice) * sellQuantity;
         
         console.log(`💰 P&L for ${trade.symbol}: $${profitLoss.toFixed(2)}`);
-        await this.logger.logSuccess(`[EOD] P&L calculated for ${trade.symbol}: $${profitLoss.toFixed(2)}`, {
+        await this.logger.logSuccess(`P&L calculated for ${trade.symbol}: $${profitLoss.toFixed(2)}`, {
           tradeId: trade.id,
           symbol: trade.symbol,
           entryPrice,
@@ -366,13 +367,13 @@ export class EndOfDayManagerService {
 
         if (updateError) {
           console.error(`❌ Error updating closed trade ${trade.id}:`, updateError);
-          await this.logger.logError(`[EOD] Error updating closed trade: ${trade.symbol}`, updateError, {
+          await this.logger.logError(`Error updating closed trade: ${trade.symbol}`, updateError, {
             tradeId: trade.id
           });
           throw updateError;
         } else {
           console.log(`✅ Position closed: ${trade.symbol}, P&L: $${profitLoss.toFixed(2)}`);
-          await this.logger.log('position_closed', `[EOD] ${reason}: ${trade.symbol}`, {
+          await this.logger.log('position_closed', `${reason}: ${trade.symbol}`, {
             tradeId: trade.id,
             symbol: trade.symbol,
             entryPrice,
@@ -388,7 +389,7 @@ export class EndOfDayManagerService {
       } else {
         const errorMsg = `Failed to place sell order - ${sellOrder?.retMsg || 'no order ID returned'} (Code: ${sellOrder?.retCode})`;
         console.error('❌ Sell order failed:', errorMsg);
-        await this.logger.log('order_failed', `[EOD] ${errorMsg}`, {
+        await this.logger.log('order_failed', errorMsg, {
           tradeId: trade.id,
           symbol: trade.symbol,
           sellOrder
@@ -398,7 +399,7 @@ export class EndOfDayManagerService {
 
     } catch (error) {
       console.error(`❌ Error closing position for trade ${trade.id}:`, error);
-      await this.logger.logError(`[EOD] Failed to close position: ${trade.symbol}`, error, {
+      await this.logger.logError(`Failed to close position: ${trade.symbol}`, error, {
         tradeId: trade.id
       });
       throw error;

@@ -11,7 +11,6 @@ export class BybitService {
   constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
-    // Use Bybit demo trading URL by default
     this.baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
     
     console.log(`🔧 BybitService initialized with ${isDemoTrading ? 'DEMO' : 'MAINNET'} trading URL: ${this.baseUrl}`);
@@ -26,7 +25,7 @@ export class BybitService {
   async getAccountBalance(): Promise<any> {
     try {
       console.log('💰 [BYBIT] Getting account balance...');
-      await this.logger?.log('signal_processed', '[BYBIT] Getting account balance');
+      await this.logger?.logSuccess('[BYBIT] Getting account balance');
       
       const request = {
         endpoint: '/v5/account/wallet-balance',
@@ -49,7 +48,7 @@ export class BybitService {
   async getMarketPrice(symbol: string): Promise<any> {
     try {
       console.log(`📊 [BYBIT] Getting market price for ${symbol}...`);
-      await this.logger?.log('signal_processed', `[BYBIT] Getting market price for ${symbol}`);
+      await this.logger?.logSuccess(`[BYBIT] Getting market price for ${symbol}`);
       
       const request = {
         endpoint: '/v5/market/tickers',
@@ -68,12 +67,11 @@ export class BybitService {
         const ticker = response.result.list[0];
         const price = parseFloat(ticker.lastPrice);
         
-        console.log(`✅ [BYBIT] Market price for ${symbol}: $${price} (from lastPrice: ${ticker.lastPrice})`);
+        console.log(`✅ [BYBIT] Market price for ${symbol}: $${price}`);
         await this.logger?.logSuccess(`[BYBIT] Market price for ${symbol}: $${price}`, { symbol, price });
         
-        // Validate that we got a valid price
         if (isNaN(price) || price <= 0) {
-          const errorMsg = `Invalid price received for ${symbol}: ${ticker.lastPrice} -> ${price}`;
+          const errorMsg = `Invalid price received for ${symbol}: ${ticker.lastPrice}`;
           console.error(`❌ [BYBIT] ${errorMsg}`);
           await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg));
           throw new Error(errorMsg);
@@ -175,9 +173,9 @@ export class BybitService {
       console.log(`🔗 [BYBIT] Request URL: ${url}`);
       if (body) console.log(`📦 [BYBIT] Request Body: ${body}`);
 
-      // Add timeout and better error handling
+      // Increase timeout to 30 seconds and better error handling
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
       const response = await fetch(url, {
         method: request.method,
@@ -188,20 +186,14 @@ export class BybitService {
 
       clearTimeout(timeoutId);
 
-      const data = await response.json();
-
       if (!response.ok) {
         const errorMsg = `HTTP Error: ${response.status} ${response.statusText}`;
         console.error(`❌ [BYBIT] ${errorMsg}`);
-        console.error(`❌ [BYBIT] Response body:`, data);
-        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { 
-          status: response.status, 
-          statusText: response.statusText, 
-          data 
-        });
-        throw new Error(`Bybit API ${errorMsg} - ${data.retMsg || response.statusText}`);
+        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg));
+        throw new Error(`Bybit API ${errorMsg}`);
       }
 
+      const data = await response.json();
       console.log(`✅ [BYBIT] API Response:`, data);
       
       if (data.retCode !== 0) {
@@ -215,7 +207,7 @@ export class BybitService {
 
     } catch (error) {
       if (error.name === 'AbortError') {
-        const timeoutMsg = 'Request timeout (10 seconds)';
+        const timeoutMsg = 'Request timeout (30 seconds)';
         console.error(`❌ [BYBIT] ${timeoutMsg}`);
         await this.logger?.logError(`[BYBIT] ${timeoutMsg}`, error);
         throw new Error(`Bybit API timeout`);

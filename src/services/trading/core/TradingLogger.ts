@@ -4,10 +4,10 @@ import { supabase } from '@/integrations/supabase/client';
 export class TradingLogger {
   private userId: string;
 
-  // Valid log types from database constraint
+  // Valid log types from database constraint - ONLY these are allowed
   private static readonly VALID_LOG_TYPES = [
     'signal_processed',
-    'trade_executed',
+    'trade_executed', 
     'trade_filled',
     'position_closed',
     'system_error',
@@ -19,38 +19,36 @@ export class TradingLogger {
     'order_rejected'
   ] as const;
 
-  // Mapping of common log types to valid database types
-  private static readonly LOG_TYPE_MAPPING: Record<string, typeof TradingLogger.VALID_LOG_TYPES[number]> = {
-    'manual_close': 'position_closed',
-    'eod_close': 'position_closed',
-    'eod_started': 'signal_processed',
-    'eod_completed': 'signal_processed',
-    'system_info': 'signal_processed',
-    'engine_started': 'signal_processed',
-    'engine_stopped': 'signal_processed',
-    'close_error': 'execution_error',
-    'close_rejected': 'order_rejected',
-    'trade_closed': 'position_closed',
-    'debug': 'signal_processed',
-    'info': 'signal_processed'
-  };
-
   constructor(userId: string) {
     this.userId = userId;
   }
 
   async log(type: string, message: string, data?: any): Promise<void> {
     try {
-      // Map the type to a valid database type
-      const validType = TradingLogger.LOG_TYPE_MAPPING[type] || 
-        (TradingLogger.VALID_LOG_TYPES.includes(type as any) ? type : 'signal_processed');
+      // Always use a valid log type - no mapping, just use valid ones
+      let validType: string;
+      
+      if (type.includes('error') || type.includes('fail')) {
+        validType = 'system_error';
+      } else if (type.includes('order') && type.includes('place')) {
+        validType = 'order_placed';
+      } else if (type.includes('order') && type.includes('fail')) {
+        validType = 'order_failed';
+      } else if (type.includes('close') || type.includes('position')) {
+        validType = 'position_closed';
+      } else if (type.includes('trade')) {
+        validType = 'trade_executed';
+      } else {
+        validType = 'signal_processed'; // Default fallback
+      }
 
-      console.log(`📝 LOGGING: [${validType}] ${message}`, data);
+      console.log(`📝 LOGGING: [${validType}] ${message}`);
+      if (data) console.log('📝 LOG DATA:', data);
 
       const logEntry = {
         user_id: this.userId,
         log_type: validType,
-        message,
+        message: message,
         data: data || null,
       };
 
