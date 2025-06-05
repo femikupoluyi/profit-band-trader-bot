@@ -160,7 +160,7 @@ export class MainTradingEngine {
 
       // 2.4 Signal Execution
       console.log('\n⚡ Step 4: Signal Execution');
-      await this.signalExecutor.executeSignals(config);
+      await this.signalExecutor.executeSignal(config);
 
       // 2.5 End-of-Day Management
       console.log('\n🌅 Step 5: End-of-Day Management');

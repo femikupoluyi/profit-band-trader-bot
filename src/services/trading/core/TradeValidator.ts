@@ -5,7 +5,7 @@ export class TradeValidator {
   static validateTradeParameters(symbol: string, quantity: number, entryPrice: number, config: TradingConfigData): boolean {
     // Check minimum notional
     const orderValue = quantity * entryPrice;
-    const minNotional = config.minimum_notional_per_symbol[symbol] || 10;
+    const minNotional = config.minimum_notional_per_symbol?.[symbol] || 10;
     
     if (orderValue < minNotional) {
       console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minNotional}`);
@@ -24,7 +24,7 @@ export class TradeValidator {
   static calculateQuantity(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfigData): number {
     // Calculate quantity with proper formatting
     const rawQuantity = orderAmount / entryPrice;
-    const increment = config.quantity_increment_per_symbol[symbol] || 0.0001;
+    const increment = config.quantity_increment_per_symbol?.[symbol] || 0.0001;
     const adjustedQuantity = Math.floor(rawQuantity / increment) * increment;
     
     console.log(`  Raw Quantity: ${rawQuantity.toFixed(6)}`);
