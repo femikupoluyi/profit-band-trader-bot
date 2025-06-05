@@ -84,12 +84,12 @@ const DashboardWithSidebar = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full bg-gray-100">
         <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
         <div className="flex-1 flex flex-col">
           <DashboardHeader userEmail={user?.email} onSignOut={handleSignOut} />
-          <main className="flex-1 bg-gray-50">
-            <div className="flex items-center gap-4 p-4 border-b bg-white">
+          <main className="flex-1 bg-gray-100">
+            <div className="flex items-center gap-4 p-4 border-b bg-white shadow-sm">
               <SidebarTrigger />
               <h2 className="text-lg font-semibold text-gray-900">
                 {navigationItems.find(item => item.id === activeTab)?.title || 'Trading Dashboard'}

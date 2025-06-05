@@ -55,13 +55,13 @@ const navigationItems = [
 
 export function AppSidebar({ activeTab, onTabChange }: SidebarNavigationProps) {
   return (
-    <Sidebar className="border-r bg-gradient-to-b from-slate-50 to-slate-100 shadow-sm">
+    <Sidebar className="border-r bg-blue-400 shadow-lg">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-slate-700 font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+          <SidebarGroupLabel className="text-white font-bold text-lg px-4 py-3 bg-blue-500 bg-opacity-50">
             Trading Dashboard
           </SidebarGroupLabel>
-          <SidebarGroupContent>
+          <SidebarGroupContent className="mt-2">
             <SidebarMenu>
               {navigationItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
@@ -71,16 +71,16 @@ export function AppSidebar({ activeTab, onTabChange }: SidebarNavigationProps) {
                     className="group"
                   >
                     <Button
-                      variant={activeTab === item.id ? "default" : "ghost"}
-                      className={`w-full justify-start transition-all duration-200 ${
+                      variant="ghost"
+                      className={`w-full justify-start transition-all duration-200 mx-2 my-1 ${
                         activeTab === item.id 
-                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md hover:from-blue-700 hover:to-indigo-700" 
-                          : "text-slate-700 hover:bg-blue-50 hover:text-blue-700 border-l-4 border-transparent hover:border-blue-500"
+                          ? "bg-white text-blue-600 shadow-md hover:bg-gray-50" 
+                          : "text-white hover:bg-blue-300 hover:bg-opacity-50"
                       }`}
                       onClick={() => onTabChange(item.id)}
                     >
                       <item.icon className={`h-4 w-4 mr-3 transition-colors ${
-                        activeTab === item.id ? "text-white" : "text-slate-600 group-hover:text-blue-600"
+                        activeTab === item.id ? "text-blue-600" : "text-white"
                       }`} />
                       <span className="font-medium">{item.title}</span>
                     </Button>

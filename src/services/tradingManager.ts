@@ -65,6 +65,14 @@ class TradingManager {
     }
     return engine.manualClosePosition(tradeId);
   }
+
+  async simulateEndOfDay(userId: string): Promise<void> {
+    const engine = this.engines.get(userId);
+    if (!engine) {
+      throw new Error('Trading engine not running for user');
+    }
+    return engine.simulateEndOfDay();
+  }
 }
 
 export const tradingManager = new TradingManager();
