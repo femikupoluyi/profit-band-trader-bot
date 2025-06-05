@@ -99,15 +99,25 @@ class TradingManager {
   }
 
   async manualClosePosition(userId: string, tradeId: string): Promise<void> {
-    console.log(`🔄 Manual close requested for user ${userId}, trade ${tradeId}`);
+    console.log(`🔄 MANUAL CLOSE REQUESTED - User: ${userId}, Trade: ${tradeId}`);
     
     try {
+      // Enhanced logging at the start
+      await this.logDebug(userId, 'MANUAL CLOSE START', `Manual close requested for trade ${tradeId}`, {
+        userId,
+        tradeId,
+        timestamp: new Date().toISOString(),
+        action: 'manual_close_init'
+      });
+
       // Check if engine is running, if not create a temporary one
       let engine = this.engines.get(userId);
       let isTemporaryEngine = false;
       
       if (!engine) {
-        console.log('No running engine found, creating temporary engine for manual close');
+        console.log('🔧 No running engine found, creating temporary engine for manual close');
+        await this.logDebug(userId, 'ENGINE CREATION', 'Creating temporary engine for manual close', { tradeId });
+        
         try {
           // Get user's API credentials
           const { data: credentials, error } = await supabase
@@ -117,12 +127,14 @@ class TradingManager {
             .single();
 
           if (error) {
-            console.error('Database error fetching credentials:', error);
+            console.error('❌ Database error fetching credentials:', error);
+            await this.logDebug(userId, 'CREDENTIAL ERROR', `Database error: ${error.message}`, { tradeId, error: error.message });
             throw new Error(`Database error: ${error.message}`);
           }
 
           if (!credentials) {
-            console.error('No API credentials found for user:', userId);
+            console.error('❌ No API credentials found for user:', userId);
+            await this.logDebug(userId, 'NO CREDENTIALS', 'No API credentials found', { tradeId });
             throw new Error('User API credentials not found. Please configure your API keys first.');
           }
 
@@ -131,79 +143,67 @@ class TradingManager {
           await engine.initialize();
           isTemporaryEngine = true;
           console.log('✅ Temporary engine created for manual close');
+          await this.logDebug(userId, 'ENGINE CREATED', 'Temporary engine created successfully', { tradeId });
         } catch (error) {
-          console.error('Failed to create temporary engine for manual close:', error);
+          console.error('❌ Failed to create temporary engine for manual close:', error);
           
-          // Log to database
-          await supabase
-            .from('trading_logs')
-            .insert({
-              user_id: userId,
-              log_type: 'system_error',
-              message: `Failed to create engine for manual close: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              data: { tradeId, error: error instanceof Error ? error.message : 'Unknown error' }
-            });
+          await this.logDebug(userId, 'ENGINE CREATION FAILED', `Failed to create engine: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+            tradeId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
           
           throw new Error('Failed to initialize trading engine for manual close');
         }
+      } else {
+        console.log('✅ Using existing running engine for manual close');
+        await this.logDebug(userId, 'USING EXISTING ENGINE', 'Using existing running engine', { tradeId });
       }
       
-      // Execute manual close
-      console.log('🔄 Executing manual close...');
-      await engine.manualClosePosition(tradeId);
-      console.log('✅ Manual close completed successfully');
+      // Execute manual close with enhanced logging
+      console.log('🔄 EXECUTING MANUAL CLOSE...');
+      await this.logDebug(userId, 'EXECUTING CLOSE', 'Starting manual close execution', { tradeId });
       
-      // Log success
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: userId,
-          log_type: 'position_closed',
-          message: `Manual close completed successfully for trade ${tradeId}`,
-          data: { tradeId, method: 'manual_close' }
-        });
+      await engine.manualClosePosition(tradeId);
+      
+      console.log('✅ MANUAL CLOSE COMPLETED SUCCESSFULLY');
+      await this.logDebug(userId, 'MANUAL CLOSE SUCCESS', 'Manual close completed successfully', { 
+        tradeId,
+        completedAt: new Date().toISOString()
+      });
       
     } catch (error) {
-      console.error('❌ Manual close failed:', error);
+      console.error('❌ MANUAL CLOSE FAILED:', error);
       
-      // Log error to database
-      try {
-        await supabase
-          .from('trading_logs')
-          .insert({
-            user_id: userId,
-            log_type: 'system_error',
-            message: `Manual close failed for trade ${tradeId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            data: { tradeId, error: error instanceof Error ? error.message : 'Unknown error' }
-          });
-      } catch (logError) {
-        console.error('Failed to log manual close error:', logError);
-      }
+      // Enhanced error logging
+      await this.logDebug(userId, 'MANUAL CLOSE FAILED', `Manual close failed: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+        tradeId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
       
       throw error;
     }
   }
 
   async simulateEndOfDay(userId: string): Promise<void> {
-    console.log('🌅 Manual EOD simulation requested for user:', userId);
+    console.log('🌅 MANUAL EOD SIMULATION REQUESTED - User:', userId);
     
     try {
-      // Always log the start of simulation
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: userId,
-          log_type: 'signal_processed',
-          message: 'Manual EOD simulation started',
-          data: { simulationType: 'manual_eod', timestamp: new Date().toISOString() }
-        });
+      // Enhanced logging at the start
+      await this.logDebug(userId, 'EOD SIMULATION START', 'Manual EOD simulation requested', {
+        userId,
+        timestamp: new Date().toISOString(),
+        action: 'eod_simulation_init'
+      });
       
       // Check if engine is running, if not create a temporary one for EOD
       let engine = this.engines.get(userId);
-      let isTemporaryEngine = false;
       
       if (!engine) {
-        console.log('No running engine found, creating temporary engine for EOD simulation');
+        console.log('🔧 No running engine found, creating temporary engine for EOD simulation');
+        await this.logDebug(userId, 'EOD ENGINE CREATION', 'Creating temporary engine for EOD simulation', {});
+        
         try {
           // Get user's API credentials
           const { data: credentials, error } = await supabase
@@ -213,70 +213,79 @@ class TradingManager {
             .single();
 
           if (error) {
-            console.error('Database error fetching credentials:', error);
+            console.error('❌ Database error fetching credentials:', error);
+            await this.logDebug(userId, 'EOD CREDENTIAL ERROR', `Database error: ${error.message}`, { error: error.message });
             throw new Error(`Database error: ${error.message}`);
           }
 
           if (!credentials) {
-            console.error('No API credentials found for user:', userId);
+            console.error('❌ No API credentials found for user:', userId);
+            await this.logDebug(userId, 'EOD NO CREDENTIALS', 'No API credentials found', {});
             throw new Error('User API credentials not found. Please configure your API keys first.');
           }
 
           const bybitService = new BybitService(credentials.api_key, credentials.api_secret, credentials.testnet || true);
           engine = new MainTradingEngine(userId, bybitService);
           await engine.initialize();
-          isTemporaryEngine = true;
           console.log('✅ Temporary engine created for EOD simulation');
+          await this.logDebug(userId, 'EOD ENGINE CREATED', 'Temporary engine created successfully for EOD', {});
         } catch (error) {
-          console.error('Failed to create temporary engine for EOD:', error);
+          console.error('❌ Failed to create temporary engine for EOD:', error);
           
-          // Log error to database
-          await supabase
-            .from('trading_logs')
-            .insert({
-              user_id: userId,
-              log_type: 'system_error',
-              message: `Failed to create engine for EOD simulation: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              data: { error: error instanceof Error ? error.message : 'Unknown error' }
-            });
+          await this.logDebug(userId, 'EOD ENGINE CREATION FAILED', `Failed to create engine: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
           
           throw new Error('Failed to initialize trading engine for EOD simulation');
         }
+      } else {
+        console.log('✅ Using existing running engine for EOD simulation');
+        await this.logDebug(userId, 'EOD USING EXISTING ENGINE', 'Using existing running engine for EOD', {});
       }
       
-      // Execute EOD simulation
-      console.log('🌅 Executing EOD simulation...');
-      await engine.simulateEndOfDay();
-      console.log('✅ EOD simulation completed successfully');
+      // Execute EOD simulation with enhanced logging
+      console.log('🌅 EXECUTING EOD SIMULATION...');
+      await this.logDebug(userId, 'EOD EXECUTING', 'Starting EOD simulation execution', {});
       
-      // Log success
+      await engine.simulateEndOfDay();
+      
+      console.log('✅ EOD SIMULATION COMPLETED SUCCESSFULLY');
+      await this.logDebug(userId, 'EOD SIMULATION SUCCESS', 'Manual EOD simulation completed successfully', {
+        completedAt: new Date().toISOString()
+      });
+      
+    } catch (error) {
+      console.error('❌ EOD SIMULATION FAILED:', error);
+      
+      // Enhanced error logging
+      await this.logDebug(userId, 'EOD SIMULATION FAILED', `EOD simulation failed: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
+      
+      throw error;
+    }
+  }
+
+  private async logDebug(userId: string, type: string, message: string, data?: any): Promise<void> {
+    try {
+      console.log(`🔍 DEBUG LOG [${type}]: ${message}`, data);
+      
       await supabase
         .from('trading_logs')
         .insert({
           user_id: userId,
-          log_type: 'position_closed',
-          message: 'Manual EOD simulation completed successfully',
-          data: { simulationType: 'manual_eod_completed', timestamp: new Date().toISOString() }
+          log_type: 'signal_processed',
+          message: `[${type}] ${message}`,
+          data: {
+            debugType: type,
+            ...data,
+            timestamp: new Date().toISOString()
+          }
         });
-      
     } catch (error) {
-      console.error('❌ EOD simulation failed:', error);
-      
-      // Log error to database
-      try {
-        await supabase
-          .from('trading_logs')
-          .insert({
-            user_id: userId,
-            log_type: 'system_error',
-            message: `EOD simulation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            data: { error: error instanceof Error ? error.message : 'Unknown error' }
-          });
-      } catch (logError) {
-        console.error('Failed to log EOD simulation error:', logError);
-      }
-      
-      throw error;
+      console.error('❌ Failed to log debug message:', error);
     }
   }
 }
