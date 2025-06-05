@@ -10,6 +10,10 @@ export class EngineLifecycleManager {
   private runningEngines: Map<string, TradingEngine> = new Map();
 
   async startEngine(userId: string): Promise<void> {
+    if (!userId) {
+      throw new Error('Invalid userId provided to startEngine');
+    }
+
     try {
       console.log(`🚀 [EngineLifecycleManager] Starting trading for user: ${userId}`);
       const logger = new TradingLogger(userId);
@@ -21,7 +25,7 @@ export class EngineLifecycleManager {
         return;
       }
 
-      // Get user's trading config
+      // Get user's trading config with validation
       const config = await UserConfigManager.getUserTradingConfig(userId);
       if (!config) {
         const errorMsg = 'No trading configuration found';
@@ -76,6 +80,10 @@ export class EngineLifecycleManager {
   }
 
   async stopEngine(userId: string): Promise<void> {
+    if (!userId) {
+      throw new Error('Invalid userId provided to stopEngine');
+    }
+
     try {
       console.log(`🛑 [EngineLifecycleManager] Stopping trading for user: ${userId}`);
       const logger = new TradingLogger(userId);
@@ -103,6 +111,10 @@ export class EngineLifecycleManager {
   }
 
   async restartEngine(userId: string): Promise<void> {
+    if (!userId) {
+      throw new Error('Invalid userId provided to restartEngine');
+    }
+
     try {
       console.log(`🔄 [EngineLifecycleManager] Restarting trading for user: ${userId}`);
       const logger = new TradingLogger(userId);
@@ -123,6 +135,11 @@ export class EngineLifecycleManager {
   }
 
   isEngineRunning(userId: string): boolean {
+    if (!userId) {
+      console.warn('Invalid userId provided to isEngineRunning');
+      return false;
+    }
+
     const isRunning = this.runningEngines.has(userId) && 
                      this.runningEngines.get(userId)?.isRunning() === true;
     console.log(`🔍 [EngineLifecycleManager] User ${userId} trading status: ${isRunning ? 'RUNNING' : 'STOPPED'}`);
@@ -130,6 +147,21 @@ export class EngineLifecycleManager {
   }
 
   getRunningEngine(userId: string): TradingEngine | undefined {
+    if (!userId) {
+      console.warn('Invalid userId provided to getRunningEngine');
+      return undefined;
+    }
     return this.runningEngines.get(userId);
+  }
+
+  // Cleanup method to prevent memory leaks
+  cleanup(): void {
+    console.log('🧹 [EngineLifecycleManager] Cleaning up running engines...');
+    this.runningEngines.clear();
+  }
+
+  // Get count of running engines for monitoring
+  getRunningEnginesCount(): number {
+    return this.runningEngines.size;
   }
 }
