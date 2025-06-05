@@ -15,6 +15,12 @@ export class ManualCloseService {
     try {
       console.log(`🔄 Manual close requested for trade ${tradeId}`);
 
+      // Log the start of manual close attempt
+      await this.logActivity('signal_processed', `Manual close attempt started for trade ${tradeId}`, { 
+        tradeId,
+        action: 'manual_close_start'
+      });
+
       // Get the trade details
       const { data: trade, error } = await supabase
         .from('trades')
@@ -24,33 +30,46 @@ export class ManualCloseService {
         .single();
 
       if (error || !trade) {
+        const errorMsg = `Trade not found for manual close: ${tradeId}`;
         console.error('Trade not found:', error);
-        await this.logActivity('system_error', `Trade not found for manual close: ${tradeId}`, { 
+        await this.logActivity('system_error', errorMsg, { 
           tradeId, 
-          error: error?.message || 'Trade not found' 
+          error: error?.message || 'Trade not found',
+          action: 'trade_lookup_failed'
         });
-        throw new Error('Trade not found');
+        throw new Error(errorMsg);
       }
+
+      console.log(`📊 Trade found: ${trade.symbol}, Status: ${trade.status}, Entry: $${trade.price}, Qty: ${trade.quantity}`);
 
       if (trade.status !== 'filled') {
         const errorMsg = `Cannot close trade that is not filled. Status: ${trade.status}`;
         console.error(errorMsg);
         await this.logActivity('order_rejected', errorMsg, { 
           tradeId, 
-          currentStatus: trade.status 
+          currentStatus: trade.status,
+          action: 'invalid_status'
         });
         throw new Error(errorMsg);
       }
 
       // Get current market price
+      console.log(`📈 Getting current market price for ${trade.symbol}...`);
       const marketData = await this.bybitService.getMarketPrice(trade.symbol);
       const currentPrice = marketData.price;
       
       console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
       console.log(`  Using MARKET order for immediate execution`);
 
+      // Calculate P&L before closing
+      const entryPrice = parseFloat(trade.price.toString());
+      const quantity = parseFloat(trade.quantity.toString());
+      const profit = (currentPrice - entryPrice) * quantity;
+
+      console.log(`💰 P&L calculation: Entry=$${entryPrice}, Current=$${currentPrice}, Qty=${quantity}, P&L=$${profit.toFixed(2)}`);
+
       try {
-        // Place MARKET sell order for immediate execution (as specified in requirements)
+        // Place MARKET sell order for immediate execution
         const sellOrderParams = {
           category: 'spot' as const,
           symbol: trade.symbol,
@@ -60,13 +79,21 @@ export class ManualCloseService {
         };
 
         console.log('📝 Placing MARKET sell order:', sellOrderParams);
+        
+        // Log the order attempt
+        await this.logActivity('signal_processed', `Placing market sell order for ${trade.symbol}`, {
+          tradeId,
+          symbol: trade.symbol,
+          orderParams: sellOrderParams,
+          expectedProfit: profit,
+          action: 'placing_sell_order'
+        });
+
         const sellResult = await this.bybitService.placeOrder(sellOrderParams);
+        console.log('Sell order result:', sellResult);
 
         if (sellResult && sellResult.retCode === 0) {
-          // Calculate P&L
-          const entryPrice = parseFloat(trade.price.toString());
-          const quantity = parseFloat(trade.quantity.toString());
-          const profit = (currentPrice - entryPrice) * quantity;
+          console.log(`✅ Market sell order placed successfully: ${sellResult.result?.orderId || 'No order ID'}`);
 
           // Update trade as closed
           const { error: updateError } = await supabase
@@ -82,21 +109,34 @@ export class ManualCloseService {
             console.error('Database update error:', updateError);
             await this.logActivity('system_error', `Database update failed for manual close: ${trade.symbol}`, {
               tradeId,
-              error: updateError.message
+              error: updateError.message,
+              action: 'database_update_failed'
             });
             throw updateError;
           }
 
           console.log(`✅ Manual close completed: ${trade.symbol} P&L: $${profit.toFixed(2)}`);
 
-          await this.logActivity('position_closed', `Manual close for ${trade.symbol}`, {
+          await this.logActivity('position_closed', `Manual close completed for ${trade.symbol}`, {
             tradeId,
             symbol: trade.symbol,
             entryPrice,
             exitPrice: currentPrice,
             profit,
-            reason: 'manual_close_market_order'
+            profitPercent: ((currentPrice - entryPrice) / entryPrice * 100).toFixed(2),
+            reason: 'manual_close_market_order',
+            bybitOrderId: sellResult.result?.orderId || null,
+            action: 'manual_close_success'
           });
+
+          // Also log a summary for easy tracking
+          console.log(`🎯 MANUAL CLOSE SUCCESS SUMMARY:`);
+          console.log(`   Symbol: ${trade.symbol}`);
+          console.log(`   Entry Price: $${entryPrice.toFixed(4)}`);
+          console.log(`   Exit Price: $${currentPrice.toFixed(4)}`);
+          console.log(`   Quantity: ${quantity}`);
+          console.log(`   Profit: $${profit.toFixed(2)}`);
+          console.log(`   Profit %: ${((currentPrice - entryPrice) / entryPrice * 100).toFixed(2)}%`);
 
         } else {
           const errorMsg = `Market order failed: ${sellResult?.retMsg || 'Unknown error'}`;
@@ -104,7 +144,9 @@ export class ManualCloseService {
           await this.logActivity('order_failed', errorMsg, {
             tradeId,
             symbol: trade.symbol,
-            sellResult: sellResult
+            sellResult: sellResult,
+            retCode: sellResult?.retCode,
+            action: 'bybit_order_failed'
           });
           throw new Error(errorMsg);
         }
@@ -113,7 +155,8 @@ export class ManualCloseService {
         console.error(`❌ Market sell order failed:`, sellError);
         await this.logActivity('execution_error', `Market sell order failed for ${trade.symbol}`, {
           tradeId,
-          error: sellError instanceof Error ? sellError.message : 'Unknown sell error'
+          error: sellError instanceof Error ? sellError.message : 'Unknown sell error',
+          action: 'sell_order_exception'
         });
         throw sellError;
       }
@@ -122,7 +165,8 @@ export class ManualCloseService {
       console.error(`❌ Error in manual close:`, error);
       await this.logActivity('system_error', `Manual close failed for trade ${tradeId}`, {
         error: error instanceof Error ? error.message : 'Unknown error',
-        tradeId
+        tradeId,
+        action: 'manual_close_failed'
       });
       throw error;
     }
