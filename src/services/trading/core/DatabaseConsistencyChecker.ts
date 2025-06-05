@@ -136,15 +136,15 @@ export class DatabaseConsistencyChecker {
     if (config) {
       const issues = [];
       
-      if (config.max_order_amount_usd && parseFloat(config.max_order_amount_usd) <= 0) {
+      if (config.max_order_amount_usd && parseFloat(config.max_order_amount_usd.toString()) <= 0) {
         issues.push('max_order_amount_usd must be positive');
       }
       
-      if (config.take_profit_percent && parseFloat(config.take_profit_percent) <= 0) {
+      if (config.take_profit_percent && parseFloat(config.take_profit_percent.toString()) <= 0) {
         issues.push('take_profit_percent must be positive');
       }
       
-      if (config.max_active_pairs && parseInt(config.max_active_pairs) <= 0) {
+      if (config.max_active_pairs && parseInt(config.max_active_pairs.toString()) <= 0) {
         issues.push('max_active_pairs must be positive');
       }
 
