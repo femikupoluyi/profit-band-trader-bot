@@ -1,4 +1,3 @@
-
 import { TradingConfigManager, TradingConfig } from '../config/TradingConfigManager';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { PositionMonitorService } from './PositionMonitorService';
@@ -33,7 +32,7 @@ export class MainTradingEngine {
     // Initialize services (they will get config on each cycle)
     this.positionMonitor = new PositionMonitorService(userId, bybitService);
     this.marketScanner = new MarketDataScannerService(userId, bybitService);
-    this.signalAnalyzer = new SignalAnalysisService(userId);
+    this.signalAnalyzer = new SignalAnalysisService(userId, bybitService);
     this.signalExecutor = new SignalExecutionService(userId, bybitService);
     this.eodManager = new EndOfDayManagerService(userId, bybitService);
     this.manualCloseService = new ManualCloseService(userId, bybitService);
@@ -58,6 +57,8 @@ export class MainTradingEngine {
       auto_close_at_end_of_day: config.auto_close_at_end_of_day,
       eod_close_premium_percent: config.eod_close_premium_percentage,
       manual_close_premium_percent: config.manual_close_premium_percentage,
+      support_lower_bound_percent: config.support_lower_bound_percentage,
+      support_upper_bound_percent: config.support_upper_bound_percentage,
     };
   }
 
@@ -182,7 +183,7 @@ export class MainTradingEngine {
 
       // 2.3 Signal Analysis
       console.log('\n🔍 Step 3: Signal Analysis');
-      await this.signalAnalyzer.analyzeSignals(configData);
+      await this.signalAnalyzer.analyzeAndCreateSignals(configData);
 
       // 2.4 Signal Execution
       console.log('\n⚡ Step 4: Signal Execution');

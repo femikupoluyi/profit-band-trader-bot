@@ -66,11 +66,15 @@ export class SignalAnalysisService {
 
       // Analyze support levels
       const priceHistory = recentData.map(d => parseFloat(d.price.toString()));
-      const supportLevel = this.supportLevelAnalyzer.findStrongestSupportLevel(
-        priceHistory,
-        currentPrice,
-        config.support_lower_bound_percent || 5.0,
-        config.support_upper_bound_percent || 2.0
+      const supportLevel = this.supportLevelAnalyzer.identifySupportLevel(
+        priceHistory.map((price, index) => ({
+          low: price,
+          high: price,
+          open: price,
+          close: price,
+          volume: 0,
+          timestamp: Date.now() - (index * 1000)
+        }))
       );
 
       if (supportLevel) {
