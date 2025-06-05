@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { SupportLevel } from './supportLevelAnalyzer';
+import { SupportLevel } from './core/TypeDefinitions';
 
 export interface GeneratedSignal {
   symbol: string;

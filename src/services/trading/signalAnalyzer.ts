@@ -5,6 +5,7 @@ import { CandleDataService } from './candleDataService';
 import { SupportLevelAnalyzer } from './supportLevelAnalyzer';
 import { SignalGenerator } from './signalGenerator';
 import { PositionChecker } from './positionChecker';
+import { SupportLevel } from './core/TypeDefinitions';
 
 export class SignalAnalyzer {
   private userId: string;
@@ -67,10 +68,12 @@ export class SignalAnalyzer {
         console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(4)}`);
 
         // SIMPLIFIED SUPPORT ANALYSIS - Always create a basic support level
-        let supportLevel = {
+        let supportLevel: SupportLevel = {
           price: currentPrice * 0.995, // Support 0.5% below current price
           strength: 0.8,
-          touchCount: 3
+          timestamp: Date.now(),
+          touches: 3,
+          touchCount: 3 // For backward compatibility
         };
 
         // Try to get better support data if available

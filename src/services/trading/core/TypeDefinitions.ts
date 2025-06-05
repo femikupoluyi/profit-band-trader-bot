@@ -9,6 +9,7 @@ export type LogType =
   | 'signal_processed'
   | 'order_placed'
   | 'order_failed'
+  | 'order_rejected'
   | 'position_closed'
   | 'calculation_error'
   | 'execution_error'
@@ -70,6 +71,7 @@ export interface SupportLevel {
   strength: number;
   timestamp: number;
   touches: number;
+  touchCount?: number; // For backward compatibility
 }
 
 export interface OrderParams {

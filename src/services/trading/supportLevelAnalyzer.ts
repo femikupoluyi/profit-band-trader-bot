@@ -1,4 +1,6 @@
 
+import { SupportLevel } from './core/TypeDefinitions';
+
 export interface CandleData {
   open: number;
   high: number;
@@ -6,13 +8,6 @@ export interface CandleData {
   close: number;
   volume: number;
   timestamp: number;
-}
-
-export interface SupportLevel {
-  price: number;
-  strength: number;
-  timestamp: number;
-  touches: number;
 }
 
 export class SupportLevelAnalyzer {
@@ -47,7 +42,8 @@ export class SupportLevelAnalyzer {
           price,
           strength: touches / candles.length, // Normalize strength
           timestamp: Date.now(),
-          touches
+          touches,
+          touchCount: touches // For backward compatibility
         };
       }
     }
