@@ -1,5 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { LogType } from './TypeDefinitions';
 
 export class TradingLogger {
   private userId: string;
@@ -68,7 +69,17 @@ export class TradingLogger {
     await this.log('order_rejected', message, data);
   }
 
-  private async log(logType: string, message: string, data?: any): Promise<void> {
+  // Add the missing logTradeAction method that other services expect
+  async logTradeAction(message: string, symbol: string, data?: any): Promise<void> {
+    const enhancedData = {
+      symbol,
+      ...data
+    };
+    await this.log('trade_executed', message, enhancedData);
+  }
+
+  // Make log method public so it can be accessed by other services
+  async log(logType: LogType, message: string, data?: any): Promise<void> {
     try {
       console.log(`[${logType.toUpperCase()}] ${message}`, data || '');
       
