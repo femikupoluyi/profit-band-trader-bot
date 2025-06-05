@@ -1,6 +1,7 @@
 
 import { MainTradingEngine } from './trading/core/MainTradingEngine';
 import { BybitService } from './bybitService';
+import { supabase } from '@/integrations/supabase/client';
 
 class TradingManager {
   private engines: Map<string, MainTradingEngine> = new Map();
@@ -14,8 +15,19 @@ class TradingManager {
         await this.stopTradingForUser(userId);
       }
 
+      // Get user's API credentials
+      const { data: credentials, error } = await supabase
+        .from('api_credentials')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error || !credentials) {
+        throw new Error('User API credentials not found. Please configure your API keys first.');
+      }
+
       // Create and initialize new engine
-      const bybitService = new BybitService(userId);
+      const bybitService = new BybitService(credentials.api_key, credentials.api_secret, true);
       const engine = new MainTradingEngine(userId, bybitService);
       
       await engine.initialize();
@@ -76,7 +88,18 @@ class TradingManager {
     if (!engine) {
       console.log('No running engine found, creating temporary engine for EOD simulation');
       try {
-        const bybitService = new BybitService(userId);
+        // Get user's API credentials
+        const { data: credentials, error } = await supabase
+          .from('api_credentials')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (error || !credentials) {
+          throw new Error('User API credentials not found. Please configure your API keys first.');
+        }
+
+        const bybitService = new BybitService(credentials.api_key, credentials.api_secret, true);
         engine = new MainTradingEngine(userId, bybitService);
         await engine.initialize();
         isTemporaryEngine = true;
