@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -55,8 +54,8 @@ export class PositionMonitorService {
 
       console.log(`🔍 Checking order ${trade.bybit_order_id} for ${trade.symbol}`);
 
-      // Get order status from Bybit
-      const orderStatus = await this.bybitService.getOrderStatus(trade.symbol, trade.bybit_order_id);
+      // Get order status from Bybit - only pass the order ID
+      const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
       
       if (orderStatus.orderStatus === 'Filled') {
         console.log(`✅ Order ${trade.bybit_order_id} is filled`);
