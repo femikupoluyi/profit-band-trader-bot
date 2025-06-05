@@ -5,6 +5,7 @@ export interface ErrorContext {
   userId?: string;
   symbol?: string;
   operation?: string;
+  attempt?: number;
   data?: any;
 }
 
