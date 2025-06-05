@@ -7,7 +7,7 @@ import { UserConfigManager } from './UserConfigManager';
 
 export class EODSimulationManager {
   async simulateEndOfDay(userId: string, runningEngines: Map<string, TradingEngine>): Promise<void> {
-    if (!userId) {
+    if (!userId || typeof userId !== 'string') {
       throw new Error('Invalid userId provided to simulateEndOfDay');
     }
 
@@ -36,7 +36,7 @@ export class EODSimulationManager {
         }
 
         // Validate config is properly formatted
-        if (!config.trading_pairs || config.trading_pairs.length === 0) {
+        if (!config.trading_pairs || !Array.isArray(config.trading_pairs) || config.trading_pairs.length === 0) {
           const errorMsg = 'Invalid trading configuration: no trading pairs defined';
           console.error(`❌ [EODSimulationManager] ${errorMsg} for user: ${userId}`);
           await logger.logError(errorMsg, new Error(errorMsg), { userId });

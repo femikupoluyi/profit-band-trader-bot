@@ -4,7 +4,7 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 
 export class UserConfigManager {
   static async getUserTradingConfig(userId: string): Promise<TradingConfigData | null> {
-    if (!userId) {
+    if (!userId || typeof userId !== 'string') {
       console.error('Invalid userId provided to getUserTradingConfig');
       return null;
     }
@@ -32,7 +32,7 @@ export class UserConfigManager {
         max_order_amount_usd: this.validatePositiveNumber(config.max_order_amount_usd, 100),
         max_portfolio_exposure_percent: this.validatePositiveNumber(config.max_portfolio_exposure_percent, 25),
         daily_reset_time: config.daily_reset_time || '00:00:00',
-        chart_timeframe: config.chart_timeframe || '4h',
+        chart_timeframe: this.validateChartTimeframe(config.chart_timeframe),
         entry_offset_percent: this.validatePositiveNumber(config.entry_offset_percent, 0.5),
         take_profit_percent: this.validatePositiveNumber(config.take_profit_percent, 1.0),
         support_candle_count: this.validatePositiveInteger(config.support_candle_count, 128),
@@ -46,8 +46,14 @@ export class UserConfigManager {
         manual_close_premium_percent: this.validatePositiveNumber(config.manual_close_premium_percent, 0.1),
         support_lower_bound_percent: this.validatePositiveNumber(config.support_lower_bound_percent, 5.0),
         support_upper_bound_percent: this.validatePositiveNumber(config.support_upper_bound_percent, 2.0),
-        minimum_notional_per_symbol: this.validateJSONBObject(config.minimum_notional_per_symbol, { 'BTCUSDT': 10, 'ETHUSDT': 10 }),
-        quantity_increment_per_symbol: this.validateJSONBObject(config.quantity_increment_per_symbol, { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 })
+        minimum_notional_per_symbol: this.validateJSONBObject(
+          config.minimum_notional_per_symbol, 
+          { 'BTCUSDT': 10, 'ETHUSDT': 10, 'SOLUSDT': 10, 'BNBUSDT': 10, 'LTCUSDT': 10, 'POLUSDT': 10, 'FETUSDT': 10, 'XRPUSDT': 10, 'XLMUSDT': 10 }
+        ),
+        quantity_increment_per_symbol: this.validateJSONBObject(
+          config.quantity_increment_per_symbol, 
+          { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01, 'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1 }
+        )
       };
 
       return tradingConfig;
@@ -67,9 +73,17 @@ export class UserConfigManager {
     return isNaN(num) || num <= 0 ? defaultValue : num;
   }
 
+  private static validateChartTimeframe(timeframe: any): string {
+    const validTimeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d'];
+    return validTimeframes.includes(timeframe) ? timeframe : '4h';
+  }
+
   private static validateTradingPairs(pairs: any): string[] {
+    const validPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
+    
     if (Array.isArray(pairs) && pairs.length > 0) {
-      return pairs.filter(pair => typeof pair === 'string' && pair.length > 0);
+      const filtered = pairs.filter(pair => typeof pair === 'string' && validPairs.includes(pair));
+      return filtered.length > 0 ? filtered : ['BTCUSDT'];
     }
     return ['BTCUSDT'];
   }
