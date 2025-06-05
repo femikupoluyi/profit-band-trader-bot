@@ -1,11 +1,12 @@
-
 import { buildGetRequest, buildPostRequest } from '../../supabase/functions/bybit-api/requestBuilder';
 import { BybitRequest } from '../../supabase/functions/bybit-api/types';
+import { TradingLogger } from './trading/core/TradingLogger';
 
 export class BybitService {
   private apiKey: string;
   private apiSecret: string;
   private baseUrl: string;
+  private logger: TradingLogger | null = null;
 
   constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true) {
     this.apiKey = apiKey;
@@ -18,9 +19,15 @@ export class BybitService {
     console.log(`🔐 API Secret: ${apiSecret ? 'SET (' + apiSecret.length + ' chars)' : 'NOT SET'}`);
   }
 
+  setLogger(logger: TradingLogger): void {
+    this.logger = logger;
+  }
+
   async getAccountBalance(): Promise<any> {
     try {
       console.log('💰 [BYBIT] Getting account balance...');
+      await this.logger?.log('signal_processed', '[BYBIT] Getting account balance');
+      
       const request = {
         endpoint: '/v5/account/wallet-balance',
         method: 'GET' as const,
@@ -30,9 +37,11 @@ export class BybitService {
       };
       const result = await this.makeRequest(request);
       console.log('✅ [BYBIT] Account balance retrieved successfully');
+      await this.logger?.logSuccess('[BYBIT] Account balance retrieved successfully');
       return result;
     } catch (error) {
       console.error('❌ [BYBIT] Error getting account balance:', error);
+      await this.logger?.logError('[BYBIT] Error getting account balance', error);
       throw error;
     }
   }
@@ -40,6 +49,8 @@ export class BybitService {
   async getMarketPrice(symbol: string): Promise<any> {
     try {
       console.log(`📊 [BYBIT] Getting market price for ${symbol}...`);
+      await this.logger?.log('signal_processed', `[BYBIT] Getting market price for ${symbol}`);
+      
       const request = {
         endpoint: '/v5/market/tickers',
         method: 'GET' as const,
@@ -48,6 +59,7 @@ export class BybitService {
           symbol: symbol
         }
       };
+      
       const response = await this.makeRequest(request);
       
       console.log(`📈 [BYBIT] Raw API response for ${symbol}:`, response);
@@ -57,11 +69,14 @@ export class BybitService {
         const price = parseFloat(ticker.lastPrice);
         
         console.log(`✅ [BYBIT] Market price for ${symbol}: $${price} (from lastPrice: ${ticker.lastPrice})`);
+        await this.logger?.logSuccess(`[BYBIT] Market price for ${symbol}: $${price}`, { symbol, price });
         
         // Validate that we got a valid price
         if (isNaN(price) || price <= 0) {
-          console.error(`❌ [BYBIT] Invalid price received for ${symbol}: ${ticker.lastPrice} -> ${price}`);
-          throw new Error(`Invalid price received for ${symbol}: ${price}`);
+          const errorMsg = `Invalid price received for ${symbol}: ${ticker.lastPrice} -> ${price}`;
+          console.error(`❌ [BYBIT] ${errorMsg}`);
+          await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg));
+          throw new Error(errorMsg);
         }
         
         return {
@@ -69,11 +84,14 @@ export class BybitService {
           price: price
         };
       } else {
-        console.error(`❌ [BYBIT] Failed to get market price for ${symbol}:`, response);
-        throw new Error(`Failed to get market price for ${symbol}: ${response.retMsg || 'Unknown error'}`);
+        const errorMsg = `Failed to get market price for ${symbol}: ${response.retMsg || 'Unknown error'}`;
+        console.error(`❌ [BYBIT] ${errorMsg}`, response);
+        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { response });
+        throw new Error(errorMsg);
       }
     } catch (error) {
       console.error(`❌ [BYBIT] Error getting market price for ${symbol}:`, error);
+      await this.logger?.logError(`[BYBIT] Error getting market price for ${symbol}`, error);
       throw error;
     }
   }
@@ -83,6 +101,11 @@ export class BybitService {
       console.log(`📝 [BYBIT] Placing order for ${params.symbol}...`);
       console.log(`🔧 [BYBIT] Using ${this.baseUrl.includes('demo') ? 'DEMO' : 'MAINNET'} Trading URL: ${this.baseUrl}`);
       console.log(`📋 [BYBIT] Order params:`, params);
+      
+      await this.logger?.logTradeAction('Placing order', params.symbol, { 
+        orderParams: params,
+        tradingMode: this.baseUrl.includes('demo') ? 'DEMO' : 'MAINNET'
+      });
       
       const request = {
         endpoint: '/v5/order/create',
@@ -94,13 +117,19 @@ export class BybitService {
       
       if (result.retCode === 0) {
         console.log(`✅ [BYBIT] Order placed successfully for ${params.symbol}:`, result);
+        await this.logger?.log('order_placed', `[BYBIT] Order placed successfully for ${params.symbol}`, { 
+          result,
+          orderId: result.result?.orderId 
+        });
       } else {
         console.error(`❌ [BYBIT] Order failed for ${params.symbol}:`, result);
+        await this.logger?.log('order_failed', `[BYBIT] Order failed for ${params.symbol}`, { result });
       }
       
       return result;
     } catch (error) {
       console.error(`❌ [BYBIT] Error placing order for ${params.symbol}:`, error);
+      await this.logger?.logError(`[BYBIT] Error placing order for ${params.symbol}`, error);
       throw error;
     }
   }
@@ -146,31 +175,54 @@ export class BybitService {
       console.log(`🔗 [BYBIT] Request URL: ${url}`);
       if (body) console.log(`📦 [BYBIT] Request Body: ${body}`);
 
+      // Add timeout and better error handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const response = await fetch(url, {
         method: request.method,
         headers: headers,
-        body: body
+        body: body,
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       const data = await response.json();
 
       if (!response.ok) {
-        console.error(`❌ [BYBIT] HTTP Error: ${response.status} ${response.statusText}`);
+        const errorMsg = `HTTP Error: ${response.status} ${response.statusText}`;
+        console.error(`❌ [BYBIT] ${errorMsg}`);
         console.error(`❌ [BYBIT] Response body:`, data);
-        throw new Error(`Bybit API HTTP Error: ${response.status} - ${data.retMsg || response.statusText}`);
+        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { 
+          status: response.status, 
+          statusText: response.statusText, 
+          data 
+        });
+        throw new Error(`Bybit API ${errorMsg} - ${data.retMsg || response.statusText}`);
       }
 
       console.log(`✅ [BYBIT] API Response:`, data);
       
       if (data.retCode !== 0) {
-        console.error(`❌ [BYBIT] API Error Code ${data.retCode}: ${data.retMsg}`);
-        throw new Error(`Bybit API Error: ${data.retMsg} (Code: ${data.retCode})`);
+        const errorMsg = `API Error Code ${data.retCode}: ${data.retMsg}`;
+        console.error(`❌ [BYBIT] ${errorMsg}`);
+        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { data });
+        throw new Error(`Bybit ${errorMsg}`);
       }
 
       return data;
 
     } catch (error) {
+      if (error.name === 'AbortError') {
+        const timeoutMsg = 'Request timeout (10 seconds)';
+        console.error(`❌ [BYBIT] ${timeoutMsg}`);
+        await this.logger?.logError(`[BYBIT] ${timeoutMsg}`, error);
+        throw new Error(`Bybit API timeout`);
+      }
+      
       console.error('❌ [BYBIT] Request error:', error);
+      await this.logger?.logError('[BYBIT] Request error', error);
       throw error;
     }
   }
