@@ -45,3 +45,43 @@ export const VALID_CHART_TIMEFRAMES = [
 ] as const;
 
 export type ChartTimeframe = typeof VALID_CHART_TIMEFRAMES[number];
+
+// Add missing interfaces for better type safety
+export interface TradeRecord {
+  id: string;
+  user_id: string;
+  symbol: string;
+  side: TradeSide;
+  order_type: OrderType;
+  quantity: number;
+  price: number;
+  status: TradeStatus;
+  bybit_order_id?: string;
+  profit_loss?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TradingSignal {
+  id: string;
+  user_id: string;
+  symbol: string;
+  signal_type: SignalType;
+  price: number;
+  confidence?: number;
+  reasoning?: string;
+  processed: boolean;
+  created_at: string;
+}
+
+export interface ApiCredentials {
+  id: string;
+  user_id: string;
+  exchange_name: string;
+  api_key: string;
+  api_secret: string;
+  testnet: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}

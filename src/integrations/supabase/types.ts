@@ -1046,7 +1046,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      archive_old_trading_logs: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      cleanup_old_market_data: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
