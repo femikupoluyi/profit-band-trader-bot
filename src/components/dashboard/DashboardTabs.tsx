@@ -3,7 +3,7 @@ import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import TradingStats from './TradingStats';
 import TradingConfig from '@/components/trading/TradingConfig';
-import ActiveTrades from '@/components/dashboard/ActiveTrades';
+import ActiveTrades from './ActiveTrades';
 import TradeHistory from '@/components/trading/TradeHistory';
 import TradingLogs from '@/components/trading/TradingLogs';
 
@@ -57,7 +57,7 @@ const DashboardTabs = ({ user, userConfig, stats, isLoading, timeRange, onTimeRa
       </TabsContent>
 
       <TabsContent value="config" className="space-y-4">
-        {user && <TradingConfig userId={user.id} initialConfig={userConfig} />}
+        {user && <TradingConfig />}
       </TabsContent>
 
       <TabsContent value="history" className="space-y-4">
