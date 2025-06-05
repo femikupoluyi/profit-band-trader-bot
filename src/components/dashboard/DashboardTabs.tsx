@@ -1,10 +1,11 @@
+
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import TradingStats from './TradingStats';
-import TradingConfig from '@/components/trading/config/TradingConfig';
-import ActiveTrades from './ActiveTrades';
-import TradeHistory from './TradeHistory';
-import TradingLogs from './TradingLogs';
+import TradingConfig from '@/components/trading/TradingConfig';
+import ActiveTrades from '@/components/dashboard/ActiveTrades';
+import TradeHistory from '@/components/trading/TradeHistory';
+import TradingLogs from '@/components/trading/TradingLogs';
 
 import { User } from '@supabase/supabase-js';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
