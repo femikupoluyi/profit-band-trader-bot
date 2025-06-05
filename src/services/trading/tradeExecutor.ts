@@ -2,7 +2,7 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../bybitService';
 import { SignalProcessorService } from './signalProcessorService';
-import { SignalExecutionService } from './signalExecutionService';
+import { SignalExecutionService } from './core/SignalExecutionService';
 import { EndOfDayService } from './endOfDayService';
 
 export class TradeExecutor {

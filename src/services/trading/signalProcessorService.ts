@@ -1,6 +1,5 @@
-
 import { supabase } from '@/integrations/supabase/client';
-import { SignalExecutionService } from './signalExecutionService';
+import { SignalExecutionService } from './core/SignalExecutionService';
 
 export class SignalProcessorService {
   private userId: string;
