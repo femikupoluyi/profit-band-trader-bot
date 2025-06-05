@@ -31,7 +31,17 @@ export class TradingLogger {
     await this.log('system_info', message, data);
   }
 
-  private async log(logType: string, message: string, data?: any): Promise<void> {
+  // Add missing public methods that other services are trying to use
+  async logTradeAction(message: string, symbol: string, data?: any): Promise<void> {
+    await this.log('trade_executed', message, { symbol, ...data });
+  }
+
+  async logSignalProcessed(symbol: string, signalType: string, data?: any): Promise<void> {
+    await this.log('signal_processed', `Signal processed: ${signalType} for ${symbol}`, { symbol, signalType, ...data });
+  }
+
+  // Make log method public so other services can use it
+  async log(logType: string, message: string, data?: any): Promise<void> {
     try {
       // Validate log type against database constraints
       const validLogTypes = [
