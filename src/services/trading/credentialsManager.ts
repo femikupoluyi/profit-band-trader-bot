@@ -1,5 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { BybitService } from '../bybitService';
 import { TradingLogger } from './core/TradingLogger';
 
 export interface ApiCredentials {
@@ -18,6 +19,36 @@ export class CredentialsManager {
   constructor(userId: string) {
     this.userId = userId;
     this.logger = new TradingLogger(userId);
+  }
+
+  async fetchCredentials(): Promise<BybitService | null> {
+    try {
+      const credentials = await this.getActiveCredentials();
+      if (!credentials) {
+        await this.logger.logSystemInfo('No active credentials found');
+        return null;
+      }
+
+      const isValid = await this.validateCredentials(credentials);
+      if (!isValid) {
+        await this.logger.logError('Invalid credentials', new Error('Credential validation failed'));
+        return null;
+      }
+
+      // Create and return BybitService instance
+      const bybitService = new BybitService(
+        credentials.apiKey,
+        credentials.apiSecret,
+        credentials.testnet
+      );
+
+      await this.logger.logSuccess('BybitService created successfully');
+      return bybitService;
+
+    } catch (error) {
+      await this.logger.logError('Failed to fetch credentials', error);
+      return null;
+    }
   }
 
   async getActiveCredentials(exchangeName: string = 'bybit'): Promise<ApiCredentials | null> {

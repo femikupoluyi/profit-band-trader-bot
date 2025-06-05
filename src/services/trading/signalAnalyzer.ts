@@ -22,7 +22,7 @@ export class SignalAnalyzer {
     this.signalGenerator = new SignalGenerator(userId, {} as TradingConfigData); // Will be updated per call
   }
 
-  async analyzeSymbolsAndGenerateSignals(config: TradingConfigData): Promise<void> {
+  async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
     try {
       console.log('🔍 Starting signal analysis for all symbols...');
       await this.logger.logSystemInfo('Starting signal analysis', { symbolCount: config.trading_pairs.length });
@@ -41,6 +41,10 @@ export class SignalAnalyzer {
       await this.logger.logError('Signal analysis failed', error);
       throw error;
     }
+  }
+
+  async analyzeSymbolsAndGenerateSignals(config: TradingConfigData): Promise<void> {
+    return this.analyzeAndCreateSignals(config);
   }
 
   private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
@@ -72,8 +76,7 @@ export class SignalAnalyzer {
         price: currentPrice * 0.995, // Support 0.5% below current price
         strength: 0.8,
         timestamp: Date.now(),
-        touches: 3,
-        touchCount: 3 // For backward compatibility
+        touches: 3
       };
 
       // Try to get better support data if available
