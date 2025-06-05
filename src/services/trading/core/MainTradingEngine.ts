@@ -1,3 +1,4 @@
+
 import { TradingConfigManager, TradingConfig } from '../config/TradingConfigManager';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { PositionMonitorService } from './PositionMonitorService';
@@ -6,7 +7,6 @@ import { SignalAnalysisService } from './SignalAnalysisService';
 import { SignalExecutionService } from './SignalExecutionService';
 import { EndOfDayManagerService } from './EndOfDayManagerService';
 import { ManualCloseService } from './ManualCloseService';
-import { SignalAnalyzer } from '../signalAnalyzer';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
 
@@ -21,7 +21,6 @@ export class MainTradingEngine {
   // Core Services
   private positionMonitor: PositionMonitorService;
   private marketScanner: MarketDataScannerService;
-  private signalAnalyzer: SignalAnalyzer;
   private signalAnalysisService: SignalAnalysisService;
   private signalExecutor: SignalExecutionService;
   private eodManager: EndOfDayManagerService;
@@ -39,7 +38,6 @@ export class MainTradingEngine {
     // Initialize services (they will get config on each cycle)
     this.positionMonitor = new PositionMonitorService(userId, bybitService);
     this.marketScanner = new MarketDataScannerService(userId, bybitService);
-    this.signalAnalyzer = new SignalAnalyzer(userId, bybitService);
     this.signalAnalysisService = new SignalAnalysisService(userId, bybitService);
     this.signalExecutor = new SignalExecutionService(userId, bybitService);
     this.eodManager = new EndOfDayManagerService(userId, bybitService);
@@ -222,9 +220,9 @@ export class MainTradingEngine {
       console.log('\n📈 Step 2: Market Data Scanning');
       await this.marketScanner.scanMarkets(configData);
 
-      // 2.3 Signal Analysis (using both services for different approaches)
+      // 2.3 Signal Analysis (using unified service)
       console.log('\n🔍 Step 3: Signal Analysis');
-      await this.signalAnalyzer.analyzeAndCreateSignals(configData);
+      await this.signalAnalysisService.analyzeAndCreateSignals(configData);
 
       // 2.4 Signal Execution
       console.log('\n⚡ Step 4: Signal Execution');
@@ -244,5 +242,29 @@ export class MainTradingEngine {
 
   isEngineRunning(): boolean {
     return this.isRunning;
+  }
+
+  // Convert TradingConfig to TradingConfigData with correct field mapping
+  private convertConfig(config: TradingConfig): TradingConfigData {
+    return {
+      max_active_pairs: config.maximum_active_pairs || 5,
+      max_order_amount_usd: config.maximum_order_amount_usd || 100,
+      max_portfolio_exposure_percent: 25.0, // Default value not in TradingConfig
+      daily_reset_time: '00:00:00', // Default value not in TradingConfig
+      chart_timeframe: config.chart_timeframe || '4h',
+      entry_offset_percent: config.entry_above_support_percentage || 0.5,
+      take_profit_percent: config.take_profit_percentage || 1.0,
+      support_candle_count: config.support_analysis_candles || 128,
+      max_positions_per_pair: config.maximum_positions_per_pair || 2,
+      new_support_threshold_percent: 1.0, // Default value not in TradingConfig
+      trading_pairs: config.trading_pairs || ['BTCUSDT', 'ETHUSDT'],
+      is_active: config.is_active || false,
+      main_loop_interval_seconds: config.main_loop_interval_seconds || 30,
+      auto_close_at_end_of_day: config.auto_close_at_end_of_day || false,
+      eod_close_premium_percent: config.eod_close_premium_percentage || 0.1,
+      manual_close_premium_percent: config.manual_close_premium_percentage || 0.1,
+      support_lower_bound_percent: config.support_lower_bound_percentage || 5.0,
+      support_upper_bound_percent: config.support_upper_bound_percentage || 2.0,
+    };
   }
 }

@@ -2,15 +2,14 @@
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { SignalGenerator } from '../signalGenerator';
 import { SupportLevelAnalyzer } from '../supportLevelAnalyzer';
 import { TradingLogger } from './TradingLogger';
+import { TradeValidator } from './TradeValidator';
 
 export class SignalAnalysisService {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
-  private signalGenerator: SignalGenerator;
   private supportLevelAnalyzer: SupportLevelAnalyzer;
 
   constructor(userId: string, bybitService: BybitService) {
@@ -18,7 +17,6 @@ export class SignalAnalysisService {
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
     this.bybitService.setLogger(this.logger);
-    this.signalGenerator = new SignalGenerator(userId, {} as TradingConfigData); // Will be updated per call
     this.supportLevelAnalyzer = new SupportLevelAnalyzer();
   }
 
@@ -26,9 +24,6 @@ export class SignalAnalysisService {
     try {
       console.log('📈 Starting signal analysis...');
       await this.logger.logSuccess('Starting signal analysis');
-      
-      // Update signal generator with current config
-      this.signalGenerator = new SignalGenerator(this.userId, config);
 
       for (const symbol of config.trading_pairs) {
         await this.analyzeSymbol(symbol, config);
@@ -46,6 +41,24 @@ export class SignalAnalysisService {
   private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
     try {
       console.log(`\n🔍 Analyzing ${symbol}...`);
+
+      // Check if we already have enough active signals for this symbol
+      const { data: existingSignals, error: signalsError } = await supabase
+        .from('trading_signals')
+        .select('id')
+        .eq('user_id', this.userId)
+        .eq('symbol', symbol)
+        .eq('processed', false);
+
+      if (signalsError) {
+        console.error(`❌ Error checking existing signals for ${symbol}:`, signalsError);
+        return;
+      }
+
+      if (existingSignals && existingSignals.length >= config.max_positions_per_pair) {
+        console.log(`  ⚠️ Already have ${existingSignals.length} unprocessed signals for ${symbol}, skipping`);
+        return;
+      }
 
       // Get current market price
       const marketData = await this.bybitService.getMarketPrice(symbol);
@@ -69,11 +82,6 @@ export class SignalAnalysisService {
 
       if (!recentData || recentData.length < 10) {
         console.log(`  ⚠️ Insufficient market data for ${symbol} (${recentData?.length || 0} records)`);
-        await this.logger.logSuccess(`Insufficient market data for ${symbol}`, {
-          symbol,
-          recordCount: recentData?.length || 0,
-          required: 10
-        });
         return;
       }
 
@@ -90,23 +98,32 @@ export class SignalAnalysisService {
         }))
       );
 
-      if (supportLevel) {
+      if (supportLevel && supportLevel.strength > 0.3) {
         console.log(`  📊 Support found at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
         
         // Check if current price is near support level for potential buy signal
         const priceAboveSupport = ((currentPrice - supportLevel.price) / supportLevel.price) * 100;
         
-        if (priceAboveSupport > 0 && priceAboveSupport <= config.entry_offset_percent) {
-          // Generate buy signal
+        // Validate price is within acceptable bounds
+        if (priceAboveSupport >= 0 && 
+            priceAboveSupport <= config.support_upper_bound_percent &&
+            priceAboveSupport >= -config.support_lower_bound_percent) {
+          
+          // Calculate entry price with offset
           const entryPrice = supportLevel.price * (1 + config.entry_offset_percent / 100);
           
-          console.log(`  🎯 Buy signal conditions met for ${symbol}`);
-          await this.createBuySignal(symbol, entryPrice, supportLevel, config);
+          // Additional validation: ensure entry price makes sense
+          if (entryPrice > currentPrice * 0.95 && entryPrice < currentPrice * 1.05) {
+            console.log(`  🎯 Buy signal conditions met for ${symbol}`);
+            await this.createBuySignal(symbol, entryPrice, supportLevel, config);
+          } else {
+            console.log(`  📭 Entry price ${entryPrice.toFixed(4)} too far from current price for ${symbol}`);
+          }
         } else {
-          console.log(`  📭 Price not in buy zone for ${symbol} (${priceAboveSupport.toFixed(2)}% above support)`);
+          console.log(`  📭 Price not in buy zone for ${symbol} (${priceAboveSupport.toFixed(2)}% from support, bounds: -${config.support_lower_bound_percent}% to +${config.support_upper_bound_percent}%)`);
         }
       } else {
-        console.log(`  📭 No valid support level found for ${symbol}`);
+        console.log(`  📭 No valid support level found for ${symbol} (strength: ${supportLevel?.strength || 'N/A'})`);
       }
 
     } catch (error) {
@@ -117,6 +134,15 @@ export class SignalAnalysisService {
 
   private async createBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData): Promise<void> {
     try {
+      // Validate signal parameters before creating
+      const testQuantity = TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
+      
+      if (!TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config)) {
+        console.log(`  ❌ Signal validation failed for ${symbol}`);
+        await this.logger.logError(`Signal validation failed for ${symbol}`, new Error('Trade parameters invalid'), { symbol, entryPrice, testQuantity });
+        return;
+      }
+
       const { data: signal, error } = await supabase
         .from('trading_signals')
         .insert({
@@ -124,8 +150,8 @@ export class SignalAnalysisService {
           symbol: symbol,
           signal_type: 'buy',
           price: entryPrice,
-          confidence: supportLevel.strength,
-          reasoning: `Buy signal: Price near support level at $${supportLevel.price.toFixed(4)} with ${supportLevel.strength} strength`,
+          confidence: Math.min(0.95, supportLevel.strength), // Cap confidence at 95%
+          reasoning: `Buy signal: Price near support level at $${supportLevel.price.toFixed(4)} with ${supportLevel.strength.toFixed(2)} strength. Entry offset: ${config.entry_offset_percent}%`,
           processed: false
         })
         .select()
@@ -137,12 +163,13 @@ export class SignalAnalysisService {
         return;
       }
 
-      console.log(`✅ Buy signal created for ${symbol} at $${entryPrice.toFixed(4)}`);
+      console.log(`✅ Buy signal created for ${symbol} at $${entryPrice.toFixed(4)} (ID: ${signal.id})`);
       await this.logger.logSignalProcessed(symbol, 'buy', {
         signalId: signal.id,
         entryPrice,
         supportLevel: supportLevel.price,
-        confidence: supportLevel.strength
+        confidence: supportLevel.strength,
+        reasoning: signal.reasoning
       });
 
     } catch (error) {
