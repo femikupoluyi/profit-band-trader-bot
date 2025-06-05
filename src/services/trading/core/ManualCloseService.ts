@@ -24,11 +24,22 @@ export class ManualCloseService {
         .single();
 
       if (error || !trade) {
+        console.error('Trade not found:', error);
+        await this.logActivity('system_error', `Trade not found for manual close: ${tradeId}`, { 
+          tradeId, 
+          error: error?.message || 'Trade not found' 
+        });
         throw new Error('Trade not found');
       }
 
       if (trade.status !== 'filled') {
-        throw new Error('Cannot close trade that is not filled');
+        const errorMsg = `Cannot close trade that is not filled. Status: ${trade.status}`;
+        console.error(errorMsg);
+        await this.logActivity('order_rejected', errorMsg, { 
+          tradeId, 
+          currentStatus: trade.status 
+        });
+        throw new Error(errorMsg);
       }
 
       // Get current market price
@@ -58,7 +69,7 @@ export class ManualCloseService {
           const profit = (currentPrice - entryPrice) * quantity;
 
           // Update trade as closed
-          await supabase
+          const { error: updateError } = await supabase
             .from('trades')
             .update({
               status: 'closed',
@@ -66,6 +77,15 @@ export class ManualCloseService {
               updated_at: new Date().toISOString()
             })
             .eq('id', tradeId);
+
+          if (updateError) {
+            console.error('Database update error:', updateError);
+            await this.logActivity('system_error', `Database update failed for manual close: ${trade.symbol}`, {
+              tradeId,
+              error: updateError.message
+            });
+            throw updateError;
+          }
 
           console.log(`✅ Manual close completed: ${trade.symbol} P&L: $${profit.toFixed(2)}`);
 
@@ -79,18 +99,29 @@ export class ManualCloseService {
           });
 
         } else {
-          throw new Error(`Market order failed: ${sellResult?.retMsg || 'Unknown error'}`);
+          const errorMsg = `Market order failed: ${sellResult?.retMsg || 'Unknown error'}`;
+          console.error(errorMsg);
+          await this.logActivity('order_failed', errorMsg, {
+            tradeId,
+            symbol: trade.symbol,
+            sellResult: sellResult
+          });
+          throw new Error(errorMsg);
         }
 
       } catch (sellError) {
         console.error(`❌ Market sell order failed:`, sellError);
+        await this.logActivity('execution_error', `Market sell order failed for ${trade.symbol}`, {
+          tradeId,
+          error: sellError instanceof Error ? sellError.message : 'Unknown sell error'
+        });
         throw sellError;
       }
 
     } catch (error) {
       console.error(`❌ Error in manual close:`, error);
       await this.logActivity('system_error', `Manual close failed for trade ${tradeId}`, {
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         tradeId
       });
       throw error;
@@ -99,11 +130,36 @@ export class ManualCloseService {
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
+      // Valid log types based on database constraints
+      const validLogTypes = [
+        'signal_processed',
+        'trade_executed',
+        'trade_filled', 
+        'position_closed',
+        'system_error',
+        'order_placed',
+        'order_failed',
+        'calculation_error',
+        'execution_error',
+        'signal_rejected',
+        'order_rejected'
+      ];
+
+      // Map any custom types to valid ones
+      const typeMapping: Record<string, string> = {
+        'manual_close': 'position_closed',
+        'close_rejected': 'order_rejected',
+        'close_error': 'execution_error',
+        'trade_closed': 'position_closed'
+      };
+
+      const validType = typeMapping[type] || (validLogTypes.includes(type) ? type : 'system_error');
+
       await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
-          log_type: type,
+          log_type: validType,
           message,
           data: data || null,
         });

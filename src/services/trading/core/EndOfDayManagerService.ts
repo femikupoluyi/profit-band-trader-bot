@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -32,8 +33,10 @@ export class EndOfDayManagerService {
 
       if (forceSimulation) {
         console.log('🔄 MANUAL EOD SIMULATION - Processing all positions regardless of time');
+        await this.logActivity('system_info', 'Manual EOD simulation started');
       } else {
         console.log('🌅 End of day detected, checking positions to close...');
+        await this.logActivity('system_info', 'Automatic EOD process started');
       }
 
       // Get all active positions
@@ -45,11 +48,13 @@ export class EndOfDayManagerService {
 
       if (error) {
         console.error('❌ Error fetching active trades:', error);
+        await this.logActivity('system_error', 'Error fetching active trades for EOD', { error: error.message });
         return;
       }
 
       if (!activeTrades || activeTrades.length === 0) {
         console.log('📭 No active positions to close');
+        await this.logActivity('system_info', 'No active positions found for EOD closure');
         return;
       }
 
@@ -60,8 +65,13 @@ export class EndOfDayManagerService {
       }
 
       console.log('✅ End-of-day management completed');
+      await this.logActivity('system_info', 'End-of-day management completed successfully');
     } catch (error) {
       console.error('❌ Error in end-of-day management:', error);
+      await this.logActivity('system_error', 'Error in end-of-day management', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        forceSimulation 
+      });
       throw error;
     }
   }
@@ -102,6 +112,10 @@ export class EndOfDayManagerService {
 
     } catch (error) {
       console.error(`❌ Error evaluating trade ${trade.id} for EOD closure:`, error);
+      await this.logActivity('system_error', `Error evaluating trade for EOD closure: ${trade.symbol}`, {
+        tradeId: trade.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   }
 
@@ -136,6 +150,10 @@ export class EndOfDayManagerService {
 
         if (error) {
           console.error(`❌ Error updating closed trade ${trade.id}:`, error);
+          await this.logActivity('system_error', `Error updating closed trade: ${trade.symbol}`, {
+            tradeId: trade.id,
+            error: error.message
+          });
         } else {
           console.log(`✅ Position closed: ${trade.symbol}, P&L: $${profitLoss.toFixed(2)}`);
           await this.logActivity('position_closed', `${reason}: ${trade.symbol}`, {
@@ -147,24 +165,52 @@ export class EndOfDayManagerService {
             reason
           });
         }
+      } else {
+        throw new Error('Failed to place sell order - no order ID returned');
       }
 
     } catch (error) {
       console.error(`❌ Error closing position for trade ${trade.id}:`, error);
       await this.logActivity('system_error', `Failed to close position: ${trade.symbol}`, {
         tradeId: trade.id,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   }
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
+      // Valid log types based on database constraints
+      const validLogTypes = [
+        'signal_processed',
+        'trade_executed', 
+        'trade_filled',
+        'position_closed',
+        'system_error',
+        'order_placed',
+        'order_failed',
+        'calculation_error',
+        'execution_error',
+        'signal_rejected',
+        'order_rejected'
+      ];
+
+      // Map any custom types to valid ones
+      const typeMapping: Record<string, string> = {
+        'system_info': 'signal_processed', // Use signal_processed for general info
+        'eod_started': 'signal_processed',
+        'eod_completed': 'position_closed',
+        'manual_close': 'position_closed',
+        'close_error': 'execution_error'
+      };
+
+      const validType = typeMapping[type] || (validLogTypes.includes(type) ? type : 'system_error');
+
       await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
-          log_type: type,
+          log_type: validType,
           message,
           data: data || null,
         });

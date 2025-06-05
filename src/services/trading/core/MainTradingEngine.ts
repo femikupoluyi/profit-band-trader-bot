@@ -70,10 +70,12 @@ export class MainTradingEngine {
       await this.configManager.loadConfig();
       
       console.log('✅ Main Trading Engine initialized successfully');
-      await this.logActivity('system_info', 'Main Trading Engine initialized');
+      await this.logActivity('signal_processed', 'Main Trading Engine initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Main Trading Engine:', error);
-      await this.logActivity('system_error', 'Failed to initialize Main Trading Engine', { error: error.message });
+      await this.logActivity('system_error', 'Failed to initialize Main Trading Engine', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
       throw error;
     }
   }
@@ -96,14 +98,16 @@ export class MainTradingEngine {
       this.isRunning = true;
       
       console.log(`🚀 Starting Main Trading Loop with ${config.main_loop_interval_seconds}s interval`);
-      await this.logActivity('system_info', `Trading started with ${config.main_loop_interval_seconds}s interval`);
+      await this.logActivity('signal_processed', `Trading started with ${config.main_loop_interval_seconds}s interval`);
 
       // Start the main loop
       this.scheduleMainLoop(config.main_loop_interval_seconds);
       
     } catch (error) {
       console.error('❌ Failed to start trading engine:', error);
-      await this.logActivity('system_error', 'Failed to start trading engine', { error: error.message });
+      await this.logActivity('system_error', 'Failed to start trading engine', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
       this.isRunning = false;
       throw error;
     }
@@ -123,7 +127,7 @@ export class MainTradingEngine {
       this.mainLoopInterval = null;
     }
 
-    await this.logActivity('system_info', 'Trading engine stopped');
+    await this.logActivity('signal_processed', 'Trading engine stopped');
     console.log('✅ Main Trading Engine stopped');
   }
 
@@ -134,7 +138,7 @@ export class MainTradingEngine {
   async simulateEndOfDay(): Promise<void> {
     try {
       console.log('🌅 Manual End-of-Day Simulation Started...');
-      await this.logActivity('system_info', 'Manual end-of-day simulation started');
+      await this.logActivity('signal_processed', 'Manual end-of-day simulation started');
       
       // Get current config - load fresh config for EOD simulation
       await this.configManager.loadConfig();
@@ -152,14 +156,16 @@ export class MainTradingEngine {
         auto_close_at_end_of_day: true // Force enable for manual simulation
       };
       
-      // Execute end-of-day management
-      await this.eodManager.manageEndOfDay(eodConfigData);
+      // Execute end-of-day management with force simulation flag
+      await this.eodManager.manageEndOfDay(eodConfigData, true);
       
       console.log('✅ Manual End-of-Day Simulation Completed');
-      await this.logActivity('system_info', 'Manual end-of-day simulation completed successfully');
+      await this.logActivity('position_closed', 'Manual end-of-day simulation completed successfully');
     } catch (error) {
       console.error('❌ Error in manual end-of-day simulation:', error);
-      await this.logActivity('system_error', 'Manual end-of-day simulation failed', { error: error.message });
+      await this.logActivity('system_error', 'Manual end-of-day simulation failed', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
       throw error;
     }
   }
@@ -178,7 +184,9 @@ export class MainTradingEngine {
         }
       } catch (error) {
         console.error('❌ Error in main trading loop:', error);
-        await this.logActivity('system_error', 'Main trading loop error', { error: error.message });
+        await this.logActivity('system_error', 'Main trading loop error', { 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
         
         // Continue running but log the error
         if (this.isRunning) {
@@ -240,11 +248,35 @@ export class MainTradingEngine {
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
+      // Valid log types based on database constraints
+      const validLogTypes = [
+        'signal_processed',
+        'trade_executed',
+        'trade_filled',
+        'position_closed',
+        'system_error',
+        'order_placed',
+        'order_failed',
+        'calculation_error',
+        'execution_error',
+        'signal_rejected',
+        'order_rejected'
+      ];
+
+      // Map any custom types to valid ones
+      const typeMapping: Record<string, string> = {
+        'system_info': 'signal_processed', // Use signal_processed for general info
+        'engine_started': 'signal_processed',
+        'engine_stopped': 'signal_processed'
+      };
+
+      const validType = typeMapping[type] || (validLogTypes.includes(type) ? type : 'system_error');
+
       await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
-          log_type: type,
+          log_type: validType,
           message,
           data: data || null,
         });
