@@ -1,6 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class SignalAnalysisService {
   private userId: string;
@@ -9,10 +9,10 @@ export class SignalAnalysisService {
     this.userId = userId;
   }
 
-  async analyzeSignals(config: TradingConfig): Promise<void> {
+  async analyzeSignals(config: TradingConfigData): Promise<void> {
     try {
-      console.log(`🔍 Analyzing signals for ${config.trading_pairs.length} pairs...`);
-
+      console.log('🔍 Analyzing signals...');
+      
       for (const symbol of config.trading_pairs) {
         await this.analyzeSymbol(symbol, config);
       }
@@ -24,140 +24,137 @@ export class SignalAnalysisService {
     }
   }
 
-  private async analyzeSymbol(symbol: string, config: TradingConfig): Promise<void> {
+  private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
     try {
       console.log(`\n🔍 Analyzing ${symbol}...`);
 
-      // 1. Get current price
-      const currentPrice = await this.getCurrentPrice(symbol);
-      if (!currentPrice) {
-        console.log(`❌ No current price for ${symbol}`);
+      // Get latest market data for this symbol
+      const { data: marketData, error: marketError } = await supabase
+        .from('market_data')
+        .select('*')
+        .eq('symbol', symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (marketError || !marketData) {
+        console.log(`❌ No market data found for ${symbol}`);
         return;
       }
 
-      // 2. Calculate support level from recent candles
-      const supportLevel = await this.calculateSupportLevel(symbol, config);
-      if (!supportLevel) {
-        console.log(`❌ Could not calculate support for ${symbol}`);
-        return;
-      }
-
-      // 3. Calculate entry and bounds
-      const entryPrice = supportLevel * (1 + config.entry_above_support_percentage / 100);
-      const supportLowerBound = supportLevel * (1 - config.support_lower_bound_percentage / 100);
-      const supportUpperBound = entryPrice * (1 + config.support_upper_bound_percentage / 100);
-
-      console.log(`📊 ${symbol} Analysis:`);
+      const currentPrice = parseFloat(marketData.price.toString());
       console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
-      console.log(`  Support Level: $${supportLevel.toFixed(4)}`);
-      console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
-      console.log(`  Lower Bound: $${supportLowerBound.toFixed(4)}`);
-      console.log(`  Upper Bound: $${supportUpperBound.toFixed(4)}`);
 
-      // 4. Check if current price is within valid range
-      if (currentPrice < supportLowerBound || currentPrice > supportUpperBound) {
-        console.log(`❌ Price outside valid range for ${symbol}`);
+      // Simple support level calculation (using historical data)
+      const supportLevel = await this.calculateSupportLevel(symbol, config);
+      
+      if (!supportLevel) {
+        console.log(`❌ Could not calculate support level for ${symbol}`);
         return;
       }
 
-      // 5. Check risk management constraints
-      const riskCheckPassed = await this.checkRiskConstraints(symbol, config);
-      if (!riskCheckPassed) {
+      console.log(`  Support Level: $${supportLevel.toFixed(4)}`);
+
+      // Check if we should generate a signal
+      const entryPrice = supportLevel * (1 + config.entry_offset_percent / 100);
+      console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
+
+      // Risk constraints check
+      const lowerBound = supportLevel * (1 - 5.0 / 100); // 5% below support
+      const upperBound = supportLevel * (1 + 2.0 / 100); // 2% above support
+      
+      console.log(`  Lower Bound: $${lowerBound.toFixed(4)}`);
+      console.log(`  Upper Bound: $${upperBound.toFixed(4)}`);
+
+      // Check position limits before generating signal
+      const canTrade = await this.checkPositionLimits(symbol, config);
+      if (!canTrade) {
         console.log(`❌ Risk constraints failed for ${symbol}`);
         return;
       }
 
-      // 6. Create buy signal
-      await this.createBuySignal(symbol, entryPrice, supportLevel, supportLowerBound, supportUpperBound);
-      console.log(`✅ Buy signal created for ${symbol} at $${entryPrice.toFixed(4)}`);
+      // Generate signal if price is near support
+      if (currentPrice <= entryPrice && currentPrice >= lowerBound) {
+        await this.generateBuySignal(symbol, entryPrice, supportLevel);
+      } else {
+        console.log(`  No signal: Price $${currentPrice.toFixed(4)} not in range [$${lowerBound.toFixed(4)} - $${entryPrice.toFixed(4)}]`);
+      }
 
     } catch (error) {
       console.error(`❌ Error analyzing ${symbol}:`, error);
     }
   }
 
-  private async getCurrentPrice(symbol: string): Promise<number | null> {
+  private async calculateSupportLevel(symbol: string, config: TradingConfigData): Promise<number | null> {
     try {
-      const { data, error } = await supabase
+      // Get recent price data for support calculation
+      const { data: recentPrices, error } = await supabase
         .from('market_data')
-        .select('price')
+        .select('price, timestamp')
         .eq('symbol', symbol)
         .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(config.support_candle_count);
 
-      if (error || !data) return null;
-      return parseFloat(data.price.toString());
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private async calculateSupportLevel(symbol: string, config: TradingConfig): Promise<number | null> {
-    try {
-      // For now, use a simple approach: lowest price from recent market data
-      // In a real implementation, you'd fetch candle data from the exchange
-      const { data, error } = await supabase
-        .from('market_data')
-        .select('price')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false })
-        .limit(config.support_analysis_candles);
-
-      if (error || !data || data.length === 0) return null;
-
-      const prices = data.map(row => parseFloat(row.price.toString()));
-      const supportLevel = Math.min(...prices);
-
-      return supportLevel;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private async checkRiskConstraints(symbol: string, config: TradingConfig): Promise<boolean> {
-    try {
-      // Check maximum positions per pair
-      const { count: positionsForSymbol } = await supabase
-        .from('trades')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', this.userId)
-        .eq('symbol', symbol)
-        .in('status', ['pending', 'filled']);
-
-      if ((positionsForSymbol || 0) >= config.maximum_positions_per_pair) {
-        console.log(`❌ Max positions per pair reached for ${symbol}: ${positionsForSymbol}/${config.maximum_positions_per_pair}`);
-        return false;
+      if (error || !recentPrices || recentPrices.length < 10) {
+        console.log(`❌ Insufficient price data for ${symbol} support calculation`);
+        return null;
       }
 
-      // Check maximum active pairs
+      // Simple support calculation: find lowest price in recent data
+      const prices = recentPrices.map(p => parseFloat(p.price.toString()));
+      const supportLevel = Math.min(...prices);
+      
+      return supportLevel;
+    } catch (error) {
+      console.error(`Error calculating support level for ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  private async checkPositionLimits(symbol: string, config: TradingConfigData): Promise<boolean> {
+    try {
+      // Check max active pairs
       const { data: activePairs } = await supabase
         .from('trades')
         .select('symbol')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'filled']);
+        .in('status', ['pending', 'filled', 'partial_filled']);
 
       const uniquePairs = new Set(activePairs?.map(trade => trade.symbol) || []);
-      if (uniquePairs.size >= config.maximum_active_pairs) {
-        console.log(`❌ Max active pairs reached: ${uniquePairs.size}/${config.maximum_active_pairs}`);
+      const activePairCount = uniquePairs.size;
+      
+      // If this symbol is new and we're at max pairs, reject
+      if (!uniquePairs.has(symbol) && activePairCount >= config.max_active_pairs) {
+        console.log(`❌ Max active pairs limit reached: ${activePairCount}/${config.max_active_pairs}`);
         return false;
       }
 
+      // Check max positions per pair for this specific symbol
+      const { count: currentPositions } = await supabase
+        .from('trades')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', this.userId)
+        .eq('symbol', symbol)
+        .in('status', ['pending', 'filled', 'partial_filled']);
+
+      if ((currentPositions || 0) >= config.max_positions_per_pair) {
+        console.log(`❌ Max positions per pair reached for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
+        return false;
+      }
+
+      console.log(`✅ Position limits check passed for ${symbol}: ${currentPositions}/${config.max_positions_per_pair} positions, ${activePairCount}/${config.max_active_pairs} pairs`);
       return true;
+
     } catch (error) {
-      console.error('Error checking risk constraints:', error);
+      console.error('Error checking position limits:', error);
       return false;
     }
   }
 
-  private async createBuySignal(
-    symbol: string, 
-    entryPrice: number, 
-    supportLevel: number, 
-    supportLowerBound: number, 
-    supportUpperBound: number
-  ): Promise<void> {
+  private async generateBuySignal(symbol: string, entryPrice: number, supportLevel: number): Promise<void> {
     try {
+      console.log(`🚀 Generating BUY signal for ${symbol} at $${entryPrice.toFixed(4)}`);
+
       const { error } = await supabase
         .from('trading_signals')
         .insert({
@@ -166,21 +163,22 @@ export class SignalAnalysisService {
           signal_type: 'buy',
           price: entryPrice,
           confidence: 0.8,
-          reasoning: `Buy signal: Entry at ${entryPrice.toFixed(4)}, Support at ${supportLevel.toFixed(4)}`,
+          reasoning: `Price near support level of $${supportLevel.toFixed(4)}`,
           processed: false
         });
 
-      if (error) throw error;
-
-      await this.logActivity('signal_generated', `Buy signal created for ${symbol}`, {
-        symbol,
-        entryPrice,
-        supportLevel,
-        supportLowerBound,
-        supportUpperBound
-      });
+      if (error) {
+        console.error(`❌ Error generating signal for ${symbol}:`, error);
+      } else {
+        console.log(`✅ Signal generated for ${symbol}`);
+        await this.logActivity('signal_generated', `Buy signal generated for ${symbol}`, {
+          symbol,
+          entryPrice,
+          supportLevel
+        });
+      }
     } catch (error) {
-      console.error('Error creating buy signal:', error);
+      console.error(`❌ Error generating signal for ${symbol}:`, error);
     }
   }
 

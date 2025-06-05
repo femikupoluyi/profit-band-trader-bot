@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
-import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class EndOfDayManagerService {
   private userId: string;
@@ -12,163 +12,145 @@ export class EndOfDayManagerService {
     this.bybitService = bybitService;
   }
 
-  async manageEndOfDay(config: TradingConfig): Promise<void> {
+  async manageEndOfDay(config: TradingConfigData): Promise<void> {
     try {
       if (!config.auto_close_at_end_of_day) {
-        console.log('🌅 Auto-close at EOD disabled, skipping');
+        console.log('⏸️ End-of-day auto-close is disabled');
         return;
       }
 
-      // Check if we're near end of day (for example, after 11 PM)
-      const now = new Date();
-      const hour = now.getHours();
-      
-      if (hour < 23) {
-        console.log(`🌅 Not yet end of day (${hour}:00), skipping EOD management`);
+      console.log('🌅 Checking end-of-day management...');
+
+      // Check if we're near end of day (for now, just check if it's past 22:00 UTC)
+      const currentHour = new Date().getUTCHours();
+      const isEndOfDay = currentHour >= 22; // 10 PM UTC
+
+      if (!isEndOfDay) {
+        console.log(`⏰ Not end of day yet (current hour: ${currentHour} UTC)`);
         return;
       }
 
-      console.log('🌅 Managing end-of-day positions...');
+      console.log('🌅 End of day detected, checking positions to close...');
 
-      // Get filled trades from today that are still open
-      const today = new Date().toISOString().split('T')[0];
-      const { data: todayTrades, error } = await supabase
+      // Get all active positions
+      const { data: activeTrades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .eq('status', 'filled')
-        .gte('created_at', `${today}T00:00:00.000Z`)
-        .lt('created_at', `${today}T23:59:59.999Z`);
+        .in('status', ['filled', 'partial_filled']);
 
-      if (error) throw error;
-
-      if (!todayTrades || todayTrades.length === 0) {
-        console.log('📭 No trades from today to evaluate for EOD closure');
+      if (error) {
+        console.error('❌ Error fetching active trades:', error);
         return;
       }
 
-      console.log(`🔄 Evaluating ${todayTrades.length} trades for EOD closure`);
-
-      let closedCount = 0;
-      let skippedAtLoss = 0;
-
-      for (const trade of todayTrades) {
-        const shouldClose = await this.evaluateTradeForEODClosure(trade, config);
-        if (shouldClose === 'closed') {
-          closedCount++;
-        } else if (shouldClose === 'skipped_loss') {
-          skippedAtLoss++;
-        }
+      if (!activeTrades || activeTrades.length === 0) {
+        console.log('📭 No active positions to close');
+        return;
       }
 
-      console.log(`🌅 EOD Management Summary: ${closedCount} trades closed, ${skippedAtLoss} losing trades left open`);
-      
-      await this.logActivity('system_info', `EOD Management completed: ${closedCount} closed, ${skippedAtLoss} left open (at loss)`, {
-        totalEvaluated: todayTrades.length,
-        closed: closedCount,
-        skippedAtLoss: skippedAtLoss
-      });
+      console.log(`📊 Found ${activeTrades.length} active positions to evaluate for EOD closure`);
 
+      for (const trade of activeTrades) {
+        await this.evaluateTradeForEODClosure(trade, config);
+      }
+
+      console.log('✅ End-of-day management completed');
     } catch (error) {
-      console.error('❌ Error managing end of day:', error);
-      await this.logActivity('system_error', 'End-of-day management failed', { error: error.message });
+      console.error('❌ Error in end-of-day management:', error);
       throw error;
     }
   }
 
-  private async evaluateTradeForEODClosure(trade: any, config: TradingConfig): Promise<'closed' | 'skipped_loss' | 'skipped_error'> {
+  private async evaluateTradeForEODClosure(trade: any, config: TradingConfigData): Promise<void> {
     try {
-      console.log(`🌅 Evaluating EOD closure for ${trade.symbol}...`);
+      console.log(`🔍 Evaluating ${trade.symbol} for EOD closure...`);
 
       // Get current market price
-      const marketData = await this.bybitService.getMarketPrice(trade.symbol);
-      const currentPrice = marketData.price;
+      const marketPrice = await this.bybitService.getMarketPrice(trade.symbol);
+      const currentPrice = marketPrice.price;
       const entryPrice = parseFloat(trade.price.toString());
-      const quantity = parseFloat(trade.quantity.toString());
-      
-      // Calculate current P&L
-      const profit = (currentPrice - entryPrice) * quantity;
-      const profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
-      
-      console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
-      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
-      console.log(`  P&L: $${profit.toFixed(2)} (${profitPercent.toFixed(2)}%)`);
 
-      // NEW LOGIC: Do not close trades at a loss at EOD
-      if (profit < 0) {
-        console.log(`📈 Trade ${trade.symbol} is at a loss ($${profit.toFixed(2)}), leaving open per EOD policy`);
-        
-        await this.logActivity('position_eod_hold', `EOD: Keeping ${trade.symbol} open (at loss)`, {
-          tradeId: trade.id,
-          symbol: trade.symbol,
-          entryPrice,
-          currentPrice,
-          profit,
-          profitPercent,
-          reason: 'eod_no_close_at_loss_policy'
-        });
+      // Calculate current P&L percentage
+      const plPercentage = ((currentPrice - entryPrice) / entryPrice) * 100;
+      
+      console.log(`  Entry: $${entryPrice.toFixed(4)}, Current: $${currentPrice.toFixed(4)}, P&L: ${plPercentage.toFixed(2)}%`);
 
-        return 'skipped_loss';
+      // Close if we're at a loss or small profit (based on EOD premium setting)
+      const shouldClose = plPercentage < config.eod_close_premium_percent;
+      
+      if (shouldClose) {
+        console.log(`🔄 Closing position for EOD: ${trade.symbol} (P&L: ${plPercentage.toFixed(2)}%)`);
+        await this.closePosition(trade, currentPrice, 'eod_auto_close');
+      } else {
+        console.log(`✅ Keeping position open: ${trade.symbol} (P&L above ${config.eod_close_premium_percent}%)`);
       }
-
-      // Only close profitable trades at EOD
-      console.log(`💰 Trade ${trade.symbol} is profitable, proceeding with EOD closure`);
-      
-      // Calculate EOD sell price with premium (for profitable trades only)
-      const eodSellPrice = currentPrice * (1 + config.eod_close_premium_percentage / 100);
-      
-      console.log(`  EOD Sell Price: $${eodSellPrice.toFixed(4)} (+${config.eod_close_premium_percentage}% premium)`);
-
-      // For now, close at current market price (in real implementation, place limit sell with premium)
-      await supabase
-        .from('trades')
-        .update({
-          status: 'closed',
-          profit_loss: profit,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', trade.id);
-
-      console.log(`✅ EOD closure: ${trade.symbol} P&L: $${profit.toFixed(2)}`);
-
-      await this.logActivity('position_closed', `EOD closure for profitable ${trade.symbol}`, {
-        tradeId: trade.id,
-        symbol: trade.symbol,
-        entryPrice,
-        exitPrice: currentPrice,
-        profit,
-        profitPercent,
-        reason: 'end_of_day_auto_close_profitable_only'
-      });
-
-      return 'closed';
 
     } catch (error) {
       console.error(`❌ Error evaluating trade ${trade.id} for EOD closure:`, error);
-      await this.logActivity('system_error', `EOD evaluation failed for ${trade.symbol}`, {
+    }
+  }
+
+  private async closePosition(trade: any, closePrice: number, reason: string): Promise<void> {
+    try {
+      // Place market sell order
+      const sellQuantity = parseFloat(trade.quantity.toString());
+      
+      console.log(`📤 Placing market sell order for ${trade.symbol}: ${sellQuantity} at market price`);
+
+      const sellOrder = await this.bybitService.placeOrder({
+        symbol: trade.symbol,
+        side: 'Sell',
+        orderType: 'Market',
+        qty: sellQuantity.toString(),
+      });
+
+      if (sellOrder.orderId) {
+        // Calculate final P&L
+        const entryPrice = parseFloat(trade.price.toString());
+        const profitLoss = (closePrice - entryPrice) * sellQuantity;
+        
+        // Update trade in database
+        const { error } = await supabase
+          .from('trades')
+          .update({
+            status: 'closed',
+            profit_loss: profitLoss,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', trade.id);
+
+        if (error) {
+          console.error(`❌ Error updating closed trade ${trade.id}:`, error);
+        } else {
+          console.log(`✅ Position closed: ${trade.symbol}, P&L: $${profitLoss.toFixed(2)}`);
+          await this.logActivity('position_closed', `${reason}: ${trade.symbol}`, {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            entryPrice,
+            closePrice,
+            profitLoss,
+            reason
+          });
+        }
+      }
+
+    } catch (error) {
+      console.error(`❌ Error closing position for trade ${trade.id}:`, error);
+      await this.logActivity('system_error', `Failed to close position: ${trade.symbol}`, {
         tradeId: trade.id,
         error: error.message
       });
-      return 'skipped_error';
     }
   }
 
   private async logActivity(type: string, message: string, data?: any): Promise<void> {
     try {
-      // Map to valid log types
-      const validTypes = [
-        'signal_processed', 'trade_executed', 'trade_filled', 'position_closed',
-        'system_error', 'order_placed', 'order_failed', 'calculation_error',
-        'execution_error', 'signal_rejected', 'order_rejected', 'system_info'
-      ];
-
-      const mappedType = validTypes.includes(type) ? type : 'system_info';
-
       await supabase
         .from('trading_logs')
         .insert({
           user_id: this.userId,
-          log_type: mappedType,
+          log_type: type,
           message,
           data: data || null,
         });

@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
-import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class MarketDataScannerService {
   private userId: string;
@@ -13,7 +13,7 @@ export class MarketDataScannerService {
     this.bybitService = bybitService;
   }
 
-  async scanMarkets(config: TradingConfig): Promise<void> {
+  async scanMarkets(config: TradingConfigData): Promise<void> {
     try {
       console.log(`📊 Scanning ${config.trading_pairs.length} markets...`);
 
