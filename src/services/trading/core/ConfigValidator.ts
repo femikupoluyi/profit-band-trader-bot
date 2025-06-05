@@ -14,93 +14,93 @@ export class ConfigValidator {
     const warnings: string[] = [];
 
     // Required field validations
-    if (!config.tradingPairs || config.tradingPairs.length === 0) {
+    if (!config.trading_pairs || config.trading_pairs.length === 0) {
       errors.push('At least one trading pair must be selected');
     }
 
-    if (!config.maxOrderAmountUsd || config.maxOrderAmountUsd <= 0) {
+    if (!config.max_order_amount_usd || config.max_order_amount_usd <= 0) {
       errors.push('Maximum order amount must be greater than 0');
     }
 
-    if (!config.takeProfitPercent || config.takeProfitPercent <= 0) {
+    if (!config.take_profit_percent || config.take_profit_percent <= 0) {
       errors.push('Take profit percentage must be greater than 0');
     }
 
-    if (!config.maxActivePairs || config.maxActivePairs <= 0) {
+    if (!config.max_active_pairs || config.max_active_pairs <= 0) {
       errors.push('Maximum active pairs must be greater than 0');
     }
 
-    if (!config.supportCandleCount || config.supportCandleCount <= 0) {
+    if (!config.support_candle_count || config.support_candle_count <= 0) {
       errors.push('Support candle count must be greater than 0');
     }
 
     // Range validations
-    if (config.maxPortfolioExposurePercent && (config.maxPortfolioExposurePercent <= 0 || config.maxPortfolioExposurePercent > 100)) {
+    if (config.max_portfolio_exposure_percent && (config.max_portfolio_exposure_percent <= 0 || config.max_portfolio_exposure_percent > 100)) {
       errors.push('Portfolio exposure percentage must be between 0 and 100');
     }
 
-    if (config.entryOffsetPercent && (config.entryOffsetPercent < 0 || config.entryOffsetPercent > 10)) {
+    if (config.entry_offset_percent && (config.entry_offset_percent < 0 || config.entry_offset_percent > 10)) {
       errors.push('Entry offset percentage must be between 0 and 10');
     }
 
-    if (config.takeProfitPercent && config.takeProfitPercent > 50) {
+    if (config.take_profit_percent && config.take_profit_percent > 50) {
       warnings.push('Take profit percentage above 50% may be too aggressive');
     }
 
-    if (config.supportLowerBoundPercent && (config.supportLowerBoundPercent < 0 || config.supportLowerBoundPercent > 20)) {
+    if (config.support_lower_bound_percent && (config.support_lower_bound_percent < 0 || config.support_lower_bound_percent > 20)) {
       errors.push('Support lower bound percentage must be between 0 and 20');
     }
 
-    if (config.supportUpperBoundPercent && (config.supportUpperBoundPercent < 0 || config.supportUpperBoundPercent > 10)) {
+    if (config.support_upper_bound_percent && (config.support_upper_bound_percent < 0 || config.support_upper_bound_percent > 10)) {
       errors.push('Support upper bound percentage must be between 0 and 10');
     }
 
-    if (config.newSupportThresholdPercent && (config.newSupportThresholdPercent < 0 || config.newSupportThresholdPercent > 10)) {
+    if (config.new_support_threshold_percent && (config.new_support_threshold_percent < 0 || config.new_support_threshold_percent > 10)) {
       errors.push('New support threshold percentage must be between 0 and 10');
     }
 
     // Chart timeframe validation
-    if (config.chartTimeframe && !VALID_CHART_TIMEFRAMES.includes(config.chartTimeframe as ChartTimeframe)) {
+    if (config.chart_timeframe && !VALID_CHART_TIMEFRAMES.includes(config.chart_timeframe as ChartTimeframe)) {
       errors.push(`Invalid chart timeframe. Must be one of: ${VALID_CHART_TIMEFRAMES.join(', ')}`);
     }
 
     // Loop interval validation
-    if (config.mainLoopIntervalSeconds && config.mainLoopIntervalSeconds < 10) {
+    if (config.main_loop_interval_seconds && config.main_loop_interval_seconds < 10) {
       warnings.push('Main loop interval less than 10 seconds may cause high API usage');
     }
 
-    if (config.mainLoopIntervalSeconds && config.mainLoopIntervalSeconds > 300) {
+    if (config.main_loop_interval_seconds && config.main_loop_interval_seconds > 300) {
       warnings.push('Main loop interval greater than 5 minutes may miss trading opportunities');
     }
 
     // Trading pairs validation
-    if (config.tradingPairs && config.tradingPairs.length > 20) {
+    if (config.trading_pairs && config.trading_pairs.length > 20) {
       warnings.push('More than 20 trading pairs may cause performance issues');
     }
 
     // Active pairs vs trading pairs validation
-    if (config.maxActivePairs && config.tradingPairs && config.maxActivePairs > config.tradingPairs.length) {
+    if (config.max_active_pairs && config.trading_pairs && config.max_active_pairs > config.trading_pairs.length) {
       warnings.push('Maximum active pairs should not exceed the number of available trading pairs');
     }
 
     // Premium percentages validation
-    if (config.manualClosePremiumPercent && (config.manualClosePremiumPercent < 0 || config.manualClosePremiumPercent > 5)) {
+    if (config.manual_close_premium_percent && (config.manual_close_premium_percent < 0 || config.manual_close_premium_percent > 5)) {
       errors.push('Manual close premium percentage must be between 0 and 5');
     }
 
-    if (config.eodClosePremiumPercent && (config.eodClosePremiumPercent < 0 || config.eodClosePremiumPercent > 5)) {
+    if (config.eod_close_premium_percent && (config.eod_close_premium_percent < 0 || config.eod_close_premium_percent > 5)) {
       errors.push('EOD close premium percentage must be between 0 and 5');
     }
 
     // Position limits validation
-    if (config.maxPositionsPerPair && (config.maxPositionsPerPair <= 0 || config.maxPositionsPerPair > 10)) {
+    if (config.max_positions_per_pair && (config.max_positions_per_pair <= 0 || config.max_positions_per_pair > 10)) {
       errors.push('Maximum positions per pair must be between 1 and 10');
     }
 
     // Daily reset time validation (if provided)
-    if (config.dailyResetTime) {
+    if (config.daily_reset_time) {
       const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      if (!timeRegex.test(config.dailyResetTime)) {
+      if (!timeRegex.test(config.daily_reset_time)) {
         errors.push('Daily reset time must be in HH:MM format');
       }
     }
@@ -112,18 +112,20 @@ export class ConfigValidator {
     };
   }
 
-  static validateMinimumNotionalPerSymbol(config: TradingConfigData): ValidationResult {
+  static validateTradingPairs(config: TradingConfigData): ValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    if (config.minimumNotionalPerSymbol && config.tradingPairs) {
-      for (const pair of config.tradingPairs) {
-        const minNotional = config.minimumNotionalPerSymbol[pair];
-        if (!minNotional || minNotional <= 0) {
-          errors.push(`Minimum notional for ${pair} must be greater than 0`);
+    if (config.trading_pairs) {
+      for (const pair of config.trading_pairs) {
+        // Basic symbol validation
+        if (!pair || pair.length < 3) {
+          errors.push(`Invalid trading pair: ${pair}`);
         }
-        if (minNotional && minNotional < 5) {
-          warnings.push(`Minimum notional for ${pair} is very low (${minNotional}), may cause order rejections`);
+        
+        // Check if it's a USDT pair (most common for spot trading)
+        if (!pair.endsWith('USDT')) {
+          warnings.push(`Trading pair ${pair} is not a USDT pair, ensure it's supported`);
         }
       }
     }
@@ -135,16 +137,23 @@ export class ConfigValidator {
     };
   }
 
-  static validateQuantityIncrementPerSymbol(config: TradingConfigData): ValidationResult {
+  static validateRiskParameters(config: TradingConfigData): ValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    if (config.quantityIncrementPerSymbol && config.tradingPairs) {
-      for (const pair of config.tradingPairs) {
-        const increment = config.quantityIncrementPerSymbol[pair];
-        if (!increment || increment <= 0) {
-          errors.push(`Quantity increment for ${pair} must be greater than 0`);
-        }
+    // Validate risk management parameters
+    if (config.max_order_amount_usd && config.max_portfolio_exposure_percent) {
+      const maxExposure = config.max_order_amount_usd * config.max_active_pairs;
+      if (maxExposure > 10000) { // Arbitrary high limit for demo trading
+        warnings.push(`Total potential exposure (${maxExposure} USD) may be too high for demo trading`);
+      }
+    }
+
+    // Validate profit/loss ratios
+    if (config.take_profit_percent && config.entry_offset_percent) {
+      const ratio = config.take_profit_percent / config.entry_offset_percent;
+      if (ratio < 2) {
+        warnings.push('Take profit to entry offset ratio is less than 2:1, consider increasing take profit');
       }
     }
 
