@@ -1,104 +1,117 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { BybitService } from '../bybitService';
-import { ApiCredentials } from './types';
 import { TradingLogger } from './core/TradingLogger';
-import { ErrorHandler } from './core/ErrorHandler';
-import { TRADING_ENVIRONMENT } from './core/TypeDefinitions';
+
+export interface ApiCredentials {
+  id: string;
+  apiKey: string;
+  apiSecret: string;
+  exchangeName: string;
+  isActive: boolean;
+  testnet: boolean;
+}
 
 export class CredentialsManager {
   private userId: string;
   private logger: TradingLogger;
-  private errorHandler: ErrorHandler;
 
   constructor(userId: string) {
     this.userId = userId;
     this.logger = new TradingLogger(userId);
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
-  async fetchCredentials(): Promise<BybitService | null> {
+  async getActiveCredentials(exchangeName: string = 'bybit'): Promise<ApiCredentials | null> {
     try {
-      await this.logger.logSystemInfo('Fetching API credentials for DEMO trading', { userId: this.userId });
-      
-      const { data: credentials, error } = await supabase
+      await this.logger.logSystemInfo(`Fetching active credentials for ${exchangeName}`);
+
+      const { data, error } = await supabase
         .from('api_credentials')
         .select('*')
         .eq('user_id', this.userId)
-        .eq('exchange_name', 'bybit')
+        .eq('exchange_name', exchangeName)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          await this.logger.logError('No active API credentials found. Please configure your Bybit DEMO trading API credentials in the API Setup tab.', error);
-        } else {
-          await this.errorHandler.handleApiError(error, 'Fetching API credentials');
-        }
+        await this.logger.logError('Failed to fetch credentials', error);
+        throw error;
+      }
+
+      if (!data) {
+        await this.logger.logSystemInfo(`No active credentials found for ${exchangeName}`);
         return null;
       }
 
-      if (credentials && credentials.api_key && credentials.api_secret) {
-        await this.logger.logSystemInfo('Found valid API credentials for Bybit DEMO trading', {
-          demoTrading: TRADING_ENVIRONMENT.isDemoTrading,
-          apiKey: credentials.api_key ? `${credentials.api_key.substring(0, 8)}...` : 'Missing',
-          apiSecret: credentials.api_secret ? 'Present' : 'Missing',
-          isActive: credentials.is_active,
-          testnet: credentials.testnet
-        });
-        
-        const bybitService = new BybitService(
-          credentials.api_key,
-          credentials.api_secret,
-          TRADING_ENVIRONMENT.isDemoTrading
-        );
+      await this.logger.logSystemInfo(`Active credentials found for ${exchangeName}`);
+      
+      return {
+        id: data.id,
+        apiKey: data.api_key,
+        apiSecret: data.api_secret,
+        exchangeName: data.exchange_name,
+        isActive: data.is_active,
+        testnet: data.testnet
+      };
 
-        // Test the connection using demo trading
-        await this.testApiConnection();
-        
-        return bybitService;
-      } else {
-        await this.logger.logError('API credentials incomplete - missing key or secret', new Error('Missing credentials'));
-        return null;
-      }
     } catch (error) {
-      await this.errorHandler.handleSystemError(error, 'Credentials management');
-      return null;
+      await this.logger.logError('Error in getActiveCredentials', error);
+      throw error;
     }
   }
 
-  private async testApiConnection(): Promise<void> {
+  async validateCredentials(credentials: ApiCredentials): Promise<boolean> {
     try {
-      await this.logger.logSystemInfo('Testing API connection using Supabase edge function for DEMO trading...');
-      
-      const { data: testResult, error: testError } = await supabase.functions.invoke('bybit-api', {
-        body: {
-          endpoint: '/v5/market/tickers',
-          method: 'GET',
-          params: {
-            category: 'spot',
-            symbol: 'BTCUSDT'
-          },
-          isDemoTrading: TRADING_ENVIRONMENT.isDemoTrading,
-          cacheBust: Math.random().toString()
-        }
-      });
-
-      if (testError) {
-        await this.errorHandler.handleApiError(testError, 'DEMO trading API connection test');
-      } else if (testResult?.retCode === 0) {
-        await this.logger.logSuccess('DEMO trading API connection established successfully', { 
-          demoTrading: TRADING_ENVIRONMENT.isDemoTrading,
-          response: 'Valid API response received'
-        });
-      } else {
-        await this.logger.logError('DEMO trading API connection test failed', new Error('Connection test failed'), { 
-          retCode: testResult?.retCode, 
-          retMsg: testResult?.retMsg 
-        });
+      // Basic validation
+      if (!credentials.apiKey || !credentials.apiSecret) {
+        await this.logger.logSystemInfo('Credentials validation failed: missing key or secret');
+        return false;
       }
+
+      if (credentials.apiKey.length < 10 || credentials.apiSecret.length < 20) {
+        await this.logger.logSystemInfo('Credentials validation failed: key or secret too short');
+        return false;
+      }
+
+      await this.logger.logSystemInfo('Credentials validation passed');
+      return true;
+
     } catch (error) {
-      await this.errorHandler.handleApiError(error, 'DEMO trading API connection test');
+      await this.logger.logError('Error validating credentials', error);
+      return false;
+    }
+  }
+
+  async saveCredentials(apiKey: string, apiSecret: string, exchangeName: string = 'bybit', testnet: boolean = true): Promise<void> {
+    try {
+      // Deactivate existing credentials
+      await supabase
+        .from('api_credentials')
+        .update({ is_active: false })
+        .eq('user_id', this.userId)
+        .eq('exchange_name', exchangeName);
+
+      // Insert new credentials
+      const { error } = await supabase
+        .from('api_credentials')
+        .insert({
+          user_id: this.userId,
+          api_key: apiKey,
+          api_secret: apiSecret,
+          exchange_name: exchangeName,
+          is_active: true,
+          testnet: testnet
+        });
+
+      if (error) {
+        await this.logger.logError('Failed to save credentials', error);
+        throw error;
+      }
+
+      await this.logger.logSystemInfo(`Credentials saved for ${exchangeName}`);
+
+    } catch (error) {
+      await this.logger.logError('Error saving credentials', error);
+      throw error;
     }
   }
 }

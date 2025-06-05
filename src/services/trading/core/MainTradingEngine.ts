@@ -6,6 +6,7 @@ import { SignalAnalysisService } from './SignalAnalysisService';
 import { SignalExecutionService } from './SignalExecutionService';
 import { EndOfDayManagerService } from './EndOfDayManagerService';
 import { ManualCloseService } from './ManualCloseService';
+import { SignalAnalyzer } from '../signalAnalyzer';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
 
@@ -20,7 +21,8 @@ export class MainTradingEngine {
   // Core Services
   private positionMonitor: PositionMonitorService;
   private marketScanner: MarketDataScannerService;
-  private signalAnalyzer: SignalAnalysisService;
+  private signalAnalyzer: SignalAnalyzer;
+  private signalAnalysisService: SignalAnalysisService;
   private signalExecutor: SignalExecutionService;
   private eodManager: EndOfDayManagerService;
   private manualCloseService: ManualCloseService;
@@ -37,7 +39,8 @@ export class MainTradingEngine {
     // Initialize services (they will get config on each cycle)
     this.positionMonitor = new PositionMonitorService(userId, bybitService);
     this.marketScanner = new MarketDataScannerService(userId, bybitService);
-    this.signalAnalyzer = new SignalAnalysisService(userId, bybitService);
+    this.signalAnalyzer = new SignalAnalyzer(userId, bybitService);
+    this.signalAnalysisService = new SignalAnalysisService(userId, bybitService);
     this.signalExecutor = new SignalExecutionService(userId, bybitService);
     this.eodManager = new EndOfDayManagerService(userId, bybitService);
     this.manualCloseService = new ManualCloseService(userId, bybitService);
@@ -219,9 +222,9 @@ export class MainTradingEngine {
       console.log('\n📈 Step 2: Market Data Scanning');
       await this.marketScanner.scanMarkets(configData);
 
-      // 2.3 Signal Analysis
+      // 2.3 Signal Analysis (using both services for different approaches)
       console.log('\n🔍 Step 3: Signal Analysis');
-      await this.signalAnalyzer.analyzeAndCreateSignals(configData);
+      await this.signalAnalyzer.analyzeSymbolsAndGenerateSignals(configData);
 
       // 2.4 Signal Execution
       console.log('\n⚡ Step 4: Signal Execution');
