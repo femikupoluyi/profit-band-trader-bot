@@ -36,6 +36,35 @@ export class SignalExecutionService {
     return formattedPrice;
   }
 
+  private formatQuantityForSymbol(symbol: string, quantity: number): string {
+    // Quantity precision rules for different symbols - more conservative to avoid decimal errors
+    const quantityPrecisionRules: Record<string, number> = {
+      'BTCUSDT': 5,    // BTC allows up to 5 decimals
+      'ETHUSDT': 3,    // ETH allows up to 3 decimals  
+      'BNBUSDT': 2,    // BNB allows up to 2 decimals
+      'SOLUSDT': 1,    // SOL reduced to 1 decimal for safety
+      'ADAUSDT': 0,    // ADA whole numbers only
+      'XRPUSDT': 1,    // XRP 1 decimal place
+      'LTCUSDT': 2,    // LTC allows up to 2 decimals
+      'DOGEUSDT': 0,   // DOGE whole numbers only
+      'MATICUSDT': 0,  // MATIC whole numbers only
+      'FETUSDT': 0,    // FET whole numbers only
+      'POLUSDT': 0,    // POL whole numbers only
+      'XLMUSDT': 0,    // XLM whole numbers only
+    };
+
+    const decimals = quantityPrecisionRules[symbol] || 0; // Default to 0 decimals for safety
+    let formattedQty = quantity.toFixed(decimals);
+    
+    // Remove trailing zeros but ensure proper formatting
+    if (decimals > 0) {
+      formattedQty = parseFloat(formattedQty).toString();
+    }
+    
+    console.log(`Formatting quantity for ${symbol}: ${quantity} -> ${formattedQty} (${decimals} decimals)`);
+    return formattedQty;
+  }
+
   async executeSignals(config: TradingConfig): Promise<void> {
     try {
       console.log('⚡ Executing unprocessed signals...');
@@ -81,13 +110,17 @@ export class SignalExecutionService {
       
       const entryPrice = parseFloat(signal.price.toString());
       
-      // 1. Calculate quantity
+      // 1. Calculate quantity with proper formatting
       const rawQuantity = config.maximum_order_amount_usd / entryPrice;
       const increment = config.quantity_increment_per_symbol[signal.symbol] || 0.0001;
-      const finalQuantity = Math.floor(rawQuantity / increment) * increment;
+      const adjustedQuantity = Math.floor(rawQuantity / increment) * increment;
+      
+      // Format quantity using symbol-specific precision rules
+      const finalQuantity = parseFloat(this.formatQuantityForSymbol(signal.symbol, adjustedQuantity));
       
       console.log(`  Raw Quantity: ${rawQuantity.toFixed(6)}`);
-      console.log(`  Final Quantity: ${finalQuantity.toFixed(6)}`);
+      console.log(`  Adjusted Quantity: ${adjustedQuantity.toFixed(6)}`);
+      console.log(`  Final Formatted Quantity: ${finalQuantity}`);
       
       // 2. Check minimum notional
       const orderValue = finalQuantity * entryPrice;
@@ -157,13 +190,16 @@ export class SignalExecutionService {
   private async placeRealBybitOrder(signal: any, quantity: number, entryPrice: number, takeProfitPrice: number, config: TradingConfig): Promise<void> {
     try {
       console.log(`🔄 Placing REAL limit buy order on Bybit for ${signal.symbol}:`);
-      console.log(`  Quantity: ${quantity.toFixed(6)}`);
+      console.log(`  Quantity: ${quantity}`);
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
       
-      const formattedQuantity = quantity.toString();
-      // Format price with correct decimal precision for the symbol
+      // Format quantity and price with correct decimal precision for the symbol
+      const formattedQuantity = this.formatQuantityForSymbol(signal.symbol, quantity);
       const formattedEntryPrice = this.formatPriceForSymbol(signal.symbol, entryPrice);
+
+      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
+      console.log(`  🔧 Formatted Entry Price: ${formattedEntryPrice}`);
 
       // ALWAYS place real Bybit order - no fallback to mock
       const buyOrderParams = {
@@ -176,7 +212,7 @@ export class SignalExecutionService {
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing REAL BUY order with formatted price:', buyOrderParams);
+      console.log('📝 Placing REAL BUY order with formatted values:', buyOrderParams);
       const buyOrderResult = await this.bybitService.placeOrder(buyOrderParams);
 
       if (buyOrderResult && buyOrderResult.retCode === 0 && buyOrderResult.result?.orderId) {
@@ -192,7 +228,7 @@ export class SignalExecutionService {
             side: 'buy',
             order_type: 'limit',
             price: entryPrice,
-            quantity: quantity,
+            quantity: parseFloat(formattedQuantity), // Use the formatted quantity value
             status: 'pending', // Real orders start as pending until Bybit confirms fill
             bybit_order_id: bybitOrderId,
           })
@@ -215,14 +251,14 @@ export class SignalExecutionService {
           entryPrice: entryPrice,
           formattedPrice: formattedEntryPrice,
           takeProfitPrice: takeProfitPrice,
-          orderValue: quantity * entryPrice,
+          orderValue: parseFloat(formattedQuantity) * entryPrice,
           bybitOrderId,
           tradeId: trade.id,
           orderType: 'REAL_BYBIT_LIMIT_ORDER'
         });
 
         // Place take-profit limit sell order after successful buy order
-        await this.placeTakeProfitOrder(signal.symbol, quantity, takeProfitPrice);
+        await this.placeTakeProfitOrder(signal.symbol, parseFloat(formattedQuantity), takeProfitPrice);
 
       } else {
         console.error(`❌ Bybit order FAILED - retCode: ${buyOrderResult?.retCode}, retMsg: ${buyOrderResult?.retMsg}`);
@@ -234,7 +270,9 @@ export class SignalExecutionService {
           error: buyOrderResult?.retMsg || 'Unknown error',
           retCode: buyOrderResult?.retCode,
           formattedPrice: formattedEntryPrice,
-          originalPrice: entryPrice
+          originalPrice: entryPrice,
+          formattedQuantity: formattedQuantity,
+          originalQuantity: quantity
         });
       }
 
@@ -249,20 +287,24 @@ export class SignalExecutionService {
     try {
       console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
-      // Format take-profit price with correct decimal precision
+      // Format take-profit price and quantity with correct decimal precision
       const formattedTakeProfitPrice = this.formatPriceForSymbol(symbol, takeProfitPrice);
+      const formattedQuantity = this.formatQuantityForSymbol(symbol, quantity);
+      
+      console.log(`  🔧 Formatted Take-Profit Price: ${formattedTakeProfitPrice}`);
+      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
       
       const sellOrderParams = {
         category: 'spot' as const,
         symbol: symbol,
         side: 'Sell' as const,
         orderType: 'Limit' as const,
-        qty: quantity.toString(),
+        qty: formattedQuantity,
         price: formattedTakeProfitPrice,
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing take-profit SELL order with formatted price:', sellOrderParams);
+      console.log('📝 Placing take-profit SELL order with formatted values:', sellOrderParams);
       const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
       
       if (sellOrderResult && sellOrderResult.retCode === 0) {
@@ -270,7 +312,7 @@ export class SignalExecutionService {
         
         await this.logActivity('order_placed', `Take-profit limit sell order placed for ${symbol}`, {
           symbol,
-          quantity: quantity.toString(),
+          quantity: formattedQuantity,
           takeProfitPrice,
           formattedPrice: formattedTakeProfitPrice,
           bybitOrderId: sellOrderResult.result?.orderId,
@@ -283,7 +325,8 @@ export class SignalExecutionService {
           symbol,
           error: sellOrderResult?.retMsg || 'Unknown error',
           formattedPrice: formattedTakeProfitPrice,
-          originalPrice: takeProfitPrice
+          originalPrice: takeProfitPrice,
+          formattedQuantity: formattedQuantity
         });
       }
     } catch (error) {
