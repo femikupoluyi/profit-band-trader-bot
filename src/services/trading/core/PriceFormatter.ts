@@ -9,9 +9,9 @@ export class PriceFormatter {
     'ADAUSDT': { price: 6, quantity: 0 },
     'XRPUSDT': { price: 6, quantity: 1 },
     'LTCUSDT': { price: 2, quantity: 2 },
-    'POLUSDT': { price: 4, quantity: 0 }, // Updated to 4 decimals for price
+    'POLUSDT': { price: 4, quantity: 0 },
     'FETUSDT': { price: 6, quantity: 0 },
-    'XLMUSDT': { price: 4, quantity: 0 } // Updated to 4 decimals for price
+    'XLMUSDT': { price: 3, quantity: 0 } // Reduced from 4 to 3 decimals for price
   };
 
   // Default precision for unknown symbols
