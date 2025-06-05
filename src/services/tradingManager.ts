@@ -67,11 +67,35 @@ class TradingManager {
   }
 
   async simulateEndOfDay(userId: string): Promise<void> {
-    const engine = this.engines.get(userId);
+    console.log('🌅 Manual EOD simulation requested for user:', userId);
+    
+    // Check if engine is running, if not create a temporary one for EOD
+    let engine = this.engines.get(userId);
+    let isTemporaryEngine = false;
+    
     if (!engine) {
-      throw new Error('Trading engine not running for user');
+      console.log('No running engine found, creating temporary engine for EOD simulation');
+      try {
+        const bybitService = new BybitService(userId);
+        engine = new MainTradingEngine(userId, bybitService);
+        await engine.initialize();
+        isTemporaryEngine = true;
+      } catch (error) {
+        console.error('Failed to create temporary engine for EOD:', error);
+        throw new Error('Failed to initialize trading engine for EOD simulation');
+      }
     }
-    return engine.simulateEndOfDay();
+    
+    try {
+      await engine.simulateEndOfDay();
+      console.log('✅ EOD simulation completed successfully');
+    } finally {
+      // Clean up temporary engine if created
+      if (isTemporaryEngine && engine) {
+        console.log('Cleaning up temporary engine');
+        // No need to call stop() since it wasn't started
+      }
+    }
   }
 }
 

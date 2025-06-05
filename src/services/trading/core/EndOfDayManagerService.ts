@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -12,9 +11,9 @@ export class EndOfDayManagerService {
     this.bybitService = bybitService;
   }
 
-  async manageEndOfDay(config: TradingConfigData): Promise<void> {
+  async manageEndOfDay(config: TradingConfigData, forceSimulation: boolean = false): Promise<void> {
     try {
-      if (!config.auto_close_at_end_of_day) {
+      if (!config.auto_close_at_end_of_day && !forceSimulation) {
         console.log('⏸️ End-of-day auto-close is disabled');
         return;
       }
@@ -25,12 +24,17 @@ export class EndOfDayManagerService {
       const currentHour = new Date().getUTCHours();
       const isEndOfDay = currentHour >= 22; // 10 PM UTC
 
-      if (!isEndOfDay) {
+      // For manual simulation, always proceed regardless of time
+      if (!isEndOfDay && !forceSimulation) {
         console.log(`⏰ Not end of day yet (current hour: ${currentHour} UTC)`);
         return;
       }
 
-      console.log('🌅 End of day detected, checking positions to close...');
+      if (forceSimulation) {
+        console.log('🔄 MANUAL EOD SIMULATION - Processing all positions regardless of time');
+      } else {
+        console.log('🌅 End of day detected, checking positions to close...');
+      }
 
       // Get all active positions
       const { data: activeTrades, error } = await supabase
@@ -52,7 +56,7 @@ export class EndOfDayManagerService {
       console.log(`📊 Found ${activeTrades.length} active positions to evaluate for EOD closure`);
 
       for (const trade of activeTrades) {
-        await this.evaluateTradeForEODClosure(trade, config);
+        await this.evaluateTradeForEODClosure(trade, config, forceSimulation);
       }
 
       console.log('✅ End-of-day management completed');
@@ -62,7 +66,7 @@ export class EndOfDayManagerService {
     }
   }
 
-  private async evaluateTradeForEODClosure(trade: any, config: TradingConfigData): Promise<void> {
+  private async evaluateTradeForEODClosure(trade: any, config: TradingConfigData, forceSimulation: boolean = false): Promise<void> {
     try {
       console.log(`🔍 Evaluating ${trade.symbol} for EOD closure...`);
 
@@ -76,14 +80,24 @@ export class EndOfDayManagerService {
       
       console.log(`  Entry: $${entryPrice.toFixed(4)}, Current: $${currentPrice.toFixed(4)}, P&L: ${plPercentage.toFixed(2)}%`);
 
-      // Close if we're at a loss or small profit (based on EOD premium setting)
-      const shouldClose = plPercentage < config.eod_close_premium_percent;
+      // For manual simulation, close if profitable (above 0%)
+      // For regular EOD, close if below the threshold
+      let shouldClose = false;
+      if (forceSimulation) {
+        shouldClose = plPercentage > 0; // Close profitable positions in simulation
+        console.log(`  Manual simulation: ${shouldClose ? 'CLOSING' : 'KEEPING'} (profit threshold: 0%)`);
+      } else {
+        shouldClose = plPercentage < config.eod_close_premium_percent;
+        console.log(`  Regular EOD: ${shouldClose ? 'CLOSING' : 'KEEPING'} (threshold: ${config.eod_close_premium_percent}%)`);
+      }
       
       if (shouldClose) {
-        console.log(`🔄 Closing position for EOD: ${trade.symbol} (P&L: ${plPercentage.toFixed(2)}%)`);
-        await this.closePosition(trade, currentPrice, 'eod_auto_close');
+        const reason = forceSimulation ? 'manual_eod_simulation' : 'eod_auto_close';
+        console.log(`🔄 Closing position for ${reason}: ${trade.symbol} (P&L: ${plPercentage.toFixed(2)}%)`);
+        await this.closePosition(trade, currentPrice, reason);
       } else {
-        console.log(`✅ Keeping position open: ${trade.symbol} (P&L above ${config.eod_close_premium_percent}%)`);
+        const threshold = forceSimulation ? '0%' : `${config.eod_close_premium_percent}%`;
+        console.log(`✅ Keeping position open: ${trade.symbol} (P&L ${forceSimulation ? 'not above' : 'above'} ${threshold})`);
       }
 
     } catch (error) {

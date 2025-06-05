@@ -136,12 +136,24 @@ export class MainTradingEngine {
       console.log('🌅 Manual End-of-Day Simulation Started...');
       await this.logActivity('system_info', 'Manual end-of-day simulation started');
       
-      // Get current config
+      // Get current config - load fresh config for EOD simulation
+      await this.configManager.loadConfig();
       const config = this.configManager.getConfig();
       const configData = this.convertConfig(config);
       
+      console.log('📋 EOD Config loaded:', {
+        autoCloseAtEOD: configData.auto_close_at_end_of_day,
+        eodCloseThreshold: configData.eod_close_premium_percent
+      });
+      
+      // Force EOD execution regardless of time by temporarily overriding the config
+      const eodConfigData = {
+        ...configData,
+        auto_close_at_end_of_day: true // Force enable for manual simulation
+      };
+      
       // Execute end-of-day management
-      await this.eodManager.manageEndOfDay(configData);
+      await this.eodManager.manageEndOfDay(eodConfigData);
       
       console.log('✅ Manual End-of-Day Simulation Completed');
       await this.logActivity('system_info', 'Manual end-of-day simulation completed successfully');
