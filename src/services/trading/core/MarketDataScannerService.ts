@@ -2,20 +2,25 @@
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { TradingLogger } from './TradingLogger';
 
 export class MarketDataScannerService {
   private userId: string;
   private bybitService: BybitService;
+  private logger: TradingLogger;
   private lastPrices: Map<string, number> = new Map();
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.logger = new TradingLogger(userId);
+    this.bybitService.setLogger(this.logger);
   }
 
   async scanMarkets(config: TradingConfigData): Promise<void> {
     try {
       console.log(`📊 Scanning ${config.trading_pairs.length} markets...`);
+      await this.logger.logSuccess(`Scanning ${config.trading_pairs.length} markets`);
 
       // Clear old market data (older than last cycle)
       await this.clearOldMarketData();
@@ -25,8 +30,10 @@ export class MarketDataScannerService {
       }
 
       console.log('✅ Market scan completed');
+      await this.logger.logSuccess('Market scan completed');
     } catch (error) {
       console.error('❌ Error scanning markets:', error);
+      await this.logger.logError('Error scanning markets', error);
       throw error;
     }
   }
@@ -42,9 +49,11 @@ export class MarketDataScannerService {
 
       if (error) {
         console.error('Error clearing old market data:', error);
+        await this.logger.logError('Error clearing old market data', error);
       }
     } catch (error) {
       console.error('Error clearing old market data:', error);
+      await this.logger.logError('Error clearing old market data', error);
     }
   }
 
@@ -59,7 +68,12 @@ export class MarketDataScannerService {
       const lastPrice = this.lastPrices.get(symbol);
       if (lastPrice && Math.abs((currentPrice - lastPrice) / lastPrice) > 0.1) {
         console.log(`⚠️ Large price jump detected for ${symbol}: ${lastPrice} -> ${currentPrice}`);
-        // Could implement additional validation here
+        await this.logger.logSuccess(`Large price jump detected for ${symbol}`, {
+          symbol,
+          lastPrice,
+          currentPrice,
+          changePercent: ((currentPrice - lastPrice) / lastPrice * 100).toFixed(2)
+        });
       }
 
       // Store current price
@@ -77,31 +91,14 @@ export class MarketDataScannerService {
 
       if (error) {
         console.error(`❌ Error storing market data for ${symbol}:`, error);
+        await this.logger.logError(`Error storing market data for ${symbol}`, error, { symbol });
       } else {
         console.log(`✅ ${symbol}: $${currentPrice.toFixed(4)}`);
       }
 
     } catch (error) {
       console.error(`❌ Error scanning ${symbol}:`, error);
-      await this.logActivity('system_error', `Failed to scan ${symbol}`, { 
-        error: error.message,
-        symbol 
-      });
-    }
-  }
-
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
-    try {
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: type,
-          message,
-          data: data || null,
-        });
-    } catch (error) {
-      console.error('Error logging activity:', error);
+      await this.logger.logError(`Failed to scan ${symbol}`, error, { symbol });
     }
   }
 }

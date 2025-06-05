@@ -4,16 +4,20 @@ import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { SignalGenerator } from '../signalGenerator';
 import { SupportLevelAnalyzer } from '../supportLevelAnalyzer';
+import { TradingLogger } from './TradingLogger';
 
 export class SignalAnalysisService {
   private userId: string;
   private bybitService: BybitService;
+  private logger: TradingLogger;
   private signalGenerator: SignalGenerator;
   private supportLevelAnalyzer: SupportLevelAnalyzer;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.logger = new TradingLogger(userId);
+    this.bybitService.setLogger(this.logger);
     this.signalGenerator = new SignalGenerator(userId, {} as TradingConfigData); // Will be updated per call
     this.supportLevelAnalyzer = new SupportLevelAnalyzer();
   }
@@ -21,6 +25,7 @@ export class SignalAnalysisService {
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
     try {
       console.log('📈 Starting signal analysis...');
+      await this.logger.logSuccess('Starting signal analysis');
       
       // Update signal generator with current config
       this.signalGenerator = new SignalGenerator(this.userId, config);
@@ -30,8 +35,10 @@ export class SignalAnalysisService {
       }
 
       console.log('✅ Signal analysis completed');
+      await this.logger.logSuccess('Signal analysis completed');
     } catch (error) {
       console.error('❌ Error in signal analysis:', error);
+      await this.logger.logError('Error in signal analysis', error);
       throw error;
     }
   }
@@ -56,11 +63,17 @@ export class SignalAnalysisService {
 
       if (error) {
         console.error(`❌ Error fetching market data for ${symbol}:`, error);
+        await this.logger.logError(`Error fetching market data for ${symbol}`, error, { symbol });
         return;
       }
 
       if (!recentData || recentData.length < 10) {
         console.log(`  ⚠️ Insufficient market data for ${symbol} (${recentData?.length || 0} records)`);
+        await this.logger.logSuccess(`Insufficient market data for ${symbol}`, {
+          symbol,
+          recordCount: recentData?.length || 0,
+          required: 10
+        });
         return;
       }
 
@@ -84,6 +97,12 @@ export class SignalAnalysisService {
         const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
         if (signal) {
           console.log(`  🎯 Signal generated for ${symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
+          await this.logger.logSuccess(`Signal generated for ${symbol}`, {
+            symbol,
+            action: signal.action,
+            price: signal.price,
+            supportLevel: supportLevel.price
+          });
         } else {
           console.log(`  📭 No signal generated for ${symbol}`);
         }
@@ -93,25 +112,7 @@ export class SignalAnalysisService {
 
     } catch (error) {
       console.error(`❌ Error analyzing ${symbol}:`, error);
-      await this.logActivity('system_error', `Failed to analyze ${symbol}`, {
-        symbol,
-        error: error.message
-      });
-    }
-  }
-
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
-    try {
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: type,
-          message,
-          data: data || null,
-        });
-    } catch (error) {
-      console.error('Error logging activity:', error);
+      await this.logger.logError(`Failed to analyze ${symbol}`, error, { symbol });
     }
   }
 }

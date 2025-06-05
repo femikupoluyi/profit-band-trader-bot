@@ -2,14 +2,18 @@
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { TradingLogger } from './TradingLogger';
 
 export class PositionMonitorService {
   private userId: string;
   private bybitService: BybitService;
+  private logger: TradingLogger;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.logger = new TradingLogger(userId);
+    this.bybitService.setLogger(this.logger);
   }
 
   async checkOrderFills(config: TradingConfigData): Promise<void> {
@@ -25,6 +29,7 @@ export class PositionMonitorService {
 
       if (error) {
         console.error('❌ Error fetching pending trades:', error);
+        await this.logger.logError('Error fetching pending trades', error);
         return;
       }
 
@@ -34,14 +39,17 @@ export class PositionMonitorService {
       }
 
       console.log(`📋 Found ${pendingTrades.length} pending orders to check`);
+      await this.logger.logSuccess(`Found ${pendingTrades.length} pending orders to check`);
 
       for (const trade of pendingTrades) {
         await this.checkSingleOrderFill(trade);
       }
 
       console.log('✅ Order fill check completed');
+      await this.logger.logSuccess('Order fill check completed');
     } catch (error) {
       console.error('❌ Error checking order fills:', error);
+      await this.logger.logError('Error checking order fills', error);
       throw error;
     }
   }
@@ -76,9 +84,12 @@ export class PositionMonitorService {
 
           if (error) {
             console.error(`❌ Error updating trade ${trade.id}:`, error);
+            await this.logger.logError(`Error updating trade ${trade.id}`, error, {
+              tradeId: trade.id
+            });
           } else {
             console.log(`✅ Updated trade ${trade.id} status to filled`);
-            await this.logActivity('trade_filled', `Order filled for ${trade.symbol}`, {
+            await this.logger.log('trade_filled', `Order filled for ${trade.symbol}`, {
               tradeId: trade.id,
               symbol: trade.symbol,
               bybitOrderId: trade.bybit_order_id
@@ -93,26 +104,10 @@ export class PositionMonitorService {
 
     } catch (error) {
       console.error(`❌ Error checking order ${trade.bybit_order_id}:`, error);
-      await this.logActivity('system_error', `Failed to check order status`, {
+      await this.logger.logError(`Failed to check order status`, error, {
         tradeId: trade.id,
-        bybitOrderId: trade.bybit_order_id,
-        error: error.message
+        bybitOrderId: trade.bybit_order_id
       });
-    }
-  }
-
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
-    try {
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: type,
-          message,
-          data: data || null,
-        });
-    } catch (error) {
-      console.error('Error logging activity:', error);
     }
   }
 }

@@ -6,16 +6,20 @@ import { PositionValidator } from './PositionValidator';
 import { OrderPlacer } from './OrderPlacer';
 import { TradeValidator } from './TradeValidator';
 import { PriceFormatter } from './PriceFormatter';
+import { TradingLogger } from './TradingLogger';
 
 export class SignalExecutionService {
   private userId: string;
   private bybitService: BybitService;
+  private logger: TradingLogger;
   private positionValidator: PositionValidator;
   private orderPlacer: OrderPlacer;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.logger = new TradingLogger(userId);
+    this.bybitService.setLogger(this.logger);
     this.positionValidator = new PositionValidator(userId);
     this.orderPlacer = new OrderPlacer(userId, bybitService);
   }
@@ -23,6 +27,7 @@ export class SignalExecutionService {
   async executeSignal(config: TradingConfigData): Promise<void> {
     try {
       console.log('\n⚡ Executing signals...');
+      await this.logger.logSuccess('Starting signal execution');
       
       // Get unprocessed signals
       const { data: signals, error } = await supabase
@@ -35,6 +40,7 @@ export class SignalExecutionService {
 
       if (error) {
         console.error('❌ Error fetching signals:', error);
+        await this.logger.logError('Error fetching signals', error);
         return;
       }
 
@@ -44,13 +50,16 @@ export class SignalExecutionService {
       }
 
       console.log(`📊 Found ${signals.length} unprocessed signals`);
+      await this.logger.logSuccess(`Found ${signals.length} unprocessed signals`);
 
       for (const signal of signals) {
         await this.processSingleSignal(signal, config);
       }
       
+      await this.logger.logSuccess('Signal execution completed');
     } catch (error) {
       console.error(`❌ Error executing signals:`, error);
+      await this.logger.logError('Error executing signals', error);
     }
   }
 
@@ -97,6 +106,13 @@ export class SignalExecutionService {
         .update({ processed: true })
         .eq('id', signal.id);
       
+      await this.logger.logSuccess(`Signal executed for ${signal.symbol}`, {
+        symbol: signal.symbol,
+        signalId: signal.id,
+        entryPrice,
+        quantity: finalQuantity
+      });
+      
     } catch (error) {
       console.error(`❌ Error executing signal ${signal.id}:`, error);
       await this.markSignalRejected(signal.id, error.message);
@@ -110,27 +126,12 @@ export class SignalExecutionService {
         .update({ processed: true })
         .eq('id', signalId);
 
-      await this.logActivity('signal_rejected', `Signal rejected: ${reason}`, {
+      await this.logger.log('signal_rejected', `Signal rejected: ${reason}`, {
         signalId,
         reason
       });
     } catch (error) {
       console.error('Error marking signal as rejected:', error);
-    }
-  }
-
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
-    try {
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: type,
-          message,
-          data: data || null,
-        });
-    } catch (error) {
-      console.error('Error logging activity:', error);
     }
   }
 }

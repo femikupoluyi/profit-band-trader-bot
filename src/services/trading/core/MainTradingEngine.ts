@@ -7,12 +7,13 @@ import { SignalExecutionService } from './SignalExecutionService';
 import { EndOfDayManagerService } from './EndOfDayManagerService';
 import { ManualCloseService } from './ManualCloseService';
 import { BybitService } from '../../bybitService';
-import { supabase } from '@/integrations/supabase/client';
+import { TradingLogger } from './TradingLogger';
 
 export class MainTradingEngine {
   private userId: string;
   private configManager: TradingConfigManager;
   private bybitService: BybitService;
+  private logger: TradingLogger;
   private isRunning = false;
   private mainLoopInterval: NodeJS.Timeout | null = null;
   
@@ -27,7 +28,11 @@ export class MainTradingEngine {
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.logger = new TradingLogger(userId);
     this.configManager = TradingConfigManager.getInstance(userId);
+    
+    // Set logger on bybit service
+    this.bybitService.setLogger(this.logger);
     
     // Initialize services (they will get config on each cycle)
     this.positionMonitor = new PositionMonitorService(userId, bybitService);
@@ -70,12 +75,10 @@ export class MainTradingEngine {
       await this.configManager.loadConfig();
       
       console.log('✅ Main Trading Engine initialized successfully');
-      await this.logActivity('signal_processed', 'Main Trading Engine initialized');
+      await this.logger.logSuccess('Main Trading Engine initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Main Trading Engine:', error);
-      await this.logActivity('system_error', 'Failed to initialize Main Trading Engine', { 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      });
+      await this.logger.logError('Failed to initialize Main Trading Engine', error);
       throw error;
     }
   }
@@ -91,23 +94,21 @@ export class MainTradingEngine {
       
       if (!config.is_active) {
         console.log('❌ Cannot start trading: configuration is not active');
-        await this.logActivity('system_error', 'Cannot start trading: configuration is not active');
+        await this.logger.logError('Cannot start trading: configuration is not active', new Error('Config not active'));
         return;
       }
 
       this.isRunning = true;
       
       console.log(`🚀 Starting Main Trading Loop with ${config.main_loop_interval_seconds}s interval`);
-      await this.logActivity('signal_processed', `Trading started with ${config.main_loop_interval_seconds}s interval`);
+      await this.logger.logSuccess(`Trading started with ${config.main_loop_interval_seconds}s interval`);
 
       // Start the main loop
       this.scheduleMainLoop(config.main_loop_interval_seconds);
       
     } catch (error) {
       console.error('❌ Failed to start trading engine:', error);
-      await this.logActivity('system_error', 'Failed to start trading engine', { 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      });
+      await this.logger.logError('Failed to start trading engine', error);
       this.isRunning = false;
       throw error;
     }
@@ -127,7 +128,7 @@ export class MainTradingEngine {
       this.mainLoopInterval = null;
     }
 
-    await this.logActivity('signal_processed', 'Trading engine stopped');
+    await this.logger.logSuccess('Trading engine stopped');
     console.log('✅ Main Trading Engine stopped');
   }
 
@@ -138,7 +139,7 @@ export class MainTradingEngine {
   async simulateEndOfDay(): Promise<void> {
     try {
       console.log('🌅 Manual End-of-Day Simulation Started...');
-      await this.logActivity('signal_processed', 'Manual end-of-day simulation started');
+      await this.logger.logSuccess('Manual end-of-day simulation started');
       
       // Get current config - load fresh config for EOD simulation
       await this.configManager.loadConfig();
@@ -160,12 +161,10 @@ export class MainTradingEngine {
       await this.eodManager.manageEndOfDay(eodConfigData, true);
       
       console.log('✅ Manual End-of-Day Simulation Completed');
-      await this.logActivity('position_closed', 'Manual end-of-day simulation completed successfully');
+      await this.logger.log('position_closed', 'Manual end-of-day simulation completed successfully');
     } catch (error) {
       console.error('❌ Error in manual end-of-day simulation:', error);
-      await this.logActivity('system_error', 'Manual end-of-day simulation failed', { 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      });
+      await this.logger.logError('Manual end-of-day simulation failed', error);
       throw error;
     }
   }
@@ -184,9 +183,7 @@ export class MainTradingEngine {
         }
       } catch (error) {
         console.error('❌ Error in main trading loop:', error);
-        await this.logActivity('system_error', 'Main trading loop error', { 
-          error: error instanceof Error ? error.message : 'Unknown error' 
-        });
+        await this.logger.logError('Main trading loop error', error);
         
         // Continue running but log the error
         if (this.isRunning) {
@@ -244,44 +241,5 @@ export class MainTradingEngine {
 
   isEngineRunning(): boolean {
     return this.isRunning;
-  }
-
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
-    try {
-      // Valid log types based on database constraints
-      const validLogTypes = [
-        'signal_processed',
-        'trade_executed',
-        'trade_filled',
-        'position_closed',
-        'system_error',
-        'order_placed',
-        'order_failed',
-        'calculation_error',
-        'execution_error',
-        'signal_rejected',
-        'order_rejected'
-      ];
-
-      // Map any custom types to valid ones
-      const typeMapping: Record<string, string> = {
-        'system_info': 'signal_processed', // Use signal_processed for general info
-        'engine_started': 'signal_processed',
-        'engine_stopped': 'signal_processed'
-      };
-
-      const validType = typeMapping[type] || (validLogTypes.includes(type) ? type : 'system_error');
-
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: validType,
-          message,
-          data: data || null,
-        });
-    } catch (error) {
-      console.error('Error logging activity:', error);
-    }
   }
 }
