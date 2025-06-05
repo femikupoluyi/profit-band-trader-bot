@@ -27,6 +27,15 @@ const DashboardWithSidebar = () => {
     refetch();
   };
 
+  const navigationItems = [
+    { id: 'config', title: 'Configuration' },
+    { id: 'api', title: 'API Setup' },
+    { id: 'status', title: 'Trading Status' },
+    { id: 'trades', title: 'Trade History' },
+    { id: 'reports', title: 'Reports' },
+    { id: 'logs', title: 'System Logs' },
+  ];
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'status':
@@ -84,14 +93,5 @@ const DashboardWithSidebar = () => {
     </SidebarProvider>
   );
 };
-
-const navigationItems = [
-  { id: 'config', title: 'Configuration' },
-  { id: 'api', title: 'API Setup' },
-  { id: 'status', title: 'Trading Status' },
-  { id: 'trades', title: 'Trade History' },
-  { id: 'reports', title: 'Reports' },
-  { id: 'logs', title: 'System Logs' },
-];
 
 export default DashboardWithSidebar;

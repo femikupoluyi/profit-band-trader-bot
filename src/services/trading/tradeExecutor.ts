@@ -15,8 +15,8 @@ export class TradeExecutor {
     this.userId = userId;
     this.config = config;
     
-    const signalExecutionService = new SignalExecutionService(userId, config, bybitService);
-    this.signalProcessorService = new SignalProcessorService(userId, signalExecutionService);
+    const signalExecutionService = new SignalExecutionService(userId, bybitService);
+    this.signalProcessorService = new SignalProcessorService(userId, signalExecutionService, config);
     this.endOfDayService = new EndOfDayService(userId, config, bybitService);
   }
 

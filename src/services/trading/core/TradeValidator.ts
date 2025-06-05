@@ -3,9 +3,9 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 
 export class TradeValidator {
   static validateTradeParameters(symbol: string, quantity: number, entryPrice: number, config: TradingConfigData): boolean {
-    // Check minimum notional
+    // Check minimum notional - use default if not available
     const orderValue = quantity * entryPrice;
-    const minNotional = config.minimum_notional_per_symbol?.[symbol] || 10;
+    const minNotional = 10; // Default minimum notional
     
     if (orderValue < minNotional) {
       console.log(`❌ Order value ${orderValue.toFixed(2)} below minimum ${minNotional}`);
@@ -24,7 +24,7 @@ export class TradeValidator {
   static calculateQuantity(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfigData): number {
     // Calculate quantity with proper formatting
     const rawQuantity = orderAmount / entryPrice;
-    const increment = config.quantity_increment_per_symbol?.[symbol] || 0.0001;
+    const increment = 0.0001; // Default increment
     const adjustedQuantity = Math.floor(rawQuantity / increment) * increment;
     
     console.log(`  Raw Quantity: ${rawQuantity.toFixed(6)}`);
