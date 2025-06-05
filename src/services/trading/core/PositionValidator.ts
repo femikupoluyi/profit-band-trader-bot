@@ -1,6 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class PositionValidator {
   private userId: string;
@@ -9,7 +9,7 @@ export class PositionValidator {
     this.userId = userId;
   }
 
-  async validatePositionLimits(symbol: string, config: TradingConfig): Promise<boolean> {
+  async validatePositionLimits(symbol: string, config: TradingConfigData): Promise<boolean> {
     try {
       // Check max active pairs
       const { data: activePairs } = await supabase
@@ -22,8 +22,8 @@ export class PositionValidator {
       const activePairCount = uniquePairs.size;
       
       // If this symbol is new and we're at max pairs, reject
-      if (!uniquePairs.has(symbol) && activePairCount >= config.maximum_active_pairs) {
-        console.log(`❌ Max active pairs limit reached: ${activePairCount}/${config.maximum_active_pairs}`);
+      if (!uniquePairs.has(symbol) && activePairCount >= config.max_active_pairs) {
+        console.log(`❌ Max active pairs limit reached: ${activePairCount}/${config.max_active_pairs}`);
         return false;
       }
 
@@ -35,12 +35,12 @@ export class PositionValidator {
         .eq('symbol', symbol)
         .in('status', ['pending', 'filled', 'partial_filled']);
 
-      if ((currentPositions || 0) >= config.maximum_positions_per_pair) {
-        console.log(`❌ Max positions per pair exceeded for ${symbol}: ${currentPositions}/${config.maximum_positions_per_pair}`);
+      if ((currentPositions || 0) >= config.max_positions_per_pair) {
+        console.log(`❌ Max positions per pair exceeded for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
         return false;
       }
 
-      console.log(`✅ Position limits check passed for ${symbol}: ${currentPositions}/${config.maximum_positions_per_pair} positions, ${activePairCount}/${config.maximum_active_pairs} pairs`);
+      console.log(`✅ Position limits check passed for ${symbol}: ${currentPositions}/${config.max_positions_per_pair} positions, ${activePairCount}/${config.max_active_pairs} pairs`);
       return true;
 
     } catch (error) {

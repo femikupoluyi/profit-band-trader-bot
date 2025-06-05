@@ -1,8 +1,8 @@
 
-import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class TradeValidator {
-  static validateTradeParameters(symbol: string, quantity: number, entryPrice: number, config: TradingConfig): boolean {
+  static validateTradeParameters(symbol: string, quantity: number, entryPrice: number, config: TradingConfigData): boolean {
     // Check minimum notional
     const orderValue = quantity * entryPrice;
     const minNotional = config.minimum_notional_per_symbol[symbol] || 10;
@@ -21,7 +21,7 @@ export class TradeValidator {
     return true;
   }
 
-  static calculateQuantity(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfig): number {
+  static calculateQuantity(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfigData): number {
     // Calculate quantity with proper formatting
     const rawQuantity = orderAmount / entryPrice;
     const increment = config.quantity_increment_per_symbol[symbol] || 0.0001;
