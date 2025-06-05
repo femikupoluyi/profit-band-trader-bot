@@ -93,18 +93,17 @@ export class SignalAnalysisService {
       if (supportLevel) {
         console.log(`  📊 Support found at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
         
-        // Generate signal if conditions are met
-        const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
-        if (signal) {
-          console.log(`  🎯 Signal generated for ${symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
-          await this.logger.logSuccess(`Signal generated for ${symbol}`, {
-            symbol,
-            action: signal.action,
-            price: signal.price,
-            supportLevel: supportLevel.price
-          });
+        // Check if current price is near support level for potential buy signal
+        const priceAboveSupport = ((currentPrice - supportLevel.price) / supportLevel.price) * 100;
+        
+        if (priceAboveSupport > 0 && priceAboveSupport <= config.entry_offset_percent) {
+          // Generate buy signal
+          const entryPrice = supportLevel.price * (1 + config.entry_offset_percent / 100);
+          
+          console.log(`  🎯 Buy signal conditions met for ${symbol}`);
+          await this.createBuySignal(symbol, entryPrice, supportLevel, config);
         } else {
-          console.log(`  📭 No signal generated for ${symbol}`);
+          console.log(`  📭 Price not in buy zone for ${symbol} (${priceAboveSupport.toFixed(2)}% above support)`);
         }
       } else {
         console.log(`  📭 No valid support level found for ${symbol}`);
@@ -113,6 +112,42 @@ export class SignalAnalysisService {
     } catch (error) {
       console.error(`❌ Error analyzing ${symbol}:`, error);
       await this.logger.logError(`Failed to analyze ${symbol}`, error, { symbol });
+    }
+  }
+
+  private async createBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData): Promise<void> {
+    try {
+      const { data: signal, error } = await supabase
+        .from('trading_signals')
+        .insert({
+          user_id: this.userId,
+          symbol: symbol,
+          signal_type: 'buy',
+          price: entryPrice,
+          confidence: supportLevel.strength,
+          reasoning: `Buy signal: Price near support level at $${supportLevel.price.toFixed(4)} with ${supportLevel.strength} strength`,
+          processed: false
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error(`❌ Error creating signal for ${symbol}:`, error);
+        await this.logger.logError(`Error creating signal for ${symbol}`, error, { symbol });
+        return;
+      }
+
+      console.log(`✅ Buy signal created for ${symbol} at $${entryPrice.toFixed(4)}`);
+      await this.logger.logSignalProcessed(symbol, 'buy', {
+        signalId: signal.id,
+        entryPrice,
+        supportLevel: supportLevel.price,
+        confidence: supportLevel.strength
+      });
+
+    } catch (error) {
+      console.error(`❌ Error creating buy signal for ${symbol}:`, error);
+      await this.logger.logError(`Failed to create buy signal for ${symbol}`, error, { symbol });
     }
   }
 }
