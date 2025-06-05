@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -22,6 +23,8 @@ export interface TradingConfigData {
   manual_close_premium_percent: number;
   support_lower_bound_percent: number;
   support_upper_bound_percent: number;
+  minimum_notional_per_symbol?: Record<string, number>;
+  quantity_increment_per_symbol?: Record<string, number>;
 }
 
 const getDefaultConfig = (): TradingConfigData => ({
@@ -43,6 +46,8 @@ const getDefaultConfig = (): TradingConfigData => ({
   manual_close_premium_percent: 0.1,
   support_lower_bound_percent: 5.0,
   support_upper_bound_percent: 2.0,
+  minimum_notional_per_symbol: { 'BTCUSDT': 10, 'ETHUSDT': 10 },
+  quantity_increment_per_symbol: { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
 });
 
 export const useTradingConfig = (onConfigUpdate?: () => void) => {
