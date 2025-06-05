@@ -21,7 +21,7 @@ export class UserConfigManager {
         return null;
       }
 
-      // Convert database config to TradingConfigData format
+      // Convert database config to TradingConfigData format with proper type casting
       return {
         max_active_pairs: config.max_active_pairs || 5,
         max_order_amount_usd: config.max_order_amount_usd || 100,
