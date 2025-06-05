@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../bybitService';
@@ -43,6 +42,7 @@ export class SignalAnalyzer {
     }
   }
 
+  // Keep backward compatibility
   async analyzeSymbolsAndGenerateSignals(config: TradingConfigData): Promise<void> {
     return this.analyzeAndCreateSignals(config);
   }

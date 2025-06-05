@@ -49,24 +49,24 @@ export class MainTradingEngine {
   // Convert TradingConfig to TradingConfigData with correct field mapping
   private convertConfig(config: TradingConfig): TradingConfigData {
     return {
-      max_active_pairs: config.maximum_active_pairs,
-      max_order_amount_usd: config.maximum_order_amount_usd,
+      max_active_pairs: config.maximum_active_pairs || 5,
+      max_order_amount_usd: config.maximum_order_amount_usd || 100,
       max_portfolio_exposure_percent: 25.0, // Default value not in TradingConfig
       daily_reset_time: '00:00:00', // Default value not in TradingConfig
-      chart_timeframe: config.chart_timeframe,
-      entry_offset_percent: config.entry_above_support_percentage,
-      take_profit_percent: config.take_profit_percentage,
-      support_candle_count: config.support_analysis_candles,
-      max_positions_per_pair: config.maximum_positions_per_pair,
+      chart_timeframe: config.chart_timeframe || '4h',
+      entry_offset_percent: config.entry_above_support_percentage || 0.5,
+      take_profit_percent: config.take_profit_percentage || 1.0,
+      support_candle_count: config.support_analysis_candles || 128,
+      max_positions_per_pair: config.maximum_positions_per_pair || 2,
       new_support_threshold_percent: 1.0, // Default value not in TradingConfig
-      trading_pairs: config.trading_pairs,
-      is_active: config.is_active,
-      main_loop_interval_seconds: config.main_loop_interval_seconds,
-      auto_close_at_end_of_day: config.auto_close_at_end_of_day,
-      eod_close_premium_percent: config.eod_close_premium_percentage,
-      manual_close_premium_percent: config.manual_close_premium_percentage,
-      support_lower_bound_percent: config.support_lower_bound_percentage,
-      support_upper_bound_percent: config.support_upper_bound_percentage,
+      trading_pairs: config.trading_pairs || ['BTCUSDT', 'ETHUSDT'],
+      is_active: config.is_active || false,
+      main_loop_interval_seconds: config.main_loop_interval_seconds || 30,
+      auto_close_at_end_of_day: config.auto_close_at_end_of_day || false,
+      eod_close_premium_percent: config.eod_close_premium_percentage || 0.1,
+      manual_close_premium_percent: config.manual_close_premium_percentage || 0.1,
+      support_lower_bound_percent: config.support_lower_bound_percentage || 5.0,
+      support_upper_bound_percent: config.support_upper_bound_percentage || 2.0,
     };
   }
 
@@ -224,7 +224,7 @@ export class MainTradingEngine {
 
       // 2.3 Signal Analysis (using both services for different approaches)
       console.log('\n🔍 Step 3: Signal Analysis');
-      await this.signalAnalyzer.analyzeSymbolsAndGenerateSignals(configData);
+      await this.signalAnalyzer.analyzeAndCreateSignals(configData);
 
       // 2.4 Signal Execution
       console.log('\n⚡ Step 4: Signal Execution');
