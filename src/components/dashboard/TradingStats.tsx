@@ -237,29 +237,56 @@ const TradingStats = ({ stats, isLoading, timeRange, onTimeRangeChange }: Tradin
         </Card>
       </div>
 
-      {/* Profit Percentage Card */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Target className="h-5 w-5" />
-            Profit Performance
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="animate-pulse bg-gray-200 h-12 w-32 rounded"></div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <div className={`text-3xl font-bold ${stats.profitPercentage >= 50 ? 'text-green-600' : stats.profitPercentage >= 25 ? 'text-yellow-600' : 'text-red-600'}`}>
-                {stats.profitPercentage.toFixed(1)}%
+      {/* Profit Performance and Closed P&L Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Profit Performance Card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Profit Performance
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="animate-pulse bg-gray-200 h-12 w-32 rounded"></div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className={`text-3xl font-bold ${stats.profitPercentage >= 50 ? 'text-green-600' : stats.profitPercentage >= 25 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {stats.profitPercentage.toFixed(1)}%
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  of closed trades were profitable ({stats.totalProfitableClosed}/{stats.totalClosed})
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground">
-                of closed trades were profitable ({stats.totalProfitableClosed}/{stats.totalClosed})
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Closed P&L Card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Closed P&L
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="animate-pulse bg-gray-200 h-12 w-32 rounded"></div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className={`text-3xl font-bold ${stats.closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ${stats.closedPositionsProfit.toFixed(2)}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  total profit from closed positions
+                </div>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
