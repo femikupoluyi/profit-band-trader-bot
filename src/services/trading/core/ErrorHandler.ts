@@ -25,7 +25,7 @@ export class ErrorHandler {
     const errorMessage = this.extractErrorMessage(error);
     const fullMessage = `System error in ${context}: ${errorMessage}`;
     
-    await this.logger.logSystemError(fullMessage, {
+    await this.logger.logError(fullMessage, {
       error: error?.message || 'Unknown error',
       context,
       stack: error?.stack

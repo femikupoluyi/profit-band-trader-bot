@@ -21,7 +21,7 @@ export class DatabaseConsistencyChecker {
         .single();
 
       if (configError && configError.code !== 'PGRST116') {
-        await this.logger.logSystemError('Failed to check trading config', configError);
+        await this.logger.logError('Failed to check trading config', configError);
         return false;
       }
 
@@ -39,7 +39,7 @@ export class DatabaseConsistencyChecker {
       await this.logger.logSystemInfo('Database consistency check completed successfully', { userId });
       return true;
     } catch (error) {
-      await this.logger.logSystemError('Database consistency check failed', error);
+      await this.logger.logError('Database consistency check failed', error);
       return false;
     }
   }
@@ -162,7 +162,7 @@ export class DatabaseConsistencyChecker {
         .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
 
       if (signalsError) {
-        await this.logger.logSystemError('Failed to cleanup old signals', signalsError);
+        await this.logger.logError('Failed to cleanup old signals', signalsError);
       }
 
       // Clean up old logs (older than 30 days)
@@ -173,12 +173,12 @@ export class DatabaseConsistencyChecker {
         .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
       if (logsError) {
-        await this.logger.logSystemError('Failed to cleanup old logs', logsError);
+        await this.logger.logError('Failed to cleanup old logs', logsError);
       }
 
       await this.logger.logSystemInfo('Data cleanup completed successfully', { userId });
     } catch (error) {
-      await this.logger.logSystemError('Data cleanup failed', error);
+      await this.logger.logError('Data cleanup failed', error);
     }
   }
 }

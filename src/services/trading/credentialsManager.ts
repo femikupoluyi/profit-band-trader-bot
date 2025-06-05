@@ -19,7 +19,7 @@ export class CredentialsManager {
 
   async fetchCredentials(): Promise<BybitService | null> {
     try {
-      await this.logger.logInfo('Fetching API credentials for DEMO trading', { userId: this.userId });
+      await this.logger.logSystemInfo('Fetching API credentials for DEMO trading', { userId: this.userId });
       
       const { data: credentials, error } = await supabase
         .from('api_credentials')
@@ -31,7 +31,7 @@ export class CredentialsManager {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          await this.logger.logError('No active API credentials found. Please configure your Bybit DEMO trading API credentials in the API Setup tab.');
+          await this.logger.logError('No active API credentials found. Please configure your Bybit DEMO trading API credentials in the API Setup tab.', error);
         } else {
           await this.errorHandler.handleApiError(error, 'Fetching API credentials');
         }
@@ -39,7 +39,7 @@ export class CredentialsManager {
       }
 
       if (credentials && credentials.api_key && credentials.api_secret) {
-        await this.logger.logInfo('Found valid API credentials for Bybit DEMO trading', {
+        await this.logger.logSystemInfo('Found valid API credentials for Bybit DEMO trading', {
           demoTrading: TRADING_ENVIRONMENT.isDemoTrading,
           apiKey: credentials.api_key ? `${credentials.api_key.substring(0, 8)}...` : 'Missing',
           apiSecret: credentials.api_secret ? 'Present' : 'Missing',
@@ -58,7 +58,7 @@ export class CredentialsManager {
         
         return bybitService;
       } else {
-        await this.logger.logError('API credentials incomplete - missing key or secret');
+        await this.logger.logError('API credentials incomplete - missing key or secret', new Error('Missing credentials'));
         return null;
       }
     } catch (error) {
@@ -69,7 +69,7 @@ export class CredentialsManager {
 
   private async testApiConnection(): Promise<void> {
     try {
-      await this.logger.logInfo('Testing API connection using Supabase edge function for DEMO trading...');
+      await this.logger.logSystemInfo('Testing API connection using Supabase edge function for DEMO trading...');
       
       const { data: testResult, error: testError } = await supabase.functions.invoke('bybit-api', {
         body: {
@@ -92,7 +92,7 @@ export class CredentialsManager {
           response: 'Valid API response received'
         });
       } else {
-        await this.logger.logError('DEMO trading API connection test failed', { 
+        await this.logger.logError('DEMO trading API connection test failed', new Error('Connection test failed'), { 
           retCode: testResult?.retCode, 
           retMsg: testResult?.retMsg 
         });
