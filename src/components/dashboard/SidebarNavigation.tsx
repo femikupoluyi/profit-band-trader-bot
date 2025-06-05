@@ -22,16 +22,6 @@ interface SidebarNavigationProps {
 
 const navigationItems = [
   {
-    id: 'config',
-    title: 'Configuration',
-    icon: Settings,
-  },
-  {
-    id: 'api',
-    title: 'API Setup',
-    icon: Key,
-  },
-  {
     id: 'status',
     title: 'Trading Status',
     icon: Activity,
@@ -47,9 +37,19 @@ const navigationItems = [
     icon: FileText,
   },
   {
+    id: 'config',
+    title: 'Configuration',
+    icon: Settings,
+  },
+  {
     id: 'logs',
     title: 'System Logs',
     icon: ScrollText,
+  },
+  {
+    id: 'api',
+    title: 'API Setup',
+    icon: Key,
   },
 ];
 

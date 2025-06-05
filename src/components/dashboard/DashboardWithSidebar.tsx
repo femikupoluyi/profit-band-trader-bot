@@ -4,7 +4,12 @@ import { SidebarProvider, SidebarTrigger, AppSidebar } from './SidebarNavigation
 import DashboardHeader from './DashboardHeader';
 import TradingStats from './TradingStats';
 import ActivePairsTable from './ActivePairsTable';
-import DashboardTabs from './DashboardTabs';
+import TradingStatus from '../trading/TradingStatus';
+import TradingConfig from '../trading/TradingConfig';
+import ApiCredentials from '../trading/ApiCredentials';
+import TradeHistory from '../trading/TradeHistory';
+import TradingLogs from '../trading/TradingLogs';
+import TradesReport from '../trading/TradesReport';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useTradingStats } from '@/hooks/useTradingStats';
@@ -28,12 +33,12 @@ const DashboardWithSidebar = () => {
   };
 
   const navigationItems = [
-    { id: 'config', title: 'Configuration' },
-    { id: 'api', title: 'API Setup' },
     { id: 'status', title: 'Trading Status' },
     { id: 'trades', title: 'Trade History' },
     { id: 'reports', title: 'Reports' },
+    { id: 'config', title: 'Configuration' },
     { id: 'logs', title: 'System Logs' },
+    { id: 'api', title: 'API Setup' },
   ];
 
   const renderTabContent = () => {
@@ -41,6 +46,7 @@ const DashboardWithSidebar = () => {
       case 'status':
         return (
           <div className="space-y-8">
+            <TradingStatus />
             <TradingStats 
               stats={stats} 
               isLoading={isLoading} 
@@ -51,14 +57,19 @@ const DashboardWithSidebar = () => {
           </div>
         );
       case 'config':
+        return <TradingConfig onConfigUpdate={refetch} />;
       case 'api':
+        return <ApiCredentials />;
       case 'trades':
+        return <TradeHistory />;
       case 'reports':
+        return <TradesReport />;
       case 'logs':
-        return <DashboardTabs onConfigUpdate={refetch} />;
+        return <TradingLogs />;
       default:
         return (
           <div className="space-y-8">
+            <TradingStatus />
             <TradingStats 
               stats={stats} 
               isLoading={isLoading} 
