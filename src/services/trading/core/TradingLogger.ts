@@ -1,4 +1,5 @@
 
+
 import { supabase } from '@/integrations/supabase/client';
 import { LogType } from './TypeDefinitions';
 
@@ -13,8 +14,18 @@ export class TradingLogger {
     await this.log('info', message, data);
   }
 
-  async logError(message: string, data?: any): Promise<void> {
-    await this.log('error', message, data);
+  async logError(message: string, error?: any, data?: any): Promise<void> {
+    // If error is provided, include it in the data
+    const errorData = error ? {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      ...data
+    } : data;
+    
+    await this.log('error', message, errorData);
   }
 
   async logSuccess(message: string, data?: any): Promise<void> {
@@ -25,8 +36,18 @@ export class TradingLogger {
     await this.log('system_info', message, data);
   }
 
-  async logSystemError(message: string, data?: any): Promise<void> {
-    await this.log('system_error', message, data);
+  async logSystemError(message: string, error?: any, data?: any): Promise<void> {
+    // If error is provided, include it in the data
+    const errorData = error ? {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      ...data
+    } : data;
+    
+    await this.log('system_error', message, errorData);
   }
 
   async logSignalProcessed(message: string, data?: any): Promise<void> {
@@ -53,12 +74,32 @@ export class TradingLogger {
     await this.log('order_failed', message, data);
   }
 
-  async logCalculationError(message: string, data?: any): Promise<void> {
-    await this.log('calculation_error', message, data);
+  async logCalculationError(message: string, error?: any, data?: any): Promise<void> {
+    // If error is provided, include it in the data
+    const errorData = error ? {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      ...data
+    } : data;
+    
+    await this.log('calculation_error', message, errorData);
   }
 
-  async logExecutionError(message: string, data?: any): Promise<void> {
-    await this.log('execution_error', message, data);
+  async logExecutionError(message: string, error?: any, data?: any): Promise<void> {
+    // If error is provided, include it in the data
+    const errorData = error ? {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      ...data
+    } : data;
+    
+    await this.log('execution_error', message, errorData);
   }
 
   async logSignalRejected(message: string, data?: any): Promise<void> {
@@ -97,3 +138,4 @@ export class TradingLogger {
     }
   }
 }
+
