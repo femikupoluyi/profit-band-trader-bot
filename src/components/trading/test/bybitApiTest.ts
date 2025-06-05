@@ -13,7 +13,7 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
           category: 'spot',
           symbol: TEST_SYMBOLS.SOL
         },
-        isDemoTrading: true
+        isDemoTrading: true // Always use demo trading
       }
     });
     
@@ -28,7 +28,7 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
       return { 
         test: TEST_NAMES.BYBIT_API, 
         status: 'success', 
-        message: `✅ Bybit DEMO account API working! SOL: $${price}` 
+        message: `✅ Bybit DEMO trading API working! SOL: $${price}` 
       };
     } else {
       return { 
