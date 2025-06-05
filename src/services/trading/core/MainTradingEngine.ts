@@ -1,5 +1,6 @@
 
 import { TradingConfigManager, TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { PositionMonitorService } from './PositionMonitorService';
 import { MarketDataScannerService } from './MarketDataScannerService';
 import { SignalAnalysisService } from './SignalAnalysisService';
@@ -36,6 +37,28 @@ export class MainTradingEngine {
     this.signalExecutor = new SignalExecutionService(userId, bybitService);
     this.eodManager = new EndOfDayManagerService(userId, bybitService);
     this.manualCloseService = new ManualCloseService(userId, bybitService);
+  }
+
+  // Convert TradingConfig to TradingConfigData
+  private convertConfig(config: TradingConfig): TradingConfigData {
+    return {
+      max_active_pairs: config.maximum_active_pairs,
+      max_order_amount_usd: config.maximum_order_amount_usd,
+      max_portfolio_exposure_percent: 25.0, // Default value not in TradingConfig
+      daily_reset_time: '00:00:00', // Default value not in TradingConfig
+      chart_timeframe: config.chart_timeframe,
+      entry_offset_percent: config.entry_above_support_percentage,
+      take_profit_percent: config.take_profit_percentage,
+      support_candle_count: config.support_analysis_candles,
+      max_positions_per_pair: config.maximum_positions_per_pair,
+      new_support_threshold_percent: 1.0, // Default value not in TradingConfig
+      trading_pairs: config.trading_pairs,
+      is_active: config.is_active,
+      main_loop_interval_seconds: config.main_loop_interval_seconds,
+      auto_close_at_end_of_day: config.auto_close_at_end_of_day,
+      eod_close_premium_percent: config.eod_close_premium_percentage,
+      manual_close_premium_percent: config.manual_close_premium_percentage,
+    };
   }
 
   async initialize(): Promise<void> {
@@ -146,25 +169,28 @@ export class MainTradingEngine {
 
       console.log(`📊 Cycle config: ${config.trading_pairs.length} pairs, ${config.main_loop_interval_seconds}s interval`);
 
+      // Convert config to TradingConfigData format
+      const configData = this.convertConfig(config);
+
       // 2.1 Position Monitoring & Order Fills
       console.log('\n📊 Step 1: Position Monitoring & Order Fills');
-      await this.positionMonitor.checkOrderFills(config);
+      await this.positionMonitor.checkOrderFills(configData);
 
       // 2.2 Market Data Scanning  
       console.log('\n📈 Step 2: Market Data Scanning');
-      await this.marketScanner.scanMarkets(config);
+      await this.marketScanner.scanMarkets(configData);
 
       // 2.3 Signal Analysis
       console.log('\n🔍 Step 3: Signal Analysis');
-      await this.signalAnalyzer.analyzeSignals(config);
+      await this.signalAnalyzer.analyzeSignals(configData);
 
       // 2.4 Signal Execution
       console.log('\n⚡ Step 4: Signal Execution');
-      await this.signalExecutor.executeSignal(config);
+      await this.signalExecutor.executeSignal(configData);
 
       // 2.5 End-of-Day Management
       console.log('\n🌅 Step 5: End-of-Day Management');
-      await this.eodManager.manageEndOfDay(config);
+      await this.eodManager.manageEndOfDay(configData);
 
       console.log('✅ === MAIN TRADING LOOP CYCLE COMPLETE ===\n');
       
