@@ -1,3 +1,4 @@
+
 import { buildGetRequest, buildPostRequest } from '../../supabase/functions/bybit-api/requestBuilder';
 import { BybitRequest } from '../../supabase/functions/bybit-api/types';
 import { TradingLogger } from './trading/core/TradingLogger';
@@ -173,46 +174,58 @@ export class BybitService {
       console.log(`🔗 [BYBIT] Request URL: ${url}`);
       if (body) console.log(`📦 [BYBIT] Request Body: ${body}`);
 
-      // Increase timeout to 30 seconds and better error handling
+      // Enhanced timeout and error handling
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // Reduced to 15 seconds
 
-      const response = await fetch(url, {
-        method: request.method,
-        headers: headers,
-        body: body,
-        signal: controller.signal
-      });
+      try {
+        const response = await fetch(url, {
+          method: request.method,
+          headers: headers,
+          body: body,
+          signal: controller.signal
+        });
 
-      clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorMsg = `HTTP Error: ${response.status} ${response.statusText}`;
-        console.error(`❌ [BYBIT] ${errorMsg}`);
-        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg));
-        throw new Error(`Bybit API ${errorMsg}`);
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unable to read response');
+          const errorMsg = `HTTP ${response.status}: ${response.statusText} - ${errorText}`;
+          console.error(`❌ [BYBIT] ${errorMsg}`);
+          await this.logger?.logError(`[BYBIT] HTTP Error`, new Error(errorMsg), { 
+            status: response.status, 
+            statusText: response.statusText,
+            url: request.endpoint 
+          });
+          throw new Error(`Bybit API HTTP Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(`✅ [BYBIT] API Response:`, data);
+        
+        if (data.retCode !== 0) {
+          const errorMsg = `API Error Code ${data.retCode}: ${data.retMsg}`;
+          console.error(`❌ [BYBIT] ${errorMsg}`);
+          await this.logger?.logError(`[BYBIT] API Error`, new Error(errorMsg), { data });
+          throw new Error(`Bybit API Error: ${errorMsg}`);
+        }
+
+        return data;
+
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === 'AbortError') {
+          const timeoutMsg = 'Request timeout (15 seconds)';
+          console.error(`❌ [BYBIT] ${timeoutMsg}`);
+          await this.logger?.logError(`[BYBIT] ${timeoutMsg}`, fetchError);
+          throw new Error(`Bybit API timeout`);
+        }
+        
+        throw fetchError;
       }
-
-      const data = await response.json();
-      console.log(`✅ [BYBIT] API Response:`, data);
-      
-      if (data.retCode !== 0) {
-        const errorMsg = `API Error Code ${data.retCode}: ${data.retMsg}`;
-        console.error(`❌ [BYBIT] ${errorMsg}`);
-        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { data });
-        throw new Error(`Bybit ${errorMsg}`);
-      }
-
-      return data;
 
     } catch (error) {
-      if (error.name === 'AbortError') {
-        const timeoutMsg = 'Request timeout (30 seconds)';
-        console.error(`❌ [BYBIT] ${timeoutMsg}`);
-        await this.logger?.logError(`[BYBIT] ${timeoutMsg}`, error);
-        throw new Error(`Bybit API timeout`);
-      }
-      
       console.error('❌ [BYBIT] Request error:', error);
       await this.logger?.logError('[BYBIT] Request error', error);
       throw error;
