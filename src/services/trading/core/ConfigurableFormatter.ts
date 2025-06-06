@@ -21,16 +21,59 @@ export class ConfigurableFormatter {
    * Format price using config-specified decimal places or fallback to defaults
    */
   static formatPrice(symbol: string, price: number): string {
-    if (!this.config) {
-      throw new Error('ConfigurableFormatter not initialized with config');
-    }
+    try {
+      if (!this.config) {
+        console.warn('ConfigurableFormatter not initialized with config, using defaults');
+        return this.formatPriceWithDefaults(symbol, price);
+      }
 
-    // Check if custom price decimals are configured
-    const customDecimals = this.config.price_decimals_per_symbol?.[symbol];
-    if (customDecimals !== undefined) {
-      return price.toFixed(customDecimals);
-    }
+      if (typeof price !== 'number' || isNaN(price)) {
+        console.error(`Invalid price value for ${symbol}:`, price);
+        return '0.00';
+      }
 
+      // Check if custom price decimals are configured
+      const customDecimals = this.config.price_decimals_per_symbol?.[symbol];
+      if (customDecimals !== undefined && typeof customDecimals === 'number') {
+        return price.toFixed(Math.max(0, Math.min(8, customDecimals)));
+      }
+
+      return this.formatPriceWithDefaults(symbol, price);
+    } catch (error) {
+      console.error(`Error formatting price for ${symbol}:`, error);
+      return this.formatPriceWithDefaults(symbol, price);
+    }
+  }
+
+  /**
+   * Format quantity using config-specified decimal places or fallback to defaults
+   */
+  static formatQuantity(symbol: string, quantity: number): string {
+    try {
+      if (!this.config) {
+        console.warn('ConfigurableFormatter not initialized with config, using defaults');
+        return this.formatQuantityWithDefaults(symbol, quantity);
+      }
+
+      if (typeof quantity !== 'number' || isNaN(quantity)) {
+        console.error(`Invalid quantity value for ${symbol}:`, quantity);
+        return '0.0000';
+      }
+
+      // Check if custom quantity decimals are configured
+      const customDecimals = this.config.quantity_decimals_per_symbol?.[symbol];
+      if (customDecimals !== undefined && typeof customDecimals === 'number') {
+        return quantity.toFixed(Math.max(0, Math.min(8, customDecimals)));
+      }
+
+      return this.formatQuantityWithDefaults(symbol, quantity);
+    } catch (error) {
+      console.error(`Error formatting quantity for ${symbol}:`, error);
+      return this.formatQuantityWithDefaults(symbol, quantity);
+    }
+  }
+
+  private static formatPriceWithDefaults(symbol: string, price: number): string {
     // Fallback to hardcoded defaults
     const defaults: Record<string, number> = {
       'BTCUSDT': 2, 'ETHUSDT': 2, 'BNBUSDT': 2, 'LTCUSDT': 2,
@@ -42,20 +85,7 @@ export class ConfigurableFormatter {
     return price.toFixed(decimals);
   }
 
-  /**
-   * Format quantity using config-specified decimal places or fallback to defaults
-   */
-  static formatQuantity(symbol: string, quantity: number): string {
-    if (!this.config) {
-      throw new Error('ConfigurableFormatter not initialized with config');
-    }
-
-    // Check if custom quantity decimals are configured
-    const customDecimals = this.config.quantity_decimals_per_symbol?.[symbol];
-    if (customDecimals !== undefined) {
-      return quantity.toFixed(customDecimals);
-    }
-
+  private static formatQuantityWithDefaults(symbol: string, quantity: number): string {
     // Fallback to hardcoded defaults
     const defaults: Record<string, number> = {
       'BTCUSDT': 5, 'ETHUSDT': 4, 'SOLUSDT': 2, 'BNBUSDT': 3,
@@ -72,6 +102,11 @@ export class ConfigurableFormatter {
    */
   static validateFormatting(symbol: string, price: number, quantity: number): boolean {
     try {
+      if (!symbol || typeof symbol !== 'string') {
+        console.error('Invalid symbol provided for formatting validation');
+        return false;
+      }
+
       const formattedPrice = this.formatPrice(symbol, price);
       const formattedQuantity = this.formatQuantity(symbol, quantity);
       
