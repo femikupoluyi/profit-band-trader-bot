@@ -42,6 +42,7 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
         quantity_increment_per_symbol: (data.quantity_increment_per_symbol as Record<string, number>) || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
         price_decimals_per_symbol: (data.price_decimals_per_symbol as Record<string, number>) || {},
         quantity_decimals_per_symbol: (data.quantity_decimals_per_symbol as Record<string, number>) || {},
+        // Use max_active_pairs for max_concurrent_trades for consistency
         max_concurrent_trades: data.max_active_pairs || 20,
         max_drawdown_percent: parseFloat(data.max_drawdown_percent?.toString() || '10.0'),
         notes: data.notes || ''

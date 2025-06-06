@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
@@ -65,6 +66,7 @@ export class UserConfigManager {
           config.quantity_decimals_per_symbol, 
           {}
         ),
+        // Using max_active_pairs for max_concurrent_trades since it doesn't exist in the database
         max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
         notes: config.notes || ''

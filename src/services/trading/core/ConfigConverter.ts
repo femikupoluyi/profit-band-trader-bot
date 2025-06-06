@@ -35,9 +35,10 @@ export class ConfigConverter {
       },
       price_decimals_per_symbol: {},
       quantity_decimals_per_symbol: {},
+      // Use maximum_active_pairs for max_concurrent_trades to maintain consistency
       max_concurrent_trades: config.maximum_active_pairs || 20,
-      max_drawdown_percent: 10.0,
-      notes: ''
+      max_drawdown_percent: config.max_drawdown_percentage || 10.0,
+      notes: config.notes || ''
     };
   }
 }
