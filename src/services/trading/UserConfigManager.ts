@@ -65,7 +65,7 @@ export class UserConfigManager {
           config.quantity_decimals_per_symbol, 
           {}
         ),
-        max_concurrent_trades: this.validatePositiveInteger(config.max_concurrent_trades || config.max_active_pairs, 20),
+        max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
         notes: config.notes || ''
       };
