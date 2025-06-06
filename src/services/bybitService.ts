@@ -1,5 +1,5 @@
+
 import crypto from 'crypto';
-import { API_KEY, API_SECRET } from './apiConfig';
 
 export class BybitService {
   private apiKey: string;
@@ -9,8 +9,9 @@ export class BybitService {
   private logger?: any;
 
   constructor(apiKey?: string, apiSecret?: string, useTestnet?: boolean) {
-    this.apiKey = apiKey || API_KEY || '';
-    this.apiSecret = apiSecret || API_SECRET || '';
+    // Require explicit API credentials - no fallback to potentially undefined env vars
+    this.apiKey = apiKey || '';
+    this.apiSecret = apiSecret || '';
     this.baseUrl = useTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
     this.recvWindow = 5000;
   }

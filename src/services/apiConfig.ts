@@ -1,4 +1,5 @@
 
-// API configuration - these should be set through environment variables in production
-export const API_KEY = process.env.BYBIT_API_KEY || '';
-export const API_SECRET = process.env.BYBIT_API_SECRET || '';
+// API configuration - credentials are managed through Supabase integration
+// Use CredentialsManager to fetch API credentials instead of environment variables
+export const API_KEY = '';
+export const API_SECRET = '';
