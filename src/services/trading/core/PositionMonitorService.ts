@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -50,6 +49,15 @@ export class PositionMonitorService {
     } catch (error) {
       await this.logger.logError('Position monitor exception', error);
     }
+  }
+
+  async checkOrderFills(): Promise<void> {
+    return this.monitorOrderFills();
+  }
+
+  async auditMissingTakeProfitOrders(): Promise<void> {
+    console.log('🔍 Auditing missing take profit orders...');
+    // This is a placeholder - implement if needed
   }
 
   private async checkOrderStatus(trade: any): Promise<void> {

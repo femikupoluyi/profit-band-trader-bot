@@ -82,6 +82,16 @@ export class OrderPlacer {
     }
   }
 
+  // Add missing method for backward compatibility
+  async placeRealBybitOrder(
+    symbol: string,
+    side: 'Buy' | 'Sell',
+    quantity: string,
+    price: string
+  ): Promise<{ success: boolean; orderId?: string; error?: string }> {
+    return this.placeOrderWithTP(symbol, side, quantity, price);
+  }
+
   async storeTrade(
     symbol: string,
     side: 'buy' | 'sell',

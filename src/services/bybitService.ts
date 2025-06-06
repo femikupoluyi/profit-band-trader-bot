@@ -1,3 +1,4 @@
+
 import crypto from 'crypto';
 import { API_KEY, API_SECRET } from './apiConfig';
 
@@ -6,12 +7,18 @@ export class BybitService {
   private apiSecret: string;
   private baseUrl: string;
   private recvWindow: number;
+  private logger?: any;
 
   constructor() {
     this.apiKey = API_KEY || '';
     this.apiSecret = API_SECRET || '';
     this.baseUrl = 'https://api.bybit.com'; // Use mainnet
     this.recvWindow = 5000; // Adjust as needed
+  }
+
+  // Add logger support for other services
+  setLogger(logger: any) {
+    this.logger = logger;
   }
 
   private async getHeaders(method: string, path: string, params: any = {}) {
@@ -152,6 +159,27 @@ export class BybitService {
     } catch (error) {
       console.error('Error getting order history:', error);
       return { retCode: -1, retMsg: 'Network error', result: null };
+    }
+  }
+
+  // Add missing method for market price
+  async getMarketPrice(symbol: string): Promise<number | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/v5/market/tickers?category=spot&symbol=${symbol}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const data = await response.json();
+      if (data.retCode === 0 && data.result?.list?.[0]?.lastPrice) {
+        return parseFloat(data.result.list[0].lastPrice);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting market price:', error);
+      return null;
     }
   }
 }
