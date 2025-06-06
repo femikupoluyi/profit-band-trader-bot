@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -8,10 +7,10 @@ export class OrderPlacer {
   private bybitService: BybitService;
   private logger: TradingLogger;
 
-  constructor(userId: string, bybitService: BybitService, logger: TradingLogger) {
+  constructor(userId: string, bybitService: BybitService, logger?: TradingLogger) {
     this.userId = userId;
     this.bybitService = bybitService;
-    this.logger = logger;
+    this.logger = logger || new TradingLogger(userId);
   }
 
   async placeOrderWithTP(

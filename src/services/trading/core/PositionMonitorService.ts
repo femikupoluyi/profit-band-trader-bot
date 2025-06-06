@@ -9,11 +9,11 @@ export class PositionMonitorService {
   private logger: TradingLogger;
   private orderPlacer: OrderPlacer;
 
-  constructor(userId: string, bybitService: BybitService, logger: TradingLogger) {
+  constructor(userId: string, bybitService: BybitService, logger?: TradingLogger) {
     this.userId = userId;
     this.bybitService = bybitService;
-    this.logger = logger;
-    this.orderPlacer = new OrderPlacer(userId, bybitService, logger);
+    this.logger = logger || new TradingLogger(userId);
+    this.orderPlacer = new OrderPlacer(userId, bybitService, this.logger);
   }
 
   async monitorOrderFills(): Promise<void> {
@@ -55,7 +55,7 @@ export class PositionMonitorService {
     return this.monitorOrderFills();
   }
 
-  async auditMissingTakeProfitOrders(): Promise<void> {
+  async auditMissingTakeProfitOrders(configData?: any): Promise<void> {
     console.log('🔍 Auditing missing take profit orders...');
     // This is a placeholder - implement if needed
   }

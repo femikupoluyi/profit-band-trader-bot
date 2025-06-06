@@ -47,7 +47,7 @@ const CloseTradeDialog = ({ trade, isClosing: externalClosing, onClose }: CloseT
       console.log(`🔄 Initiating manual close for trade ${trade.id} (${trade.symbol})`);
       
       // Initialize Bybit service - using demo trading for safety
-      const bybitService = new BybitService('', '', true); // API keys will be loaded from user config
+      const bybitService = new BybitService(); // Fixed constructor call
       const manualCloseService = new ManualCloseService(user.id, bybitService);
       
       // Execute the manual close

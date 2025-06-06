@@ -36,7 +36,7 @@ const TradingPairsSelection: React.FC<TradingPairsSelectionProps> = ({
   const fetchPairs = async () => {
     setIsLoading(true);
     try {
-      const pairs = await TradingPairsService.fetchActiveTradingPairs(new BybitService('', ''));
+      const pairs = await TradingPairsService.fetchActiveTradingPairs(new BybitService()); // Fixed constructor call
       setAvailablePairs(pairs);
       console.log(`📊 Loaded ${pairs.length} trading pairs`);
     } catch (error) {
@@ -51,7 +51,7 @@ const TradingPairsSelection: React.FC<TradingPairsSelectionProps> = ({
   const handleRefresh = async () => {
     setIsLoading(true);
     try {
-      const pairs = await TradingPairsService.refreshTradingPairs(new BybitService('', ''));
+      const pairs = await TradingPairsService.refreshTradingPairs(new BybitService()); // Fixed constructor call
       setAvailablePairs(pairs);
       console.log(`🔄 Refreshed ${pairs.length} trading pairs`);
     } catch (error) {

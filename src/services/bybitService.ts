@@ -1,4 +1,3 @@
-
 import crypto from 'crypto';
 import { API_KEY, API_SECRET } from './apiConfig';
 
@@ -9,11 +8,11 @@ export class BybitService {
   private recvWindow: number;
   private logger?: any;
 
-  constructor() {
-    this.apiKey = API_KEY || '';
-    this.apiSecret = API_SECRET || '';
-    this.baseUrl = 'https://api.bybit.com'; // Use mainnet
-    this.recvWindow = 5000; // Adjust as needed
+  constructor(apiKey?: string, apiSecret?: string, useTestnet?: boolean) {
+    this.apiKey = apiKey || API_KEY || '';
+    this.apiSecret = apiSecret || API_SECRET || '';
+    this.baseUrl = useTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    this.recvWindow = 5000;
   }
 
   // Add logger support for other services
@@ -162,8 +161,8 @@ export class BybitService {
     }
   }
 
-  // Add missing method for market price
-  async getMarketPrice(symbol: string): Promise<number | null> {
+  // Updated method to return object with price property
+  async getMarketPrice(symbol: string): Promise<{ price: number } | null> {
     try {
       const response = await fetch(`${this.baseUrl}/v5/market/tickers?category=spot&symbol=${symbol}`, {
         method: 'GET',
@@ -174,7 +173,7 @@ export class BybitService {
       
       const data = await response.json();
       if (data.retCode === 0 && data.result?.list?.[0]?.lastPrice) {
-        return parseFloat(data.result.list[0].lastPrice);
+        return { price: parseFloat(data.result.list[0].lastPrice) };
       }
       return null;
     } catch (error) {
