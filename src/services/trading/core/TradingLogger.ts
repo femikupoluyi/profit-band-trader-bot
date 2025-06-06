@@ -27,6 +27,10 @@ export class TradingLogger {
     await this.log('system_error', message, errorData);
   }
 
+  async logWarning(message: string, data?: any): Promise<void> {
+    await this.log('system_info', `WARNING: ${message}`, data);
+  }
+
   async logSystemInfo(message: string, data?: any): Promise<void> {
     await this.log('system_info', message, data);
   }

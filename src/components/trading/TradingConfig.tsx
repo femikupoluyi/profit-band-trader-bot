@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, Save, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { TradingConfigForm } from './config/TradingConfigForm';
+import TradingConfigForm from './config/TradingConfigForm';
 import { useTradingConfig } from './config/useTradingConfig';
 import { ConfigValidator } from '@/services/trading/core/ConfigValidator';
 import TradingSystemTest from './TradingSystemTest';

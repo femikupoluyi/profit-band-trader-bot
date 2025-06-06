@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -32,7 +31,7 @@ export class TransactionReconciliationService {
       console.log('🔄 Starting transaction reconciliation with Bybit...');
       await this.logger.logSuccess('Starting transaction reconciliation');
 
-      // Get recent execution history from Bybit
+      // Get recent execution history from Bybit - using generic API call since getExecutionHistory doesn't exist
       const bybitExecutions = await this.getBybitExecutionHistory(lookbackHours);
       
       if (!bybitExecutions || bybitExecutions.length === 0) {
@@ -69,8 +68,8 @@ export class TransactionReconciliationService {
       
       console.log(`📈 Fetching Bybit execution history from ${new Date(startTime).toISOString()}`);
       
-      // Get execution history from Bybit
-      const response = await this.bybitService.getExecutionHistory({
+      // Use generic API call since getExecutionHistory method doesn't exist
+      const response = await this.bybitService.makeApiCall('/v5/execution/list', 'GET', {
         category: 'spot',
         startTime: startTime.toString(),
         limit: 100
@@ -191,7 +190,7 @@ export class TransactionReconciliationService {
           console.error(`Error updating trade ${localTrade.id}:`, error);
         } else {
           console.log(`✅ Updated trade ${localTrade.id} with Bybit execution data`);
-          await this.logger.log('trade_synced', `Trade updated with Bybit execution data`, {
+          await this.logger.log('trade_filled', `Trade updated with Bybit execution data`, {
             tradeId: localTrade.id,
             symbol: execution.symbol,
             bybitTradeId: execution.tradeId,
@@ -260,7 +259,7 @@ export class TransactionReconciliationService {
     }
 
     if (missingCount > 0) {
-      await this.logger.logWarning(`Found ${missingCount} missing local trade records`, {
+      await this.logger.log('system_info', `Found ${missingCount} missing local trade records`, {
         missingCount,
         totalBybitExecutions: bybitExecutions.length
       });
