@@ -1,6 +1,5 @@
-
-import { TradingConfig } from '../config/Trading-ConfigManager';
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfigData } from '@/components/trading/config/types/configTypes';
 
 export class ConfigConverter {
   static convertConfig(config: TradingConfig): TradingConfigData {
@@ -35,9 +34,7 @@ export class ConfigConverter {
       },
       price_decimals_per_symbol: {},
       quantity_decimals_per_symbol: {},
-      // Map maximum_active_pairs to max_concurrent_trades for consistency
       max_concurrent_trades: config.maximum_active_pairs || 20,
-      // Use default values for fields not in TradingConfig type
       max_drawdown_percent: 10.0,
       notes: ''
     };
