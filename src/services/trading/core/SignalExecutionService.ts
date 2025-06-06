@@ -121,7 +121,7 @@ export class SignalExecutionService {
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)} (+${config.take_profit_percent}%)`);
 
       // Place REAL limit buy order on Bybit with dynamic formatting
-      await this.orderPlacer.placeRealBybitOrder(signal, finalQuantity, entryPrice, takeProfitPrice);
+      await this.orderPlacer.placeOrderWithTP(signal.symbol, 'buy', finalQuantity, entryPrice, takeProfitPrice);
       
       // Mark signal as processed
       await supabase

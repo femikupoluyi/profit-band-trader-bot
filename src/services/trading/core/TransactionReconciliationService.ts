@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -69,7 +70,7 @@ export class TransactionReconciliationService {
       console.log(`📈 Fetching Bybit execution history from ${new Date(startTime).toISOString()}`);
       
       // Use the existing getOrderHistory method as it returns filled orders which are our executions
-      const response = await this.bybitService.getOrderHistory(100);
+      const response = await this.bybitService.getOrderHistory(undefined, 100);
 
       if (response.retCode !== 0) {
         console.error('Failed to fetch Bybit execution history:', response.retMsg);

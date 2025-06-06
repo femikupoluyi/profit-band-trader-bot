@@ -29,7 +29,7 @@ export class TradingCycleExecutor {
 
       // Step 1: Position Monitoring & Order Fills
       console.log('\n📊 Step 1: Position Monitoring & Order Fills');
-      await this.positionMonitor.checkOrderFills(configData);
+      await this.positionMonitor.checkOrderFills();
 
       // Step 2: Market Data Scanning  
       console.log('\n📈 Step 2: Market Data Scanning');
