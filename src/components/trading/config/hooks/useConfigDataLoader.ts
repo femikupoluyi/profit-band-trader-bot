@@ -43,7 +43,7 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
         price_decimals_per_symbol: ((data as any).price_decimals_per_symbol as Record<string, number>) || {},
         quantity_decimals_per_symbol: ((data as any).quantity_decimals_per_symbol as Record<string, number>) || {},
         max_concurrent_trades: data.max_active_pairs || 20,
-        max_drawdown_percent: parseFloat(data.max_drawdown_percent?.toString() || '10.0'),
+        max_drawdown_percent: parseFloat(((data as any).max_drawdown_percent)?.toString() || '10.0'),
         notes: (data as any).notes || ''
       };
       
