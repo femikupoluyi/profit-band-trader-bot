@@ -3,9 +3,18 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 
 export class ConfigurableFormatter {
   private static config: TradingConfigData | null = null;
+  private static activePairs: string[] = [];
 
   static setConfig(config: TradingConfigData): void {
     this.config = config;
+  }
+
+  static setActivePairs(pairs: string[]): void {
+    this.activePairs = pairs;
+  }
+
+  static getActivePairs(): string[] {
+    return this.activePairs;
   }
 
   /**

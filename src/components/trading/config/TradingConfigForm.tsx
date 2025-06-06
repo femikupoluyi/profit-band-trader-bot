@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TradingConfigData } from './useTradingConfig';
 import DecimalConfigSection from './DecimalConfigSection';
+import { TradingPairsService } from '@/services/trading/core/TradingPairsService';
+import { useAuth } from '@/hooks/useAuth';
+import { BybitService } from '@/services/bybitService';
 
 interface TradingConfigFormProps {
   config: TradingConfigData;
@@ -18,18 +20,35 @@ interface TradingConfigFormProps {
   onIntegerInput: (field: keyof TradingConfigData, value: number) => void;
 }
 
-const AVAILABLE_PAIRS = [
-  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 
-  'XRPUSDT', 'LTCUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 
-  'POLUSDT', 'XLMUSDT'
-];
-
 const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
   config,
   onInputChange,
   onNumberInput,
   onIntegerInput
 }) => {
+  const { user } = useAuth();
+  const [availablePairs, setAvailablePairs] = useState<string[]>([
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 
+    'XRPUSDT', 'LTCUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 
+    'POLUSDT', 'XLMUSDT'
+  ]);
+
+  // Fetch active trading pairs when the component mounts
+  useEffect(() => {
+    const fetchPairs = async () => {
+      try {
+        // In a real implementation, we would initialize the BybitService properly
+        // For now, we'll use the static method directly
+        const pairs = await TradingPairsService.fetchActiveTradingPairs(new BybitService('', ''));
+        setAvailablePairs(pairs);
+      } catch (error) {
+        console.error('Failed to fetch trading pairs:', error);
+      }
+    };
+
+    fetchPairs();
+  }, []);
+
   const handleTradingPairToggle = (pair: string, checked: boolean) => {
     const currentPairs = config.trading_pairs || [];
     if (checked) {
@@ -230,7 +249,7 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {AVAILABLE_PAIRS.map((pair) => (
+            {availablePairs.map((pair) => (
               <div key={pair} className="flex items-center space-x-2">
                 <Checkbox
                   id={`pair-${pair}`}
@@ -244,7 +263,7 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
             ))}
           </div>
           <div className="text-sm text-gray-600">
-            Selected pairs: {config.trading_pairs?.length || 0} / {AVAILABLE_PAIRS.length}
+            Selected pairs: {config.trading_pairs?.length || 0} / {availablePairs.length}
           </div>
         </CardContent>
       </Card>
@@ -327,10 +346,11 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
         </CardContent>
       </Card>
 
-      {/* Decimal Configuration Section */}
+      {/* Decimal Configuration Section - Updated to use dynamic pairs */}
       <DecimalConfigSection
         config={config}
         onInputChange={onInputChange}
+        availablePairs={availablePairs}
       />
 
       {/* Notes */}

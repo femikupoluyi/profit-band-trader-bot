@@ -8,13 +8,19 @@ import { TradingConfigData } from './useTradingConfig';
 interface DecimalConfigSectionProps {
   config: TradingConfigData;
   onInputChange: (field: keyof TradingConfigData, value: any) => void;
+  availablePairs?: string[];
 }
 
 const DecimalConfigSection: React.FC<DecimalConfigSectionProps> = ({
   config,
-  onInputChange
+  onInputChange,
+  availablePairs
 }) => {
-  const supportedPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 'POLUSDT', 'XLMUSDT'];
+  const supportedPairs = availablePairs || [
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 
+    'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 
+    'POLUSDT', 'XLMUSDT'
+  ];
 
   const handlePriceDecimalChange = (symbol: string, value: string) => {
     const decimals = parseInt(value) || 0;
