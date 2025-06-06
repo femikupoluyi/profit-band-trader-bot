@@ -19,9 +19,10 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
         .from('trading_configs')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
+        console.error('Error fetching config:', error);
         throw error;
       }
 
@@ -48,6 +49,13 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
 
     setIsLoading(true);
     try {
+      // Always check if config exists first
+      const { data: existingConfig } = await supabase
+        .from('trading_configs')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
       const dbData = {
         max_active_pairs: configData.max_active_pairs,
         max_order_amount_usd: configData.max_order_amount_usd,
@@ -76,14 +84,17 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
         updated_at: new Date().toISOString(),
       };
 
-      if (hasExistingConfig) {
+      if (existingConfig) {
+        // Update existing config
         const { error } = await supabase
           .from('trading_configs')
           .update(dbData)
           .eq('user_id', user.id);
 
         if (error) throw error;
+        setHasExistingConfig(true);
       } else {
+        // Insert new config
         const { error } = await supabase
           .from('trading_configs')
           .insert({
