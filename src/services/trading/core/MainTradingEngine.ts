@@ -1,4 +1,3 @@
-
 import { TradingConfigManager } from '../config/TradingConfigManager';
 import { PositionMonitorService } from './PositionMonitorService';
 import { MarketDataScannerService } from './MarketDataScannerService';
@@ -14,6 +13,7 @@ import { TradingCycleExecutor } from './TradingCycleExecutor';
 import { TransactionReconciliationService } from './TransactionReconciliationService';
 import { TradingEngineInitializer } from './engine/TradingEngineInitializer';
 import { TradingEngineLifecycle } from './engine/TradingEngineLifecycle';
+import { DataAuditService } from './DataAuditService';
 
 export class MainTradingEngine {
   private userId: string;
@@ -33,6 +33,8 @@ export class MainTradingEngine {
   private signalExecutor: SignalExecutionService;
   private eodManager: EndOfDayManagerService;
   private manualCloseService: ManualCloseService;
+
+  private dataAuditService: DataAuditService;
 
   constructor(userId: string, bybitService: BybitService) {
     if (!userId) {
@@ -68,6 +70,9 @@ export class MainTradingEngine {
     // Initialize reconciliation service
     this.reconciliationService = new TransactionReconciliationService(userId, bybitService);
 
+    // Initialize data audit service
+    this.dataAuditService = new DataAuditService(userId);
+
     // Initialize engine components
     this.initializer = new TradingEngineInitializer(userId, this.configManager, this.logger);
     this.lifecycle = new TradingEngineLifecycle(
@@ -81,6 +86,8 @@ export class MainTradingEngine {
   }
 
   async initialize(): Promise<void> {
+    // Run data audit and fixes before initializing
+    await this.performDataAudit();
     return this.initializer.initialize();
   }
 
@@ -170,6 +177,29 @@ export class MainTradingEngine {
       console.error('❌ Error in manual transaction reconciliation:', error);
       await this.logger.logError('Manual transaction reconciliation failed', error);
       throw error;
+    }
+  }
+
+  async performDataAudit(): Promise<void> {
+    try {
+      console.log('🔍 Running comprehensive data audit...');
+      await this.logger.logSuccess('Starting comprehensive data audit');
+      
+      const issues = await this.dataAuditService.performFullAudit();
+      
+      if (issues.length > 0) {
+        console.log(`⚠️ Found ${issues.length} data issues. Attempting to fix...`);
+        await this.dataAuditService.fixIssues(issues);
+        console.log('✅ Data audit fixes completed');
+      } else {
+        console.log('✅ No data issues found');
+      }
+      
+      await this.logger.logSuccess('Data audit completed successfully');
+    } catch (error) {
+      console.error('❌ Error in data audit:', error);
+      await this.logger.logError('Data audit failed', error);
+      // Don't throw - allow engine to continue even if audit fails
     }
   }
 

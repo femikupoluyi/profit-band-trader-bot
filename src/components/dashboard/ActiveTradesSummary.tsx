@@ -2,20 +2,25 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSpotPL, shouldShowSpotPL } from '@/utils/formatters';
+import { formatCurrency, calculateSpotPL, shouldShowSpotPL, getTradeEntryPrice, getTradeVolume } from '@/utils/formatters';
 
 interface ActiveTradesSummaryProps {
   trades: ActiveTrade[];
 }
 
 const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
-  // Calculate totals using spot P&L logic (only filled buys with linked TP sells)
+  // Calculate totals using corrected P&L logic
   const totalUnrealizedPL = trades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
     
-    // Only include P&L for trades that should show P&L (filled buys with linked TP)
+    // For closed trades, use stored profit_loss
+    if (trade.status === 'closed' && trade.profit_loss !== null) {
+      return sum + trade.profit_loss;
+    }
+    
+    // For active positions, only include P&L for trades that should show P&L
     if (shouldShowSpotPL(trade)) {
-      const entryPrice = trade.buy_fill_price || trade.price;
+      const entryPrice = getTradeEntryPrice(trade);
       const spotPL = calculateSpotPL(entryPrice, currentPrice, trade.quantity);
       return sum + spotPL;
     }
@@ -23,26 +28,25 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
     return sum;
   }, 0);
   
-  const totalVolume = trades.reduce((sum, trade) => sum + (trade.volume || 0), 0);
+  const totalVolume = trades.reduce((sum, trade) => sum + getTradeVolume(trade), 0);
   const totalPositionValue = trades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
     return sum + (currentPrice * trade.quantity);
   }, 0);
   
-  // Count only trades that should show P&L (filled buys with linked TP)
-  const activePositionsWithPL = trades.filter(trade => shouldShowSpotPL(trade));
+  // Count trades with P&L (closed + active with linked TP)
+  const tradesWithPL = trades.filter(trade => 
+    trade.status === 'closed' || shouldShowSpotPL(trade)
+  );
   
   const totalCount = trades.length;
-  const activePLCount = activePositionsWithPL.length;
+  const activePLCount = tradesWithPL.length;
   
-  // Calculate total unrealized percentage based on total volume invested for positions with P&L
-  const totalVolumeWithPL = activePositionsWithPL.reduce((sum, trade) => {
-    const entryPrice = trade.buy_fill_price || trade.price;
-    return sum + (entryPrice * trade.quantity);
-  }, 0);
+  // Calculate total unrealized percentage based on total volume for positions with P&L
+  const totalVolumeWithPL = tradesWithPL.reduce((sum, trade) => sum + getTradeVolume(trade), 0);
   const totalUnrealizedPercentage = totalVolumeWithPL > 0 ? (totalUnrealizedPL / totalVolumeWithPL) * 100 : 0;
 
-  console.log('Summary calculations with new schema and embedded TP logic:', {
+  console.log('Summary calculations with corrected logic:', {
     totalCount,
     activePLCount,
     totalVolume: totalVolume.toFixed(2),

@@ -2,7 +2,7 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSpotPL, calculateSpotPercentage, shouldShowSpotPL } from '@/utils/formatters';
+import { formatCurrency, calculateSpotPL, calculateSpotPercentage, shouldShowSpotPL, getTradeEntryPrice } from '@/utils/formatters';
 import CloseTradeDialog from './CloseTradeDialog';
 
 interface ActiveTradeRowProps {
@@ -14,17 +14,23 @@ interface ActiveTradeRowProps {
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
   const currentPrice = trade.currentPrice || trade.price;
   
-  // Calculate P&L only for positions with filled buy and linked pending TP sell
+  // Use the corrected entry price logic
+  const entryPrice = getTradeEntryPrice(trade);
+  
+  // Calculate P&L using the fixed logic
   let spotPL = 0;
   let spotPercentage = 0;
   let showPL = false;
-  let entryPrice = trade.price; // Default to original price
 
-  // Use the spot P&L logic to determine if we should show P&L
-  if (shouldShowSpotPL(trade)) {
+  // For closed trades, use stored profit_loss
+  if (trade.status === 'closed' && trade.profit_loss !== null) {
     showPL = true;
-    // Use buy_fill_price if available, otherwise fall back to price
-    entryPrice = trade.buy_fill_price || trade.price;
+    spotPL = trade.profit_loss;
+    const volume = entryPrice * trade.quantity;
+    spotPercentage = volume > 0 ? (spotPL / volume) * 100 : 0;
+  } else if (shouldShowSpotPL(trade)) {
+    // For active positions with linked TP orders
+    showPL = true;
     spotPL = calculateSpotPL(entryPrice, currentPrice, trade.quantity);
     spotPercentage = calculateSpotPercentage(entryPrice, currentPrice);
   }

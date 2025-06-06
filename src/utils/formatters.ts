@@ -1,4 +1,3 @@
-
 export const formatCurrency = (amount: number): string => {
   return `$${amount.toFixed(2)}`;
 };
@@ -17,7 +16,12 @@ export const formatPercentage = (entry: number, current: number): string => {
  * @returns P&L value (positive for profit, negative for loss)
  */
 export const calculateSpotPL = (entryPrice: number, currentPrice: number, quantity: number): number => {
-  // For spot trading: P&L = (currentPrice - entryPrice) * quantity
+  // Validate inputs
+  if (!entryPrice || !currentPrice || !quantity || entryPrice <= 0 || quantity <= 0) {
+    return 0;
+  }
+  
+  // For spot trading, P&L is simply (current - entry) * quantity
   return (currentPrice - entryPrice) * quantity;
 };
 
@@ -28,9 +32,12 @@ export const calculateSpotPL = (entryPrice: number, currentPrice: number, quanti
  * @returns Percentage change (positive for profit, negative for loss)
  */
 export const calculateSpotPercentage = (entryPrice: number, currentPrice: number): number => {
-  if (entryPrice === 0) return 0;
+  // Validate inputs
+  if (!entryPrice || !currentPrice || entryPrice <= 0) {
+    return 0;
+  }
   
-  // For spot trading: % Change = (currentPrice - entryPrice) / entryPrice * 100
+  // Calculate percentage change
   return ((currentPrice - entryPrice) / entryPrice) * 100;
 };
 
@@ -40,14 +47,19 @@ export const calculateSpotPercentage = (entryPrice: number, currentPrice: number
  * @returns True if P&L should be displayed
  */
 export const shouldShowSpotPL = (trade: any): boolean => {
-  // Only show P&L if:
-  // 1. Trade is a filled buy
-  // 2. Has a linked sell order ID (auto-generated TP)
-  // 3. Sell status is pending (not yet filled)
-  return trade.side === 'buy' && 
-         trade.status === 'filled' && 
-         trade.sell_order_id && 
-         trade.sell_status === 'pending';
+  // Show P&L for closed trades (always have realized P&L)
+  if (trade.status === 'closed') {
+    return true;
+  }
+  
+  // Show P&L for filled buy orders that have a linked take-profit sell order
+  if (trade.side === 'buy' && 
+      trade.status === 'filled' && 
+      trade.sell_order_id) {
+    return true;
+  }
+  
+  return false;
 };
 
 // Legacy functions - kept for backward compatibility but marked as deprecated
@@ -73,4 +85,21 @@ export const calculateSideAwarePercentage = (side: string, entryPrice: number, c
     return ((currentPrice - entryPrice) / entryPrice) * 100;
   }
   return 0; // No percentage shown for sell positions in spot trading
+};
+
+// Helper function to get proper entry price with schema-aware fallback
+export const getTradeEntryPrice = (trade: any): number => {
+  // For buy orders, prefer buy_fill_price, fallback to price
+  if (trade.side === 'buy') {
+    return trade.buy_fill_price || trade.price || 0;
+  }
+  
+  // For sell orders, use the original price
+  return trade.price || 0;
+};
+
+// Helper function to determine trade volume for P&L calculations
+export const getTradeVolume = (trade: any): number => {
+  const entryPrice = getTradeEntryPrice(trade);
+  return entryPrice * (trade.quantity || 0);
 };
