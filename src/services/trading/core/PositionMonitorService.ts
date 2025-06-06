@@ -21,34 +21,35 @@ export class PositionMonitorService {
 
   async checkOrderFills(config: TradingConfigData): Promise<void> {
     try {
-      console.log('📊 Checking order fills...');
+      console.log('📊 Checking order fills with guaranteed take-profit creation...');
       
-      // Get pending orders from database
-      const { data: pendingTrades, error } = await supabase
+      // Get pending buy orders from database
+      const { data: pendingBuyTrades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
+        .eq('side', 'buy')
         .eq('status', 'pending');
 
       if (error) {
-        console.error('❌ Error fetching pending trades:', error);
-        await this.logger.logError('Error fetching pending trades', error);
+        console.error('❌ Error fetching pending buy trades:', error);
+        await this.logger.logError('Error fetching pending buy trades', error);
         return;
       }
 
-      if (!pendingTrades || pendingTrades.length === 0) {
-        console.log('📭 No pending orders to check');
+      if (!pendingBuyTrades || pendingBuyTrades.length === 0) {
+        console.log('📭 No pending buy orders to check');
         return;
       }
 
-      console.log(`📋 Found ${pendingTrades.length} pending orders to check`);
-      await this.logger.logSuccess(`Found ${pendingTrades.length} pending orders to check`);
+      console.log(`📋 Found ${pendingBuyTrades.length} pending buy orders to check for fills`);
+      await this.logger.logSuccess(`Found ${pendingBuyTrades.length} pending buy orders to check`);
 
-      for (const trade of pendingTrades) {
+      for (const trade of pendingBuyTrades) {
         await this.checkSingleOrderFill(trade, config);
       }
 
-      console.log('✅ Order fill check completed');
+      console.log('✅ Order fill check completed with guaranteed take-profit logic');
       await this.logger.logSuccess('Order fill check completed');
     } catch (error) {
       console.error('❌ Error checking order fills:', error);
@@ -64,7 +65,7 @@ export class PositionMonitorService {
         return;
       }
 
-      console.log(`🔍 Checking order ${trade.bybit_order_id} for ${trade.symbol}`);
+      console.log(`🔍 Checking buy order ${trade.bybit_order_id} for ${trade.symbol}`);
 
       // Get order status from Bybit
       const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
@@ -73,10 +74,10 @@ export class PositionMonitorService {
         const order = orderStatus.result.list[0];
         
         if (order.orderStatus === 'Filled') {
-          console.log(`✅ Order ${trade.bybit_order_id} is filled`);
+          console.log(`✅ Buy order ${trade.bybit_order_id} is filled - creating guaranteed take-profit`);
           
-          // Update trade status in database
-          const { error } = await supabase
+          // Update trade status in database to 'filled'
+          const { error: updateError } = await supabase
             .from('trades')
             .update({ 
               status: 'filled',
@@ -84,49 +85,136 @@ export class PositionMonitorService {
             })
             .eq('id', trade.id);
 
-          if (error) {
-            console.error(`❌ Error updating trade ${trade.id}:`, error);
-            await this.logger.logError(`Error updating trade ${trade.id}`, error, {
+          if (updateError) {
+            console.error(`❌ Error updating trade ${trade.id}:`, updateError);
+            await this.logger.logError(`Error updating trade ${trade.id}`, updateError, {
               tradeId: trade.id
             });
-          } else {
-            console.log(`✅ Updated trade ${trade.id} status to filled`);
-            await this.logger.log('trade_filled', `Order filled for ${trade.symbol}`, {
+            return;
+          }
+
+          console.log(`✅ Updated trade ${trade.id} status to filled`);
+          await this.logger.log('trade_filled', `Buy order filled for ${trade.symbol}`, {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            bybitOrderId: trade.bybit_order_id,
+            entryPrice: trade.price,
+            quantity: trade.quantity
+          });
+
+          // GUARANTEED: Create take-profit order immediately after fill confirmation
+          try {
+            console.log(`🎯 GUARANTEED: Creating take-profit order for filled buy ${trade.symbol}`);
+            await this.orderPlacer.createTakeProfitOrder(trade, config.take_profit_percent);
+            console.log(`✅ GUARANTEED: Take-profit order created successfully for ${trade.symbol}`);
+            
+            await this.logger.log('order_placed', `Guaranteed take-profit created for ${trade.symbol}`, {
               tradeId: trade.id,
               symbol: trade.symbol,
-              bybitOrderId: trade.bybit_order_id
+              entryPrice: trade.price,
+              takeProfitPercent: config.take_profit_percent,
+              method: 'guaranteed_on_fill'
             });
-
-            // GUARANTEED: Create take-profit order for every filled BUY
-            if (trade.side === 'buy') {
-              try {
-                console.log(`🎯 GUARANTEED: Creating take-profit order for filled buy ${trade.symbol}`);
-                await this.orderPlacer.createTakeProfitOrder(trade, config.take_profit_percent);
-                console.log(`✅ GUARANTEED: Take-profit order created for ${trade.symbol}`);
-              } catch (tpError) {
-                console.error(`❌ CRITICAL: Failed to create guaranteed take-profit for ${trade.symbol}:`, tpError);
-                await this.logger.logError(`CRITICAL: Failed to create guaranteed take-profit`, tpError, {
-                  tradeId: trade.id,
-                  symbol: trade.symbol,
-                  severity: 'CRITICAL',
-                  action: 'MANUAL_INTERVENTION_REQUIRED'
-                });
-              }
-            }
+          } catch (tpError) {
+            console.error(`❌ CRITICAL: Failed to create guaranteed take-profit for ${trade.symbol}:`, tpError);
+            await this.logger.logError(`CRITICAL: Failed to create guaranteed take-profit`, tpError, {
+              tradeId: trade.id,
+              symbol: trade.symbol,
+              entryPrice: trade.price,
+              severity: 'CRITICAL',
+              action: 'MANUAL_INTERVENTION_REQUIRED'
+            });
+            
+            // This is critical - we must not let filled buys exist without take-profit orders
+            throw new Error(`CRITICAL: Failed to create take-profit for filled buy ${trade.symbol}`);
           }
         } else {
-          console.log(`⏳ Order ${trade.bybit_order_id} status: ${order.orderStatus}`);
+          console.log(`⏳ Buy order ${trade.bybit_order_id} status: ${order.orderStatus}`);
         }
       } else {
         console.log(`⚠️ Invalid response for order ${trade.bybit_order_id}:`, orderStatus);
       }
 
     } catch (error) {
-      console.error(`❌ Error checking order ${trade.bybit_order_id}:`, error);
-      await this.logger.logError(`Failed to check order status`, error, {
+      console.error(`❌ Error checking buy order ${trade.bybit_order_id}:`, error);
+      await this.logger.logError(`Failed to check buy order status`, error, {
         tradeId: trade.id,
         bybitOrderId: trade.bybit_order_id
       });
+      throw error; // Re-throw to ensure this error is handled upstream
+    }
+  }
+
+  // Additional method to audit existing filled buys without take-profit orders
+  async auditMissingTakeProfitOrders(config: TradingConfigData): Promise<void> {
+    try {
+      console.log('🔍 Auditing filled buy orders for missing take-profit orders...');
+      
+      // Get all filled buy orders
+      const { data: filledBuys, error: filledError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('side', 'buy')
+        .eq('status', 'filled');
+
+      if (filledError) {
+        console.error('❌ Error fetching filled buy orders:', filledError);
+        return;
+      }
+
+      if (!filledBuys || filledBuys.length === 0) {
+        console.log('📭 No filled buy orders found');
+        return;
+      }
+
+      console.log(`📋 Found ${filledBuys.length} filled buy orders to audit`);
+
+      for (const buyTrade of filledBuys) {
+        // Check if corresponding take-profit sell order exists
+        const { data: sellOrders, error: sellError } = await supabase
+          .from('trades')
+          .select('*')
+          .eq('user_id', this.userId)
+          .eq('side', 'sell')
+          .eq('symbol', buyTrade.symbol)
+          .in('status', ['pending', 'filled']);
+
+        if (sellError) {
+          console.error(`❌ Error checking sell orders for ${buyTrade.symbol}:`, sellError);
+          continue;
+        }
+
+        // If no pending/filled sell order exists, create take-profit order
+        if (!sellOrders || sellOrders.length === 0) {
+          console.log(`⚠️ MISSING TAKE-PROFIT: Found filled buy ${buyTrade.symbol} without corresponding sell order`);
+          
+          try {
+            await this.orderPlacer.createTakeProfitOrder(buyTrade, config.take_profit_percent);
+            console.log(`✅ RECOVERY: Created missing take-profit order for ${buyTrade.symbol}`);
+            
+            await this.logger.log('order_placed', `Recovery take-profit created for ${buyTrade.symbol}`, {
+              tradeId: buyTrade.id,
+              symbol: buyTrade.symbol,
+              entryPrice: buyTrade.price,
+              takeProfitPercent: config.take_profit_percent,
+              method: 'recovery_audit'
+            });
+          } catch (recoveryError) {
+            console.error(`❌ CRITICAL: Failed to create recovery take-profit for ${buyTrade.symbol}:`, recoveryError);
+            await this.logger.logError(`CRITICAL: Failed to create recovery take-profit`, recoveryError, {
+              tradeId: buyTrade.id,
+              symbol: buyTrade.symbol,
+              severity: 'CRITICAL'
+            });
+          }
+        }
+      }
+
+      console.log('✅ Take-profit audit completed');
+    } catch (error) {
+      console.error('❌ Error during take-profit audit:', error);
+      await this.logger.logError('Take-profit audit failed', error);
     }
   }
 }

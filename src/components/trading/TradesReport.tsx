@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage, shouldShowSpotPL } from '@/utils/formatters';
+import { formatCurrency, calculateSpotPL, calculateSpotPercentage, shouldShowSpotPL } from '@/utils/formatters';
 import { Loader2 } from 'lucide-react';
 
 interface Trade {
@@ -117,23 +117,10 @@ const TradesReport = () => {
     return side === 'buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
   };
 
-  // Calculate P&L and percentage for each trade using side-aware logic
+  // Calculate P&L and percentage for each trade using spot logic
   const getTradeMetrics = (trade: Trade) => {
     const currentPrice = marketPrices[trade.symbol] || trade.price;
     
-    // Check if we should show P&L for this trade
-    if (shouldShowSpotPL(trade, undefined)) {
-      const pnl = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
-      const percentage = calculateSideAwarePercentage(trade.side, trade.price, currentPrice);
-      
-      return {
-        showPL: true,
-        pnl,
-        percentage,
-        currentPrice
-      };
-    }
-
     // For closed trades, use stored profit_loss
     if (trade.status === 'closed' && trade.profit_loss !== null) {
       const volume = trade.price * trade.quantity;
@@ -144,6 +131,19 @@ const TradesReport = () => {
         pnl: trade.profit_loss,
         percentage,
         currentPrice: trade.price // Use entry price for closed trades
+      };
+    }
+
+    // Check if we should show P&L for this trade (filled buy only)
+    if (shouldShowSpotPL(trade)) {
+      const pnl = calculateSpotPL(trade.price, currentPrice, trade.quantity);
+      const percentage = calculateSpotPercentage(trade.price, currentPrice);
+      
+      return {
+        showPL: true,
+        pnl,
+        percentage,
+        currentPrice
       };
     }
 
@@ -171,8 +171,8 @@ const TradesReport = () => {
     );
   }
 
-  // Calculate summary statistics using side-aware P&L logic
-  const activeTrades = trades.filter(trade => shouldShowSpotPL(trade, undefined));
+  // Calculate summary statistics using spot P&L logic
+  const activeTrades = trades.filter(trade => shouldShowSpotPL(trade));
   const closedTrades = trades.filter(trade => trade.status === 'closed');
   
   const totalUnrealizedPL = activeTrades.reduce((sum, trade) => {
@@ -190,7 +190,7 @@ const TradesReport = () => {
     <Card>
       <CardHeader>
         <CardTitle>Trades Report</CardTitle>
-        <CardDescription>Complete trading history with side-aware P&L calculations</CardDescription>
+        <CardDescription>Complete trading history with spot P&L calculations</CardDescription>
         
         {/* Summary Statistics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">

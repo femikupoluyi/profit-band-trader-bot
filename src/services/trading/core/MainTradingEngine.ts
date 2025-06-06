@@ -55,7 +55,7 @@ export class MainTradingEngine {
     this.eodManager = new EndOfDayManagerService(userId, bybitService);
     this.manualCloseService = new ManualCloseService(userId, bybitService);
 
-    // Initialize cycle executor
+    // Initialize cycle executor with enhanced position monitoring
     this.cycleExecutor = new TradingCycleExecutor(
       userId,
       this.positionMonitor,
@@ -85,6 +85,8 @@ export class MainTradingEngine {
   }
 
   async start(): Promise<void> {
+    // Run initial audit for missing take-profit orders before starting
+    await this.auditMissingTakeProfitOrders();
     return this.lifecycle.start();
   }
 
@@ -97,6 +99,29 @@ export class MainTradingEngine {
       throw new Error('Valid tradeId is required for manual close');
     }
     return this.manualCloseService.closePosition(tradeId);
+  }
+
+  // New method to audit and fix missing take-profit orders
+  async auditMissingTakeProfitOrders(): Promise<void> {
+    try {
+      console.log('🔍 Running initial audit for missing take-profit orders...');
+      await this.logger.logSuccess('Starting audit for missing take-profit orders');
+      
+      // Get current config
+      await this.configManager.loadConfig();
+      const config = this.configManager.getConfig();
+      const configData = ConfigConverter.convertConfig(config);
+      
+      // Run the audit using the position monitor
+      await this.positionMonitor.auditMissingTakeProfitOrders(configData);
+      
+      console.log('✅ Take-profit audit completed');
+      await this.logger.logSuccess('Take-profit audit completed successfully');
+    } catch (error) {
+      console.error('❌ Error in take-profit audit:', error);
+      await this.logger.logError('Take-profit audit failed', error);
+      // Don't throw - allow engine to continue even if audit fails
+    }
   }
 
   async simulateEndOfDay(): Promise<void> {

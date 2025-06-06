@@ -9,12 +9,12 @@ interface ActiveTradesSummaryProps {
 }
 
 const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
-  // Calculate totals using spot P&L logic (only filled buys with pending sells)
+  // Calculate totals using spot P&L logic (only filled buys)
   const totalUnrealizedPL = trades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
     
-    // Only include P&L for filled buys that should show P&L
-    if (trade.side === 'buy' && trade.status === 'filled' && shouldShowSpotPL(trade)) {
+    // Only include P&L for trades that should show P&L (filled buys)
+    if (shouldShowSpotPL(trade)) {
       const spotPL = calculateSpotPL(trade.price, currentPrice, trade.quantity);
       return sum + spotPL;
     }
@@ -28,10 +28,8 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
     return sum + (currentPrice * trade.quantity);
   }, 0);
   
-  // Count only trades that should show P&L
-  const activePositionsWithPL = trades.filter(trade => 
-    trade.side === 'buy' && trade.status === 'filled' && shouldShowSpotPL(trade)
-  );
+  // Count only trades that should show P&L (filled buys)
+  const activePositionsWithPL = trades.filter(trade => shouldShowSpotPL(trade));
   
   const totalCount = trades.length;
   const activePLCount = activePositionsWithPL.length;

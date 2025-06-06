@@ -14,20 +14,19 @@ interface ActiveTradeRowProps {
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
   const currentPrice = trade.currentPrice || trade.price;
   
-  // Only calculate and show P&L for buy positions that are filled (with take-profit pending)
+  // Calculate P&L only for filled buy positions using spot logic
   let spotPL = 0;
   let spotPercentage = 0;
   let showPL = false;
 
-  if (trade.side === 'buy' && trade.status === 'filled') {
-    // For spot trading, only show P&L if this is a filled buy with a pending take-profit
-    showPL = shouldShowSpotPL(trade);
-    
-    if (showPL) {
-      spotPL = calculateSpotPL(trade.price, currentPrice, trade.quantity);
-      spotPercentage = calculateSpotPercentage(trade.price, currentPrice);
-    }
+  // Use the spot P&L logic to determine if we should show P&L
+  if (shouldShowSpotPL(trade)) {
+    showPL = true;
+    spotPL = calculateSpotPL(trade.price, currentPrice, trade.quantity);
+    spotPercentage = calculateSpotPercentage(trade.price, currentPrice);
   }
+
+  console.log(`ActiveTradeRow ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, ShowPL=${showPL}, EntryPrice=${trade.price}, CurrentPrice=${currentPrice}, SpotPL=${spotPL.toFixed(2)}, SpotPercentage=${spotPercentage.toFixed(2)}%`);
 
   return (
     <TableRow>

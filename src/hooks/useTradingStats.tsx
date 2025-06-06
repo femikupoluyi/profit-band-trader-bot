@@ -68,8 +68,8 @@ export const useTradingStats = (userId?: string) => {
         return 0;
       }
 
-      // For active trades, only calculate P&L if they meet spot criteria
-      if (trade.side === 'buy' && trade.status === 'filled' && shouldShowSpotPL(trade)) {
+      // For active trades, only calculate P&L if they meet spot criteria (filled buys)
+      if (shouldShowSpotPL(trade)) {
         const { data: marketData } = await supabase
           .from('market_data')
           .select('price')
@@ -81,7 +81,7 @@ export const useTradingStats = (userId?: string) => {
         if (marketData) {
           const currentPrice = parseFloat(marketData.price.toString());
           
-          // Use spot P&L calculation
+          // Use spot P&L calculation (only for filled buys)
           return calculateSpotPL(entryPrice, currentPrice, quantity);
         }
       }
