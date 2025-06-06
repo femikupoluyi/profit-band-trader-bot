@@ -66,7 +66,7 @@ export class UserConfigManager {
           config.quantity_decimals_per_symbol, 
           {}
         ),
-        // Use max_active_pairs for max_concurrent_trades for consistency
+        // Map max_active_pairs to max_concurrent_trades for consistency
         max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
         notes: config.notes || ''
