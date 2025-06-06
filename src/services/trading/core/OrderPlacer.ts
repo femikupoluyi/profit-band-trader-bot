@@ -1,7 +1,8 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
-import { PriceFormatter } from './PriceFormatter';
 import { ConfigurableFormatter } from './ConfigurableFormatter';
+import { BybitInstrumentService } from './BybitInstrumentService';
 
 export class OrderPlacer {
   private userId: string;
@@ -19,16 +20,24 @@ export class OrderPlacer {
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
       
-      // CRITICAL: Use ConfigurableFormatter for ALL price and quantity formatting
-      const formattedQuantity = ConfigurableFormatter.formatQuantity(signal.symbol, quantity);
-      const formattedEntryPrice = ConfigurableFormatter.formatPrice(signal.symbol, entryPrice);
+      // Get instrument info for precise formatting
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(signal.symbol);
+      if (!instrumentInfo) {
+        throw new Error(`Failed to get instrument info for ${signal.symbol}`);
+      }
 
-      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
-      console.log(`  🔧 Formatted Entry Price: ${formattedEntryPrice}`);
+      console.log(`📋 Using instrument info for ${signal.symbol}:`, instrumentInfo);
 
-      // Validate the formatted values
-      if (!ConfigurableFormatter.validateFormatting(signal.symbol, parseFloat(formattedEntryPrice), parseFloat(formattedQuantity))) {
-        throw new Error(`Invalid formatting for ${signal.symbol}: price=${formattedEntryPrice}, quantity=${formattedQuantity}`);
+      // CRITICAL: Use Bybit instrument info for ALL price and quantity formatting
+      const formattedQuantity = BybitInstrumentService.formatQuantity(signal.symbol, quantity, instrumentInfo);
+      const formattedEntryPrice = BybitInstrumentService.formatPrice(signal.symbol, entryPrice, instrumentInfo);
+
+      console.log(`  🔧 Formatted Quantity: ${formattedQuantity} (${instrumentInfo.quantityDecimals} decimals)`);
+      console.log(`  🔧 Formatted Entry Price: ${formattedEntryPrice} (${instrumentInfo.priceDecimals} decimals)`);
+
+      // Validate the order meets Bybit requirements
+      if (!BybitInstrumentService.validateOrder(signal.symbol, parseFloat(formattedEntryPrice), parseFloat(formattedQuantity), instrumentInfo)) {
+        throw new Error(`Order validation failed for ${signal.symbol}`);
       }
 
       // ALWAYS place real Bybit order - no fallback to mock
@@ -42,7 +51,7 @@ export class OrderPlacer {
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing REAL BUY order with formatted values:', buyOrderParams);
+      console.log('📝 Placing REAL BUY order with Bybit-compliant formatting:', buyOrderParams);
       const buyOrderResult = await this.bybitService.placeOrder(buyOrderParams);
 
       if (buyOrderResult && buyOrderResult.retCode === 0 && buyOrderResult.result?.orderId) {
@@ -57,8 +66,8 @@ export class OrderPlacer {
             symbol: signal.symbol,
             side: 'buy',
             order_type: 'limit',
-            price: parseFloat(formattedEntryPrice), // Use the formatted price value
-            quantity: parseFloat(formattedQuantity), // Use the formatted quantity value
+            price: parseFloat(formattedEntryPrice), // Use the Bybit-formatted price value
+            quantity: parseFloat(formattedQuantity), // Use the Bybit-formatted quantity value
             status: 'pending', // Real orders start as pending until Bybit confirms fill
             bybit_order_id: bybitOrderId,
           })
@@ -78,11 +87,17 @@ export class OrderPlacer {
           orderValue: parseFloat(formattedQuantity) * parseFloat(formattedEntryPrice),
           bybitOrderId,
           tradeId: trade.id,
-          orderType: 'REAL_BYBIT_LIMIT_ORDER'
+          orderType: 'REAL_BYBIT_LIMIT_ORDER',
+          instrumentInfo: {
+            priceDecimals: instrumentInfo.priceDecimals,
+            quantityDecimals: instrumentInfo.quantityDecimals,
+            tickSize: instrumentInfo.tickSize,
+            basePrecision: instrumentInfo.basePrecision
+          }
         });
 
         // CRITICAL: Place take-profit limit sell order after successful buy order
-        await this.placeTakeProfitOrder(signal.symbol, parseFloat(formattedQuantity), takeProfitPrice, trade.id);
+        await this.placeTakeProfitOrder(signal.symbol, parseFloat(formattedQuantity), takeProfitPrice, trade.id, instrumentInfo);
 
       } else {
         console.error(`❌ Bybit order FAILED - retCode: ${buyOrderResult?.retCode}, retMsg: ${buyOrderResult?.retMsg}`);
@@ -95,20 +110,20 @@ export class OrderPlacer {
     }
   }
 
-  private async placeTakeProfitOrder(symbol: string, quantity: number, takeProfitPrice: number, relatedTradeId: string): Promise<void> {
+  private async placeTakeProfitOrder(symbol: string, quantity: number, takeProfitPrice: number, relatedTradeId: string, instrumentInfo: any): Promise<void> {
     try {
       console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
-      // CRITICAL: Use ConfigurableFormatter for take-profit price formatting
-      const formattedTakeProfitPrice = ConfigurableFormatter.formatPrice(symbol, takeProfitPrice);
-      const formattedQuantity = ConfigurableFormatter.formatQuantity(symbol, quantity);
+      // CRITICAL: Use Bybit instrument info for take-profit price formatting
+      const formattedTakeProfitPrice = BybitInstrumentService.formatPrice(symbol, takeProfitPrice, instrumentInfo);
+      const formattedQuantity = BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
       
-      console.log(`  🔧 Formatted Take-Profit Price: ${formattedTakeProfitPrice}`);
-      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
+      console.log(`  🔧 Formatted Take-Profit Price: ${formattedTakeProfitPrice} (${instrumentInfo.priceDecimals} decimals)`);
+      console.log(`  🔧 Formatted Quantity: ${formattedQuantity} (${instrumentInfo.quantityDecimals} decimals)`);
       
-      // Validate the formatted take-profit price
-      if (!ConfigurableFormatter.validateFormatting(symbol, parseFloat(formattedTakeProfitPrice), parseFloat(formattedQuantity))) {
-        throw new Error(`Invalid take-profit formatting for ${symbol}: price=${formattedTakeProfitPrice}, quantity=${formattedQuantity}`);
+      // Validate the formatted take-profit order
+      if (!BybitInstrumentService.validateOrder(symbol, parseFloat(formattedTakeProfitPrice), parseFloat(formattedQuantity), instrumentInfo)) {
+        throw new Error(`Take-profit order validation failed for ${symbol}`);
       }
       
       const sellOrderParams = {
@@ -121,7 +136,7 @@ export class OrderPlacer {
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing take-profit SELL order with formatted values:', sellOrderParams);
+      console.log('📝 Placing take-profit SELL order with Bybit-compliant formatting:', sellOrderParams);
       const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
       
       if (sellOrderResult && sellOrderResult.retCode === 0 && sellOrderResult.result?.orderId) {
@@ -135,7 +150,7 @@ export class OrderPlacer {
             symbol: symbol,
             side: 'sell',
             order_type: 'limit',
-            price: parseFloat(formattedTakeProfitPrice), // Use formatted price
+            price: parseFloat(formattedTakeProfitPrice), // Use Bybit-formatted price
             quantity: parseFloat(formattedQuantity),
             status: 'pending',
             bybit_order_id: sellOrderResult.result.orderId,
@@ -156,7 +171,13 @@ export class OrderPlacer {
           formattedPrice: formattedTakeProfitPrice,
           bybitOrderId: sellOrderResult.result.orderId,
           relatedTradeId,
-          orderType: 'TAKE_PROFIT_LIMIT_SELL'
+          orderType: 'TAKE_PROFIT_LIMIT_SELL',
+          instrumentInfo: {
+            priceDecimals: instrumentInfo.priceDecimals,
+            quantityDecimals: instrumentInfo.quantityDecimals,
+            tickSize: instrumentInfo.tickSize,
+            basePrecision: instrumentInfo.basePrecision
+          }
         });
       } else {
         console.log(`⚠️ Take-profit order failed: ${sellOrderResult?.retMsg}`);

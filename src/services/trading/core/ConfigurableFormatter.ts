@@ -1,9 +1,11 @@
 
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { BybitInstrumentService, BybitInstrumentInfo } from './BybitInstrumentService';
 
 export class ConfigurableFormatter {
   private static config: TradingConfigData | null = null;
   private static activePairs: string[] = [];
+  private static instrumentCache: Map<string, BybitInstrumentInfo> = new Map();
 
   static setConfig(config: TradingConfigData): void {
     this.config = config;
@@ -18,24 +20,27 @@ export class ConfigurableFormatter {
   }
 
   /**
-   * Format price using config-specified decimal places or fallback to defaults
+   * Format price using dynamic Bybit instrument info
    */
-  static formatPrice(symbol: string, price: number): string {
+  static async formatPrice(symbol: string, price: number): Promise<string> {
     try {
-      if (!this.config) {
-        console.warn('ConfigurableFormatter not initialized with config, using defaults');
-        return this.formatPriceWithDefaults(symbol, price);
-      }
-
       if (typeof price !== 'number' || isNaN(price)) {
         console.error(`Invalid price value for ${symbol}:`, price);
         return '0.00';
       }
 
-      // Check if custom price decimals are configured
-      const customDecimals = this.config.price_decimals_per_symbol?.[symbol];
-      if (customDecimals !== undefined && typeof customDecimals === 'number') {
-        return price.toFixed(Math.max(0, Math.min(8, customDecimals)));
+      // Get instrument info from Bybit
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+      if (instrumentInfo) {
+        return BybitInstrumentService.formatPrice(symbol, price, instrumentInfo);
+      }
+
+      // Fallback to config or defaults if instrument info unavailable
+      if (this.config?.price_decimals_per_symbol?.[symbol] !== undefined) {
+        const customDecimals = this.config.price_decimals_per_symbol[symbol];
+        if (typeof customDecimals === 'number') {
+          return price.toFixed(Math.max(0, Math.min(8, customDecimals)));
+        }
       }
 
       return this.formatPriceWithDefaults(symbol, price);
@@ -46,24 +51,27 @@ export class ConfigurableFormatter {
   }
 
   /**
-   * Format quantity using config-specified decimal places or fallback to defaults
+   * Format quantity using dynamic Bybit instrument info
    */
-  static formatQuantity(symbol: string, quantity: number): string {
+  static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
-      if (!this.config) {
-        console.warn('ConfigurableFormatter not initialized with config, using defaults');
-        return this.formatQuantityWithDefaults(symbol, quantity);
-      }
-
       if (typeof quantity !== 'number' || isNaN(quantity)) {
         console.error(`Invalid quantity value for ${symbol}:`, quantity);
         return '0.0000';
       }
 
-      // Check if custom quantity decimals are configured
-      const customDecimals = this.config.quantity_decimals_per_symbol?.[symbol];
-      if (customDecimals !== undefined && typeof customDecimals === 'number') {
-        return quantity.toFixed(Math.max(0, Math.min(8, customDecimals)));
+      // Get instrument info from Bybit
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+      if (instrumentInfo) {
+        return BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
+      }
+
+      // Fallback to config or defaults if instrument info unavailable
+      if (this.config?.quantity_decimals_per_symbol?.[symbol] !== undefined) {
+        const customDecimals = this.config.quantity_decimals_per_symbol[symbol];
+        if (typeof customDecimals === 'number') {
+          return quantity.toFixed(Math.max(0, Math.min(8, customDecimals)));
+        }
       }
 
       return this.formatQuantityWithDefaults(symbol, quantity);
@@ -73,8 +81,77 @@ export class ConfigurableFormatter {
     }
   }
 
+  /**
+   * Synchronous version using cached instrument info
+   */
+  static formatPriceSync(symbol: string, price: number): string {
+    try {
+      const cached = this.instrumentCache.get(symbol);
+      if (cached) {
+        return BybitInstrumentService.formatPrice(symbol, price, cached);
+      }
+      return this.formatPriceWithDefaults(symbol, price);
+    } catch (error) {
+      console.error(`Error in sync price formatting for ${symbol}:`, error);
+      return this.formatPriceWithDefaults(symbol, price);
+    }
+  }
+
+  /**
+   * Synchronous version using cached instrument info
+   */
+  static formatQuantitySync(symbol: string, quantity: number): string {
+    try {
+      const cached = this.instrumentCache.get(symbol);
+      if (cached) {
+        return BybitInstrumentService.formatQuantity(symbol, quantity, cached);
+      }
+      return this.formatQuantityWithDefaults(symbol, quantity);
+    } catch (error) {
+      console.error(`Error in sync quantity formatting for ${symbol}:`, error);
+      return this.formatQuantityWithDefaults(symbol, quantity);
+    }
+  }
+
+  /**
+   * Validate order using Bybit instrument requirements
+   */
+  static async validateOrder(symbol: string, price: number, quantity: number): Promise<boolean> {
+    try {
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+      if (instrumentInfo) {
+        return BybitInstrumentService.validateOrder(symbol, price, quantity, instrumentInfo);
+      }
+
+      // Fallback validation
+      const orderValue = price * quantity;
+      return orderValue >= 10; // Basic minimum
+    } catch (error) {
+      console.error(`Error validating order for ${symbol}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Pre-cache instrument info for active trading pairs
+   */
+  static async preloadInstrumentInfo(symbols: string[]): Promise<void> {
+    try {
+      console.log(`🔄 Preloading instrument info for ${symbols.length} symbols...`);
+      const instrumentMap = await BybitInstrumentService.getMultipleInstrumentInfo(symbols);
+      
+      // Cache the results locally
+      for (const [symbol, info] of instrumentMap) {
+        this.instrumentCache.set(symbol, info);
+      }
+      
+      console.log(`✅ Preloaded instrument info for ${instrumentMap.size} symbols`);
+    } catch (error) {
+      console.error('Error preloading instrument info:', error);
+    }
+  }
+
   private static formatPriceWithDefaults(symbol: string, price: number): string {
-    // Fallback to hardcoded defaults
     const defaults: Record<string, number> = {
       'BTCUSDT': 2, 'ETHUSDT': 2, 'BNBUSDT': 2, 'LTCUSDT': 2,
       'SOLUSDT': 4, 'ADAUSDT': 6, 'XRPUSDT': 6, 'DOGEUSDT': 6,
@@ -86,7 +163,6 @@ export class ConfigurableFormatter {
   }
 
   private static formatQuantityWithDefaults(symbol: string, quantity: number): string {
-    // Fallback to hardcoded defaults
     const defaults: Record<string, number> = {
       'BTCUSDT': 5, 'ETHUSDT': 4, 'SOLUSDT': 2, 'BNBUSDT': 3,
       'ADAUSDT': 0, 'XRPUSDT': 1, 'LTCUSDT': 2, 'POLUSDT': 0,
@@ -98,27 +174,10 @@ export class ConfigurableFormatter {
   }
 
   /**
-   * Validate if the formatted values meet Bybit requirements
+   * Clear all caches
    */
-  static validateFormatting(symbol: string, price: number, quantity: number): boolean {
-    try {
-      if (!symbol || typeof symbol !== 'string') {
-        console.error('Invalid symbol provided for formatting validation');
-        return false;
-      }
-
-      const formattedPrice = this.formatPrice(symbol, price);
-      const formattedQuantity = this.formatQuantity(symbol, quantity);
-      
-      // Check if values can be parsed back correctly
-      const parsedPrice = parseFloat(formattedPrice);
-      const parsedQuantity = parseFloat(formattedQuantity);
-      
-      return !isNaN(parsedPrice) && !isNaN(parsedQuantity) && 
-             parsedPrice > 0 && parsedQuantity > 0;
-    } catch (error) {
-      console.error(`Formatting validation failed for ${symbol}:`, error);
-      return false;
-    }
+  static clearCache(): void {
+    this.instrumentCache.clear();
+    BybitInstrumentService.clearCache();
   }
 }

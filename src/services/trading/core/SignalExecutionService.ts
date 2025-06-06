@@ -5,7 +5,7 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 import { PositionValidator } from './PositionValidator';
 import { OrderPlacer } from './OrderPlacer';
 import { TradeValidator } from './TradeValidator';
-import { PriceFormatter } from './PriceFormatter';
+import { ConfigurableFormatter } from './ConfigurableFormatter';
 import { TradingLogger } from './TradingLogger';
 
 export class SignalExecutionService {
@@ -28,6 +28,12 @@ export class SignalExecutionService {
     try {
       console.log('\n⚡ Executing signals...');
       await this.logger.logSuccess('Starting signal execution');
+      
+      // Preload instrument info for all trading pairs for better performance
+      if (config.trading_pairs && config.trading_pairs.length > 0) {
+        console.log(`🔄 Preloading instrument info for ${config.trading_pairs.length} trading pairs...`);
+        await ConfigurableFormatter.preloadInstrumentInfo(config.trading_pairs);
+      }
       
       // Get unprocessed signals
       const { data: signals, error } = await supabase
@@ -77,17 +83,20 @@ export class SignalExecutionService {
       
       const entryPrice = parseFloat(signal.price.toString());
       
-      // Calculate quantity with proper formatting
+      // Calculate quantity with proper formatting - will now use Bybit instrument info
       const adjustedQuantity = TradeValidator.calculateQuantity(signal.symbol, config.max_order_amount_usd, entryPrice, config);
       
-      // Format quantity using symbol-specific precision rules
-      const finalQuantity = parseFloat(PriceFormatter.formatQuantityForSymbol(signal.symbol, adjustedQuantity));
+      // Use async formatting for precise Bybit compliance
+      const formattedQuantityStr = await ConfigurableFormatter.formatQuantity(signal.symbol, adjustedQuantity);
+      const finalQuantity = parseFloat(formattedQuantityStr);
       
+      console.log(`  Calculated Quantity: ${adjustedQuantity}`);
       console.log(`  Final Formatted Quantity: ${finalQuantity}`);
       
-      // Validate trade parameters
-      if (!TradeValidator.validateTradeParameters(signal.symbol, finalQuantity, entryPrice, config)) {
-        await this.markSignalRejected(signal.id, 'Trade validation failed');
+      // Validate trade parameters with Bybit instrument requirements
+      const isValidOrder = await ConfigurableFormatter.validateOrder(signal.symbol, entryPrice, finalQuantity);
+      if (!isValidOrder) {
+        await this.markSignalRejected(signal.id, 'Order validation failed (Bybit requirements)');
         return;
       }
 
@@ -97,7 +106,7 @@ export class SignalExecutionService {
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)} (+${config.take_profit_percent}%)`);
 
-      // Place REAL limit buy order on Bybit
+      // Place REAL limit buy order on Bybit with dynamic formatting
       await this.orderPlacer.placeRealBybitOrder(signal, finalQuantity, entryPrice, takeProfitPrice);
       
       // Mark signal as processed
@@ -110,7 +119,8 @@ export class SignalExecutionService {
         symbol: signal.symbol,
         signalId: signal.id,
         entryPrice,
-        quantity: finalQuantity
+        quantity: finalQuantity,
+        formattingMethod: 'bybit_instrument_info'
       });
       
     } catch (error) {

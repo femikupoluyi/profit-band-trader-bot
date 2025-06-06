@@ -2,6 +2,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
+import { BybitInstrumentService } from './BybitInstrumentService';
 
 export class ManualCloseService {
   private userId: string;
@@ -97,12 +98,27 @@ export class ManualCloseService {
       const profit = (currentPrice - entryPrice) * quantity;
 
       console.log(`💰 P&L calculation: Entry=$${entryPrice}, Current=$${currentPrice}, Qty=${quantity}, P&L=$${profit.toFixed(2)}`);
+
+      // Get instrument info for proper formatting
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(trade.symbol);
+      if (!instrumentInfo) {
+        console.warn(`⚠️ Could not get instrument info for ${trade.symbol}, using trade quantity as-is`);
+      }
+
+      // Format quantity using Bybit instrument requirements
+      const formattedQuantity = instrumentInfo 
+        ? BybitInstrumentService.formatQuantity(trade.symbol, quantity, instrumentInfo)
+        : trade.quantity.toString();
+
+      console.log(`📦 Formatted quantity for close: ${formattedQuantity}`);
+
       await this.logger.logSuccess(`P&L calculated: $${profit.toFixed(2)}`, {
         tradeId,
         symbol: trade.symbol,
         entryPrice,
         currentPrice,
         quantity,
+        formattedQuantity,
         profit,
         profitPercent: ((currentPrice - entryPrice) / entryPrice * 100).toFixed(2)
       });
@@ -113,14 +129,18 @@ export class ManualCloseService {
         symbol: trade.symbol,
         side: 'Sell' as const,
         orderType: 'Market' as const,
-        qty: trade.quantity.toString(),
+        qty: formattedQuantity,
       };
 
-      console.log('📝 Placing MARKET sell order:', sellOrderParams);
+      console.log('📝 Placing MARKET sell order with Bybit-compliant formatting:', sellOrderParams);
       await this.logger.logTradeAction('Placing market sell order', trade.symbol, {
         tradeId,
         orderParams: sellOrderParams,
-        expectedProfit: profit
+        expectedProfit: profit,
+        instrumentInfo: instrumentInfo ? {
+          priceDecimals: instrumentInfo.priceDecimals,
+          quantityDecimals: instrumentInfo.quantityDecimals
+        } : null
       });
 
       let sellResult;
@@ -185,7 +205,9 @@ export class ManualCloseService {
           profit,
           profitPercent: ((currentPrice - entryPrice) / entryPrice * 100).toFixed(2),
           reason: 'manual_close_market_order',
-          bybitOrderId: sellResult.result?.orderId || null
+          bybitOrderId: sellResult.result?.orderId || null,
+          formattedQuantity: formattedQuantity,
+          formattingMethod: instrumentInfo ? 'bybit_instrument_info' : 'fallback'
         });
 
         // Summary log for easy tracking
@@ -193,7 +215,7 @@ export class ManualCloseService {
         console.log(`   Symbol: ${trade.symbol}`);
         console.log(`   Entry Price: $${entryPrice.toFixed(4)}`);
         console.log(`   Exit Price: $${currentPrice.toFixed(4)}`);
-        console.log(`   Quantity: ${quantity}`);
+        console.log(`   Quantity: ${formattedQuantity}`);
         console.log(`   Profit: $${profit.toFixed(2)}`);
         console.log(`   Profit %: ${((currentPrice - entryPrice) / entryPrice * 100).toFixed(2)}%`);
 
