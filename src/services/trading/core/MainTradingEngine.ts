@@ -1,4 +1,3 @@
-
 import { TradingConfigManager } from '../config/TradingConfigManager';
 import { PositionMonitorService } from './PositionMonitorService';
 import { MarketDataScannerService } from './MarketDataScannerService';
@@ -11,6 +10,8 @@ import { TradingLogger } from './TradingLogger';
 import { ConfigConverter } from './ConfigConverter';
 import { TradingLoopScheduler } from './TradingLoopScheduler';
 import { TradingCycleExecutor } from './TradingCycleExecutor';
+import { ConfigurableFormatter } from './ConfigurableFormatter';
+import { TransactionReconciliationService } from './TransactionReconciliationService';
 
 export class MainTradingEngine {
   private userId: string;
@@ -19,6 +20,7 @@ export class MainTradingEngine {
   private logger: TradingLogger;
   private scheduler: TradingLoopScheduler;
   private cycleExecutor: TradingCycleExecutor;
+  private reconciliationService: TransactionReconciliationService;
   
   // Core Services
   private positionMonitor: PositionMonitorService;
@@ -58,6 +60,9 @@ export class MainTradingEngine {
       this.signalExecutor,
       this.eodManager
     );
+
+    // Initialize reconciliation service
+    this.reconciliationService = new TransactionReconciliationService(userId, bybitService);
   }
 
   async initialize(): Promise<void> {
@@ -66,6 +71,11 @@ export class MainTradingEngine {
       
       // Load initial configuration
       await this.configManager.loadConfig();
+      const config = this.configManager.getConfig();
+      const configData = ConfigConverter.convertConfig(config);
+      
+      // Initialize ConfigurableFormatter with current config
+      ConfigurableFormatter.setConfig(configData);
       
       console.log('✅ Main Trading Engine initialized successfully');
       await this.logger.logSuccess('Main Trading Engine initialized');
@@ -90,6 +100,14 @@ export class MainTradingEngine {
         await this.logger.logError('Cannot start trading: configuration is not active', new Error('Config not active'));
         return;
       }
+
+      // Perform startup reconciliation with Bybit
+      console.log('🔄 Performing startup reconciliation...');
+      await this.reconciliationService.performStartupReconciliation();
+
+      // Update ConfigurableFormatter with latest config
+      const configData = ConfigConverter.convertConfig(config);
+      ConfigurableFormatter.setConfig(configData);
 
       console.log(`🚀 Starting Main Trading Loop with ${config.main_loop_interval_seconds}s interval`);
       await this.logger.logSuccess(`Trading started with ${config.main_loop_interval_seconds}s interval`);
@@ -163,6 +181,22 @@ export class MainTradingEngine {
     } catch (error) {
       console.error('❌ Error in manual end-of-day simulation:', error);
       await this.logger.logError('Manual end-of-day simulation failed', error);
+      throw error;
+    }
+  }
+
+  async performTransactionReconciliation(): Promise<void> {
+    try {
+      console.log('🔄 Manual Transaction Reconciliation Started...');
+      await this.logger.logSuccess('Manual transaction reconciliation started');
+      
+      await this.reconciliationService.reconcileWithBybitHistory(24);
+      
+      console.log('✅ Manual Transaction Reconciliation Completed');
+      await this.logger.logSuccess('Manual transaction reconciliation completed');
+    } catch (error) {
+      console.error('❌ Error in manual transaction reconciliation:', error);
+      await this.logger.logError('Manual transaction reconciliation failed', error);
       throw error;
     }
   }

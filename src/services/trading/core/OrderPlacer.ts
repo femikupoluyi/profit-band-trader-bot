@@ -1,7 +1,7 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { PriceFormatter } from './PriceFormatter';
+import { ConfigurableFormatter } from './ConfigurableFormatter';
 
 export class OrderPlacer {
   private userId: string;
@@ -19,20 +19,16 @@ export class OrderPlacer {
       console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
       console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
       
-      // CRITICAL: Use PriceFormatter for ALL price and quantity formatting
-      const formattedQuantity = PriceFormatter.formatQuantityForSymbol(signal.symbol, quantity);
-      const formattedEntryPrice = PriceFormatter.formatPriceForSymbol(signal.symbol, entryPrice);
+      // CRITICAL: Use ConfigurableFormatter for ALL price and quantity formatting
+      const formattedQuantity = ConfigurableFormatter.formatQuantity(signal.symbol, quantity);
+      const formattedEntryPrice = ConfigurableFormatter.formatPrice(signal.symbol, entryPrice);
 
       console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
       console.log(`  🔧 Formatted Entry Price: ${formattedEntryPrice}`);
 
       // Validate the formatted values
-      if (!PriceFormatter.validatePrice(signal.symbol, parseFloat(formattedEntryPrice))) {
-        throw new Error(`Invalid price format for ${signal.symbol}: ${formattedEntryPrice}`);
-      }
-
-      if (!PriceFormatter.validateQuantity(signal.symbol, parseFloat(formattedQuantity))) {
-        throw new Error(`Invalid quantity format for ${signal.symbol}: ${formattedQuantity}`);
+      if (!ConfigurableFormatter.validateFormatting(signal.symbol, parseFloat(formattedEntryPrice), parseFloat(formattedQuantity))) {
+        throw new Error(`Invalid formatting for ${signal.symbol}: price=${formattedEntryPrice}, quantity=${formattedQuantity}`);
       }
 
       // ALWAYS place real Bybit order - no fallback to mock
@@ -103,16 +99,16 @@ export class OrderPlacer {
     try {
       console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
       
-      // CRITICAL: Use PriceFormatter for take-profit price formatting
-      const formattedTakeProfitPrice = PriceFormatter.formatPriceForSymbol(symbol, takeProfitPrice);
-      const formattedQuantity = PriceFormatter.formatQuantityForSymbol(symbol, quantity);
+      // CRITICAL: Use ConfigurableFormatter for take-profit price formatting
+      const formattedTakeProfitPrice = ConfigurableFormatter.formatPrice(symbol, takeProfitPrice);
+      const formattedQuantity = ConfigurableFormatter.formatQuantity(symbol, quantity);
       
       console.log(`  🔧 Formatted Take-Profit Price: ${formattedTakeProfitPrice}`);
       console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
       
       // Validate the formatted take-profit price
-      if (!PriceFormatter.validatePrice(symbol, parseFloat(formattedTakeProfitPrice))) {
-        throw new Error(`Invalid take-profit price format for ${symbol}: ${formattedTakeProfitPrice}`);
+      if (!ConfigurableFormatter.validateFormatting(symbol, parseFloat(formattedTakeProfitPrice), parseFloat(formattedQuantity))) {
+        throw new Error(`Invalid take-profit formatting for ${symbol}: price=${formattedTakeProfitPrice}, quantity=${formattedQuantity}`);
       }
       
       const sellOrderParams = {

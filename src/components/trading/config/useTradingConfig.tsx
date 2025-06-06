@@ -24,6 +24,8 @@ export interface TradingConfigData {
   support_upper_bound_percent: number;
   minimum_notional_per_symbol: Record<string, number>;
   quantity_increment_per_symbol: Record<string, number>;
+  price_decimals_per_symbol?: Record<string, number>;
+  quantity_decimals_per_symbol?: Record<string, number>;
 }
 
 const getDefaultConfig = (): TradingConfigData => ({
@@ -98,7 +100,9 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           support_lower_bound_percent: parseFloat(data.support_lower_bound_percent?.toString() || '5.0'),
           support_upper_bound_percent: parseFloat(data.support_upper_bound_percent?.toString() || '2.0'),
           minimum_notional_per_symbol: (data.minimum_notional_per_symbol as Record<string, number>) || { 'BTCUSDT': 10, 'ETHUSDT': 10 },
-          quantity_increment_per_symbol: (data.quantity_increment_per_symbol as Record<string, number>) || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
+          quantity_increment_per_symbol: (data.quantity_increment_per_symbol as Record<string, number>) || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
+          price_decimals_per_symbol: (data.price_decimals_per_symbol as Record<string, number>) || { 'BTCUSDT': 8, 'ETHUSDT': 8 },
+          quantity_decimals_per_symbol: (data.quantity_decimals_per_symbol as Record<string, number>) || { 'BTCUSDT': 8, 'ETHUSDT': 8 }
         };
         
         console.log('Loaded config from database with all fields:', loadedConfig);
