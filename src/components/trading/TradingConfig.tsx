@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Save, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Loader2, Save, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import TradingConfigForm from './config/TradingConfigForm';
 import { useTradingConfig } from './config/useTradingConfig';
@@ -55,6 +55,16 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Auto Decimal Precision Notice */}
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              <div className="font-medium mb-1">🎯 Smart Decimal Precision</div>
+              Decimal places for prices and quantities are now automatically fetched from Bybit's API 
+              for each trading pair, ensuring perfect compliance with exchange requirements.
+            </AlertDescription>
+          </Alert>
+
           {/* Validation Status */}
           {validationResult.errors.length > 0 && (
             <Alert variant="destructive">

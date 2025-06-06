@@ -7,7 +7,6 @@ import SupportAnalysisConfig from './components/SupportAnalysisConfig';
 import TradingPairsSelection from './components/TradingPairsSelection';
 import EndOfDayManagement from './components/EndOfDayManagement';
 import SystemConfiguration from './components/SystemConfiguration';
-import DecimalConfigSection from './DecimalConfigSection';
 import NotesSection from './components/NotesSection';
 
 interface TradingConfigFormProps {
@@ -46,7 +45,7 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
         onIntegerInput={onIntegerInput}
       />
 
-      {/* Trading Pairs Selection */}
+      {/* Trading Pairs Selection - Now Dynamic */}
       <TradingPairsSelection
         config={config}
         onInputChange={onInputChange}
@@ -64,12 +63,6 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
         config={config}
         onInputChange={onInputChange}
         onIntegerInput={onIntegerInput}
-      />
-
-      {/* Decimal Configuration Section */}
-      <DecimalConfigSection
-        config={config}
-        onInputChange={onInputChange}
       />
 
       {/* Notes */}
