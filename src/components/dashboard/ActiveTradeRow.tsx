@@ -2,7 +2,7 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage } from '@/utils/formatters';
+import { formatCurrency, calculateSpotPL, calculateSpotPercentage, shouldShowSpotPL } from '@/utils/formatters';
 import CloseTradeDialog from './CloseTradeDialog';
 
 interface ActiveTradeRowProps {
@@ -14,9 +14,20 @@ interface ActiveTradeRowProps {
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
   const currentPrice = trade.currentPrice || trade.price;
   
-  // Calculate side-aware P&L and percentage
-  const sideAwarePL = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
-  const sideAwarePercentage = calculateSideAwarePercentage(trade.side, trade.price, currentPrice);
+  // Only calculate and show P&L for buy positions that are filled (with take-profit pending)
+  let spotPL = 0;
+  let spotPercentage = 0;
+  let showPL = false;
+
+  if (trade.side === 'buy' && trade.status === 'filled') {
+    // For spot trading, only show P&L if this is a filled buy with a pending take-profit
+    showPL = shouldShowSpotPL(trade);
+    
+    if (showPL) {
+      spotPL = calculateSpotPL(trade.price, currentPrice, trade.quantity);
+      spotPercentage = calculateSpotPercentage(trade.price, currentPrice);
+    }
+  }
 
   return (
     <TableRow>
@@ -35,18 +46,26 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
       <TableCell>{formatCurrency(currentPrice)}</TableCell>
       <TableCell>{formatCurrency(trade.volume || 0)}</TableCell>
       <TableCell>
-        <span className={`font-medium ${
-          sideAwarePL >= 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {formatCurrency(sideAwarePL)}
-        </span>
+        {showPL ? (
+          <span className={`font-medium ${
+            spotPL >= 0 ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {formatCurrency(spotPL)}
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )}
       </TableCell>
       <TableCell>
-        <span className={`font-medium ${
-          sideAwarePercentage >= 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {sideAwarePercentage > 0 ? '+' : ''}{sideAwarePercentage.toFixed(2)}%
-        </span>
+        {showPL ? (
+          <span className={`font-medium ${
+            spotPercentage >= 0 ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {spotPercentage > 0 ? '+' : ''}{spotPercentage.toFixed(2)}%
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )}
       </TableCell>
       <TableCell>
         <span className={`px-2 py-1 rounded text-xs font-medium ${

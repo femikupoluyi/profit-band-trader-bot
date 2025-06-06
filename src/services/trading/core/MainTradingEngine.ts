@@ -1,3 +1,4 @@
+
 import { TradingConfigManager } from '../config/TradingConfigManager';
 import { PositionMonitorService } from './PositionMonitorService';
 import { MarketDataScannerService } from './MarketDataScannerService';
@@ -10,8 +11,9 @@ import { TradingLogger } from './TradingLogger';
 import { ConfigConverter } from './ConfigConverter';
 import { TradingLoopScheduler } from './TradingLoopScheduler';
 import { TradingCycleExecutor } from './TradingCycleExecutor';
-import { ConfigurableFormatter } from './ConfigurableFormatter';
 import { TransactionReconciliationService } from './TransactionReconciliationService';
+import { TradingEngineInitializer } from './engine/TradingEngineInitializer';
+import { TradingEngineLifecycle } from './engine/TradingEngineLifecycle';
 
 export class MainTradingEngine {
   private userId: string;
@@ -21,6 +23,8 @@ export class MainTradingEngine {
   private scheduler: TradingLoopScheduler;
   private cycleExecutor: TradingCycleExecutor;
   private reconciliationService: TransactionReconciliationService;
+  private initializer: TradingEngineInitializer;
+  private lifecycle: TradingEngineLifecycle;
   
   // Core Services
   private positionMonitor: PositionMonitorService;
@@ -63,86 +67,29 @@ export class MainTradingEngine {
 
     // Initialize reconciliation service
     this.reconciliationService = new TransactionReconciliationService(userId, bybitService);
+
+    // Initialize engine components
+    this.initializer = new TradingEngineInitializer(userId, this.configManager, this.logger);
+    this.lifecycle = new TradingEngineLifecycle(
+      userId,
+      this.configManager,
+      this.scheduler,
+      this.cycleExecutor,
+      this.reconciliationService,
+      this.logger
+    );
   }
 
   async initialize(): Promise<void> {
-    try {
-      console.log('🔄 Initializing Main Trading Engine...');
-      
-      // Load initial configuration
-      await this.configManager.loadConfig();
-      const config = this.configManager.getConfig();
-      const configData = ConfigConverter.convertConfig(config);
-      
-      // Initialize ConfigurableFormatter with current config
-      ConfigurableFormatter.setConfig(configData);
-      
-      console.log('✅ Main Trading Engine initialized successfully');
-      await this.logger.logSuccess('Main Trading Engine initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize Main Trading Engine:', error);
-      await this.logger.logError('Failed to initialize Main Trading Engine', error);
-      throw error;
-    }
+    return this.initializer.initialize();
   }
 
   async start(): Promise<void> {
-    if (this.scheduler.isSchedulerRunning()) {
-      console.log('⚠️ Trading engine is already running');
-      return;
-    }
-
-    try {
-      const config = await this.configManager.refreshConfig();
-      
-      if (!config.is_active) {
-        console.log('❌ Cannot start trading: configuration is not active');
-        await this.logger.logError('Cannot start trading: configuration is not active', new Error('Config not active'));
-        return;
-      }
-
-      // Perform startup reconciliation with Bybit
-      console.log('🔄 Performing startup reconciliation...');
-      await this.reconciliationService.performStartupReconciliation();
-
-      // Update ConfigurableFormatter with latest config
-      const configData = ConfigConverter.convertConfig(config);
-      ConfigurableFormatter.setConfig(configData);
-
-      console.log(`🚀 Starting Main Trading Loop with ${config.main_loop_interval_seconds}s interval`);
-      await this.logger.logSuccess(`Trading started with ${config.main_loop_interval_seconds}s interval`);
-
-      // Start the main loop using scheduler
-      this.scheduler.start(config.main_loop_interval_seconds, async () => {
-        const currentConfig = await this.configManager.refreshConfig();
-        
-        if (!currentConfig.is_active) {
-          console.log('⏸️ Trading is not active, skipping cycle');
-          return;
-        }
-
-        const configData = ConfigConverter.convertConfig(currentConfig);
-        await this.cycleExecutor.executeTradingCycle(configData);
-      });
-      
-    } catch (error) {
-      console.error('❌ Failed to start trading engine:', error);
-      await this.logger.logError('Failed to start trading engine', error);
-      throw error;
-    }
+    return this.lifecycle.start();
   }
 
   async stop(): Promise<void> {
-    if (!this.scheduler.isSchedulerRunning()) {
-      console.log('⚠️ Trading engine is not running');
-      return;
-    }
-
-    console.log('🛑 Stopping Main Trading Engine...');
-    this.scheduler.stop();
-
-    await this.logger.logSuccess('Trading engine stopped');
-    console.log('✅ Main Trading Engine stopped');
+    return this.lifecycle.stop();
   }
 
   async manualClosePosition(tradeId: string): Promise<{ success: boolean; message: string; data?: any }> {
@@ -202,6 +149,6 @@ export class MainTradingEngine {
   }
 
   isEngineRunning(): boolean {
-    return this.scheduler.isSchedulerRunning();
+    return this.lifecycle.isRunning();
   }
 }

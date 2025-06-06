@@ -2,18 +2,24 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage } from '@/utils/formatters';
+import { formatCurrency, calculateSpotPL, shouldShowSpotPL } from '@/utils/formatters';
 
 interface ActiveTradesSummaryProps {
   trades: ActiveTrade[];
 }
 
 const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
-  // Calculate totals using side-aware calculations
+  // Calculate totals using spot P&L logic (only filled buys with pending sells)
   const totalUnrealizedPL = trades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
-    const actualPL = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
-    return sum + actualPL;
+    
+    // Only include P&L for filled buys that should show P&L
+    if (trade.side === 'buy' && trade.status === 'filled' && shouldShowSpotPL(trade)) {
+      const spotPL = calculateSpotPL(trade.price, currentPrice, trade.quantity);
+      return sum + spotPL;
+    }
+    
+    return sum;
   }, 0);
   
   const totalVolume = trades.reduce((sum, trade) => sum + (trade.volume || 0), 0);
@@ -21,14 +27,24 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
     const currentPrice = trade.currentPrice || trade.price;
     return sum + (currentPrice * trade.quantity);
   }, 0);
-  const totalCount = trades.length;
   
-  // Calculate total unrealized percentage based on total volume invested using side-aware calculation
-  const totalUnrealizedPercentage = totalVolume > 0 ? (totalUnrealizedPL / totalVolume) * 100 : 0;
+  // Count only trades that should show P&L
+  const activePositionsWithPL = trades.filter(trade => 
+    trade.side === 'buy' && trade.status === 'filled' && shouldShowSpotPL(trade)
+  );
+  
+  const totalCount = trades.length;
+  const activePLCount = activePositionsWithPL.length;
+  
+  // Calculate total unrealized percentage based on total volume invested for positions with P&L
+  const totalVolumeWithPL = activePositionsWithPL.reduce((sum, trade) => sum + (trade.volume || 0), 0);
+  const totalUnrealizedPercentage = totalVolumeWithPL > 0 ? (totalUnrealizedPL / totalVolumeWithPL) * 100 : 0;
 
-  console.log('Summary calculations with side-aware P&L:', {
+  console.log('Summary calculations with spot P&L logic:', {
     totalCount,
+    activePLCount,
     totalVolume: totalVolume.toFixed(2),
+    totalVolumeWithPL: totalVolumeWithPL.toFixed(2),
     totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
     totalUnrealizedPercentage: totalUnrealizedPercentage.toFixed(2),
     totalPositionValue: totalPositionValue.toFixed(2)
@@ -36,7 +52,7 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
 
   return (
     <TableRow className="bg-muted/50 font-medium border-t-2">
-      <TableCell className="font-bold">Summary ({totalCount} positions)</TableCell>
+      <TableCell className="font-bold">Summary ({totalCount} positions, {activePLCount} with P&L)</TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>

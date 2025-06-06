@@ -96,9 +96,6 @@ export class OrderPlacer {
           }
         });
 
-        // CRITICAL: Place take-profit limit sell order after successful buy order
-        await this.placeTakeProfitOrder(signal.symbol, parseFloat(formattedQuantity), takeProfitPrice, trade.id, instrumentInfo);
-
       } else {
         console.error(`❌ Bybit order FAILED - retCode: ${buyOrderResult?.retCode}, retMsg: ${buyOrderResult?.retMsg}`);
         throw new Error(`Bybit order failed: ${buyOrderResult?.retMsg || 'Unknown error'}`);
@@ -110,25 +107,36 @@ export class OrderPlacer {
     }
   }
 
-  private async placeTakeProfitOrder(symbol: string, quantity: number, takeProfitPrice: number, relatedTradeId: string, instrumentInfo: any): Promise<void> {
+  // GUARANTEED Take-Profit Order Creation - Called when buy order fills
+  async createTakeProfitOrder(filledBuyTrade: any, takeProfitPercent: number): Promise<void> {
     try {
-      console.log(`🎯 Placing take-profit limit sell order for ${symbol}`);
+      console.log(`🎯 Creating guaranteed take-profit order for filled buy: ${filledBuyTrade.symbol}`);
+      
+      const entryPrice = parseFloat(filledBuyTrade.price.toString());
+      const quantity = parseFloat(filledBuyTrade.quantity.toString());
+      const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
+
+      // Get instrument info for precise formatting
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(filledBuyTrade.symbol);
+      if (!instrumentInfo) {
+        throw new Error(`Failed to get instrument info for ${filledBuyTrade.symbol}`);
+      }
       
       // CRITICAL: Use Bybit instrument info for take-profit price formatting
-      const formattedTakeProfitPrice = BybitInstrumentService.formatPrice(symbol, takeProfitPrice, instrumentInfo);
-      const formattedQuantity = BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
+      const formattedTakeProfitPrice = BybitInstrumentService.formatPrice(filledBuyTrade.symbol, takeProfitPrice, instrumentInfo);
+      const formattedQuantity = BybitInstrumentService.formatQuantity(filledBuyTrade.symbol, quantity, instrumentInfo);
       
       console.log(`  🔧 Formatted Take-Profit Price: ${formattedTakeProfitPrice} (${instrumentInfo.priceDecimals} decimals)`);
       console.log(`  🔧 Formatted Quantity: ${formattedQuantity} (${instrumentInfo.quantityDecimals} decimals)`);
       
       // Validate the formatted take-profit order
-      if (!BybitInstrumentService.validateOrder(symbol, parseFloat(formattedTakeProfitPrice), parseFloat(formattedQuantity), instrumentInfo)) {
-        throw new Error(`Take-profit order validation failed for ${symbol}`);
+      if (!BybitInstrumentService.validateOrder(filledBuyTrade.symbol, parseFloat(formattedTakeProfitPrice), parseFloat(formattedQuantity), instrumentInfo)) {
+        throw new Error(`Take-profit order validation failed for ${filledBuyTrade.symbol}`);
       }
       
       const sellOrderParams = {
         category: 'spot' as const,
-        symbol: symbol,
+        symbol: filledBuyTrade.symbol,
         side: 'Sell' as const,
         orderType: 'Limit' as const,
         qty: formattedQuantity,
@@ -136,7 +144,7 @@ export class OrderPlacer {
         timeInForce: 'GTC' as const
       };
 
-      console.log('📝 Placing take-profit SELL order with Bybit-compliant formatting:', sellOrderParams);
+      console.log('📝 Placing guaranteed take-profit SELL order:', sellOrderParams);
       const sellOrderResult = await this.bybitService.placeOrder(sellOrderParams);
       
       if (sellOrderResult && sellOrderResult.retCode === 0 && sellOrderResult.result?.orderId) {
@@ -147,10 +155,10 @@ export class OrderPlacer {
           .from('trades')
           .insert({
             user_id: this.userId,
-            symbol: symbol,
+            symbol: filledBuyTrade.symbol,
             side: 'sell',
             order_type: 'limit',
-            price: parseFloat(formattedTakeProfitPrice), // Use Bybit-formatted price
+            price: parseFloat(formattedTakeProfitPrice),
             quantity: parseFloat(formattedQuantity),
             status: 'pending',
             bybit_order_id: sellOrderResult.result.orderId,
@@ -160,18 +168,19 @@ export class OrderPlacer {
 
         if (tpError) {
           console.error('Error creating take-profit trade record:', tpError);
+          throw tpError;
         } else {
           console.log(`✅ Take-profit trade record created: ${takeProfitTrade.id}`);
         }
         
-        await this.logActivity('order_placed', `Take-profit limit sell order placed for ${symbol}`, {
-          symbol,
+        await this.logActivity('order_placed', `Guaranteed take-profit order placed for ${filledBuyTrade.symbol}`, {
+          symbol: filledBuyTrade.symbol,
           quantity: formattedQuantity,
           takeProfitPrice: parseFloat(formattedTakeProfitPrice),
           formattedPrice: formattedTakeProfitPrice,
           bybitOrderId: sellOrderResult.result.orderId,
-          relatedTradeId,
-          orderType: 'TAKE_PROFIT_LIMIT_SELL',
+          relatedBuyTradeId: filledBuyTrade.id,
+          orderType: 'GUARANTEED_TAKE_PROFIT_SELL',
           instrumentInfo: {
             priceDecimals: instrumentInfo.priceDecimals,
             quantityDecimals: instrumentInfo.quantityDecimals,
@@ -180,24 +189,20 @@ export class OrderPlacer {
           }
         });
       } else {
-        console.log(`⚠️ Take-profit order failed: ${sellOrderResult?.retMsg}`);
-        
-        await this.logActivity('order_failed', `Take-profit order failed for ${symbol}`, {
-          symbol,
-          error: sellOrderResult?.retMsg || 'Unknown error',
-          formattedPrice: formattedTakeProfitPrice,
-          originalPrice: takeProfitPrice,
-          formattedQuantity: formattedQuantity,
-          relatedTradeId
-        });
+        console.error(`❌ Take-profit order failed: ${sellOrderResult?.retMsg}`);
+        throw new Error(`Take-profit order failed: ${sellOrderResult?.retMsg || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error(`❌ Error placing take-profit order for ${symbol}:`, error);
-      await this.logActivity('order_failed', `Take-profit order error for ${symbol}`, {
-        symbol,
-        error: error.message,
-        relatedTradeId
+      console.error(`❌ CRITICAL: Failed to create guaranteed take-profit order for ${filledBuyTrade.symbol}:`, error);
+      
+      await this.logActivity('order_failed', `CRITICAL: Guaranteed take-profit order failed for ${filledBuyTrade.symbol}`, {
+        symbol: filledBuyTrade.symbol,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        relatedBuyTradeId: filledBuyTrade.id,
+        severity: 'CRITICAL'
       });
+      
+      throw error; // Re-throw to ensure this failure is handled upstream
     }
   }
 

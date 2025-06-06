@@ -1,7 +1,8 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { calculateSideAwarePL } from '@/utils/formatters';
+import { calculateSpotPL, shouldShowSpotPL } from '@/utils/formatters';
 
 interface TradingStats {
   totalTrades: number;
@@ -67,20 +68,22 @@ export const useTradingStats = (userId?: string) => {
         return 0;
       }
 
-      // For active trades, calculate real-time P&L using current market price with side-aware calculation
-      const { data: marketData } = await supabase
-        .from('market_data')
-        .select('price')
-        .eq('symbol', trade.symbol)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // For active trades, only calculate P&L if they meet spot criteria
+      if (trade.side === 'buy' && trade.status === 'filled' && shouldShowSpotPL(trade)) {
+        const { data: marketData } = await supabase
+          .from('market_data')
+          .select('price')
+          .eq('symbol', trade.symbol)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (marketData) {
-        const currentPrice = parseFloat(marketData.price.toString());
-        
-        // Use side-aware P&L calculation
-        return calculateSideAwarePL(trade.side, entryPrice, currentPrice, quantity);
+        if (marketData) {
+          const currentPrice = parseFloat(marketData.price.toString());
+          
+          // Use spot P&L calculation
+          return calculateSpotPL(entryPrice, currentPrice, quantity);
+        }
       }
 
       return 0;
@@ -139,7 +142,7 @@ export const useTradingStats = (userId?: string) => {
       console.log('Fetched trades in range:', trades.length);
       console.log('Fetched all active trades:', activeTrades.length);
 
-      // Calculate actual P&L for all trades using side-aware calculation
+      // Calculate actual P&L for all trades using spot logic
       const tradesWithActualPL = await Promise.all(
         trades.map(async (trade) => {
           const actualPL = await calculateActualPL(trade);
@@ -147,7 +150,7 @@ export const useTradingStats = (userId?: string) => {
         })
       );
 
-      // Calculate metrics with actual P&L
+      // Calculate metrics with spot P&L logic
       const totalTrades = tradesWithActualPL.length;
       const closedTrades = tradesWithActualPL.filter(t => ['closed', 'cancelled'].includes(t.status));
       
@@ -162,7 +165,7 @@ export const useTradingStats = (userId?: string) => {
         const volume = price * quantity;
         const actualPL = trade.actualPL || 0;
         
-        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Entry=$${price.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Entry=$${price.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Spot P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
         
         totalProfit += actualPL;
         totalVolume += volume;
@@ -198,7 +201,7 @@ export const useTradingStats = (userId?: string) => {
         profitPercentage: Math.round(profitPercentage * 100) / 100
       };
 
-      console.log('Calculated stats with side-aware P&L:', newStats);
+      console.log('Calculated stats with spot P&L logic:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);

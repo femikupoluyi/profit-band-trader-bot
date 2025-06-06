@@ -3,17 +3,20 @@ import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from './TradingLogger';
+import { OrderPlacer } from './OrderPlacer';
 
 export class PositionMonitorService {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
+  private orderPlacer: OrderPlacer;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
     this.bybitService.setLogger(this.logger);
+    this.orderPlacer = new OrderPlacer(userId, bybitService);
   }
 
   async checkOrderFills(config: TradingConfigData): Promise<void> {
@@ -42,7 +45,7 @@ export class PositionMonitorService {
       await this.logger.logSuccess(`Found ${pendingTrades.length} pending orders to check`);
 
       for (const trade of pendingTrades) {
-        await this.checkSingleOrderFill(trade);
+        await this.checkSingleOrderFill(trade, config);
       }
 
       console.log('✅ Order fill check completed');
@@ -54,7 +57,7 @@ export class PositionMonitorService {
     }
   }
 
-  private async checkSingleOrderFill(trade: any): Promise<void> {
+  private async checkSingleOrderFill(trade: any, config: TradingConfigData): Promise<void> {
     try {
       if (!trade.bybit_order_id) {
         console.log(`⚠️ Trade ${trade.id} has no Bybit order ID, skipping`);
@@ -63,10 +66,9 @@ export class PositionMonitorService {
 
       console.log(`🔍 Checking order ${trade.bybit_order_id} for ${trade.symbol}`);
 
-      // Get order status from Bybit - only pass the order ID
+      // Get order status from Bybit
       const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
       
-      // Check if the response has the expected structure
       if (orderStatus && orderStatus.retCode === 0 && orderStatus.result?.list?.length > 0) {
         const order = orderStatus.result.list[0];
         
@@ -94,6 +96,23 @@ export class PositionMonitorService {
               symbol: trade.symbol,
               bybitOrderId: trade.bybit_order_id
             });
+
+            // GUARANTEED: Create take-profit order for every filled BUY
+            if (trade.side === 'buy') {
+              try {
+                console.log(`🎯 GUARANTEED: Creating take-profit order for filled buy ${trade.symbol}`);
+                await this.orderPlacer.createTakeProfitOrder(trade, config.take_profit_percent);
+                console.log(`✅ GUARANTEED: Take-profit order created for ${trade.symbol}`);
+              } catch (tpError) {
+                console.error(`❌ CRITICAL: Failed to create guaranteed take-profit for ${trade.symbol}:`, tpError);
+                await this.logger.logError(`CRITICAL: Failed to create guaranteed take-profit`, tpError, {
+                  tradeId: trade.id,
+                  symbol: trade.symbol,
+                  severity: 'CRITICAL',
+                  action: 'MANUAL_INTERVENTION_REQUIRED'
+                });
+              }
+            }
           }
         } else {
           console.log(`⏳ Order ${trade.bybit_order_id} status: ${order.orderStatus}`);
