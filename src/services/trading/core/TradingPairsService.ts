@@ -37,18 +37,19 @@ export class TradingPairsService {
 
       if (error) {
         console.error('❌ Error fetching trading pairs from Bybit:', error);
-        return this.getFallbackPairs();
+        // Return empty array instead of fallback - force user to configure
+        return [];
       }
 
       if (response?.retCode !== 0) {
         console.error('❌ Bybit API error:', response?.retMsg);
-        return this.getFallbackPairs();
+        return [];
       }
 
       const instrumentList = response.result?.list;
       if (!instrumentList || !Array.isArray(instrumentList)) {
         console.error('❌ Invalid response from Bybit instruments API');
-        return this.getFallbackPairs();
+        return [];
       }
 
       // Filter for USDT pairs and active symbols
@@ -73,12 +74,12 @@ export class TradingPairsService {
       return usdtPairs;
     } catch (error) {
       console.error('❌ Exception fetching active trading pairs:', error);
-      return this.getFallbackPairs();
+      return [];
     }
   }
 
   /**
-   * Get trading pairs from user configuration
+   * Get trading pairs from user configuration - NO FALLBACKS
    */
   static async getConfiguredTradingPairs(userId: string): Promise<string[]> {
     try {
@@ -91,8 +92,8 @@ export class TradingPairsService {
         .single();
 
       if (error) {
-        console.log('⚠️ No user config found, using fallback pairs');
-        return this.getFallbackPairs();
+        console.log('⚠️ No user config found - user must configure trading pairs');
+        return [];
       }
 
       if (config?.trading_pairs && Array.isArray(config.trading_pairs) && config.trading_pairs.length > 0) {
@@ -100,38 +101,19 @@ export class TradingPairsService {
         return config.trading_pairs;
       }
 
-      console.log('⚠️ User config has no trading pairs, using fallback pairs');
-      return this.getFallbackPairs();
+      console.log('⚠️ User config has no trading pairs configured');
+      return [];
     } catch (error) {
       console.error('❌ Error loading configured trading pairs:', error);
-      return this.getFallbackPairs();
+      return [];
     }
-  }
-
-  /**
-   * Get fallback trading pairs if API call fails
-   */
-  private static getFallbackPairs(): string[] {
-    const fallbackPairs = [
-      'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 
-      'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 
-      'POLUSDT', 'XLMUSDT', 'AVAXUSDT', 'DOTUSDT', 'SHIBUSDT'
-    ];
-    
-    this.cachedTradingPairs = fallbackPairs;
-    this.lastFetchTime = Date.now();
-    ConfigurableFormatter.setActivePairs(fallbackPairs);
-    
-    return fallbackPairs;
   }
 
   /**
    * Get the current list of active trading pairs
    */
   static getCurrentPairs(): string[] {
-    return this.cachedTradingPairs.length > 0 
-      ? this.cachedTradingPairs 
-      : this.getFallbackPairs();
+    return this.cachedTradingPairs;
   }
 
   /**

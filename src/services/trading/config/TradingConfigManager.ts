@@ -65,11 +65,11 @@ export class TradingConfigManager {
         support_upper_bound_percentage: this.validatePositiveNumber(data.support_upper_bound_percent, 2.0),
         minimum_notional_per_symbol: this.validateJSONBObject(
           data.minimum_notional_per_symbol,
-          { 'BTCUSDT': 10, 'ETHUSDT': 10 }
+          {}
         ),
         quantity_increment_per_symbol: this.validateJSONBObject(
           data.quantity_increment_per_symbol,
-          { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
+          {}
         ),
         manual_close_premium_percentage: this.validatePositiveNumber(data.manual_close_premium_percent, 0.1),
         auto_close_at_end_of_day: Boolean(data.auto_close_at_end_of_day),
@@ -103,13 +103,12 @@ export class TradingConfigManager {
   }
 
   private validateTradingPairs(pairs: any): string[] {
-    const validPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
-    
+    // Load trading pairs directly from database configuration - NO FALLBACKS
     if (Array.isArray(pairs) && pairs.length > 0) {
-      const filtered = pairs.filter(pair => typeof pair === 'string' && validPairs.includes(pair));
-      return filtered.length > 0 ? filtered : ['BTCUSDT'];
+      const filtered = pairs.filter(pair => typeof pair === 'string' && pair.length > 0);
+      return filtered;
     }
-    return ['BTCUSDT'];
+    return []; // Return empty array if no pairs configured
   }
 
   private validateJSONBObject(value: any, defaultValue: Record<string, number>): Record<string, number> {

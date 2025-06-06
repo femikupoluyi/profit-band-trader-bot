@@ -30,7 +30,7 @@ export class UserConfigManager {
         return null;
       }
 
-      // Get configured trading pairs from the database
+      // Get configured trading pairs from the database - NO FALLBACKS
       const configuredTradingPairs = await TradingPairsService.getConfiguredTradingPairs(userId);
       
       // Convert database config to TradingConfigData format with proper type casting and validation
@@ -45,7 +45,7 @@ export class UserConfigManager {
         support_candle_count: this.validatePositiveInteger(config.support_candle_count, 128),
         max_positions_per_pair: this.validatePositiveInteger(config.max_positions_per_pair, 2),
         new_support_threshold_percent: this.validatePositiveNumber(config.new_support_threshold_percent, 2.0),
-        trading_pairs: configuredTradingPairs,
+        trading_pairs: configuredTradingPairs, // Use exactly what's configured, no fallbacks
         is_active: Boolean(config.is_active),
         main_loop_interval_seconds: this.validateMainLoopInterval(config.main_loop_interval_seconds),
         auto_close_at_end_of_day: Boolean(config.auto_close_at_end_of_day),
@@ -55,11 +55,11 @@ export class UserConfigManager {
         support_upper_bound_percent: this.validatePositiveNumber(config.support_upper_bound_percent, 2.0),
         minimum_notional_per_symbol: this.validateJSONBObject(
           config.minimum_notional_per_symbol, 
-          { 'BTCUSDT': 10, 'ETHUSDT': 10, 'SOLUSDT': 10, 'BNBUSDT': 10, 'LTCUSDT': 10, 'POLUSDT': 10, 'FETUSDT': 10, 'XRPUSDT': 10, 'XLMUSDT': 10 }
+          {}
         ),
         quantity_increment_per_symbol: this.validateJSONBObject(
           config.quantity_increment_per_symbol, 
-          { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01, 'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1 }
+          {}
         ),
         // Removed deprecated decimal fields - now handled dynamically by BybitInstrumentService
         price_decimals_per_symbol: {},
