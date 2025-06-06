@@ -1,6 +1,6 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { TradingPairsService } from './core/TradingPairsService';
 
 export class UserConfigManager {
   static async getUserTradingConfig(userId: string): Promise<TradingConfigData | null> {
@@ -30,6 +30,9 @@ export class UserConfigManager {
         return null;
       }
 
+      // Get configured trading pairs from the database
+      const configuredTradingPairs = await TradingPairsService.getConfiguredTradingPairs(userId);
+      
       // Convert database config to TradingConfigData format with proper type casting and validation
       const tradingConfig: TradingConfigData = {
         max_active_pairs: this.validatePositiveInteger(config.max_active_pairs, 5),
@@ -42,7 +45,7 @@ export class UserConfigManager {
         support_candle_count: this.validatePositiveInteger(config.support_candle_count, 128),
         max_positions_per_pair: this.validatePositiveInteger(config.max_positions_per_pair, 2),
         new_support_threshold_percent: this.validatePositiveNumber(config.new_support_threshold_percent, 2.0),
-        trading_pairs: this.validateTradingPairs(config.trading_pairs),
+        trading_pairs: configuredTradingPairs, // Use fresh config data
         is_active: Boolean(config.is_active),
         main_loop_interval_seconds: this.validateMainLoopInterval(config.main_loop_interval_seconds),
         auto_close_at_end_of_day: Boolean(config.auto_close_at_end_of_day),
@@ -58,20 +61,15 @@ export class UserConfigManager {
           config.quantity_increment_per_symbol, 
           { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01, 'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1 }
         ),
-        price_decimals_per_symbol: this.validateJSONBObject(
-          config.price_decimals_per_symbol, 
-          {}
-        ),
-        quantity_decimals_per_symbol: this.validateJSONBObject(
-          config.quantity_decimals_per_symbol, 
-          {}
-        ),
+        price_decimals_per_symbol: {}, // No longer used - dynamic from Bybit
+        quantity_decimals_per_symbol: {}, // No longer used - dynamic from Bybit
         // Map max_active_pairs to max_concurrent_trades for consistency
         max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
         notes: config.notes || ''
       };
 
+      console.log(`✅ Loaded trading config for user ${userId} with ${tradingConfig.trading_pairs.length} trading pairs`);
       return tradingConfig;
     } catch (error) {
       console.error('Error in getUserTradingConfig:', error);

@@ -78,6 +78,37 @@ export class TradingPairsService {
   }
 
   /**
+   * Get trading pairs from user configuration first, then fallback to API
+   */
+  static async getConfiguredTradingPairs(userId: string): Promise<string[]> {
+    try {
+      console.log('🔄 Loading trading pairs from user configuration...');
+      
+      const { data: config, error } = await supabase
+        .from('trading_configs')
+        .select('trading_pairs')
+        .eq('user_id', userId)
+        .single();
+
+      if (error || !config) {
+        console.log('⚠️ No user config found, using API pairs');
+        return this.getCurrentPairs();
+      }
+
+      if (config.trading_pairs && Array.isArray(config.trading_pairs) && config.trading_pairs.length > 0) {
+        console.log(`✅ Loaded ${config.trading_pairs.length} trading pairs from user config`);
+        return config.trading_pairs;
+      }
+
+      console.log('⚠️ User config has no trading pairs, using API pairs');
+      return this.getCurrentPairs();
+    } catch (error) {
+      console.error('❌ Error loading configured trading pairs:', error);
+      return this.getCurrentPairs();
+    }
+  }
+
+  /**
    * Get fallback trading pairs if API call fails
    */
   private static getFallbackPairs(): string[] {
@@ -104,7 +135,24 @@ export class TradingPairsService {
   }
 
   /**
-   * Check if a trading pair is supported
+   * Check if a trading pair is supported and configured
+   */
+  static async isPairConfiguredForTrading(symbol: string, userId: string): Promise<boolean> {
+    try {
+      const configuredPairs = await this.getConfiguredTradingPairs(userId);
+      const isConfigured = configuredPairs.includes(symbol);
+      const isSupported = this.getCurrentPairs().includes(symbol);
+      
+      console.log(`📊 Symbol ${symbol}: configured=${isConfigured}, supported=${isSupported}`);
+      return isConfigured && isSupported;
+    } catch (error) {
+      console.error(`❌ Error checking if pair ${symbol} is configured:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if a trading pair is supported by the exchange
    */
   static isPairSupported(symbol: string): boolean {
     return this.getCurrentPairs().includes(symbol);

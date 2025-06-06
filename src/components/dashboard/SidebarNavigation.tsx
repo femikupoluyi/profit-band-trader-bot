@@ -13,7 +13,7 @@ import {
   SidebarProvider,
   SidebarTrigger
 } from '@/components/ui/sidebar';
-import { Settings, Key, Activity, BarChart3, FileText, ScrollText } from 'lucide-react';
+import { Settings, Key, Activity, FileText, ScrollText } from 'lucide-react';
 
 interface SidebarNavigationProps {
   activeTab: string;
@@ -25,11 +25,6 @@ const navigationItems = [
     id: 'status',
     title: 'Trading Status',
     icon: Activity,
-  },
-  {
-    id: 'trades',
-    title: 'Trade History',
-    icon: BarChart3,
   },
   {
     id: 'reports',

@@ -7,6 +7,7 @@ import { OrderPlacer } from './OrderPlacer';
 import { TradeValidator } from './TradeValidator';
 import { ConfigurableFormatter } from './ConfigurableFormatter';
 import { TradingLogger } from './TradingLogger';
+import { TradingPairsService } from './TradingPairsService';
 
 export class SignalExecutionService {
   private userId: string;
@@ -29,10 +30,14 @@ export class SignalExecutionService {
       console.log('\n⚡ Executing signals...');
       await this.logger.logSuccess('Starting signal execution');
       
-      // Preload instrument info for all trading pairs for better performance
-      if (config.trading_pairs && config.trading_pairs.length > 0) {
-        console.log(`🔄 Preloading instrument info for ${config.trading_pairs.length} trading pairs...`);
-        await ConfigurableFormatter.preloadInstrumentInfo(config.trading_pairs);
+      // Load configured trading pairs from user config
+      const configuredPairs = await TradingPairsService.getConfiguredTradingPairs(this.userId);
+      console.log(`📊 User has configured ${configuredPairs.length} trading pairs:`, configuredPairs);
+      
+      // Preload instrument info for configured trading pairs
+      if (configuredPairs && configuredPairs.length > 0) {
+        console.log(`🔄 Preloading instrument info for ${configuredPairs.length} configured trading pairs...`);
+        await ConfigurableFormatter.preloadInstrumentInfo(configuredPairs);
       }
       
       // Get unprocessed signals
@@ -59,6 +64,15 @@ export class SignalExecutionService {
       await this.logger.logSuccess(`Found ${signals.length} unprocessed signals`);
 
       for (const signal of signals) {
+        // Check if the signal's symbol is configured for trading
+        const isPairConfigured = await TradingPairsService.isPairConfiguredForTrading(signal.symbol, this.userId);
+        
+        if (!isPairConfigured) {
+          console.log(`⚠️ Signal for ${signal.symbol} rejected: not configured for trading`);
+          await this.markSignalRejected(signal.id, `Symbol ${signal.symbol} not configured for trading`);
+          continue;
+        }
+        
         await this.processSingleSignal(signal, config);
       }
       
@@ -71,7 +85,7 @@ export class SignalExecutionService {
 
   private async processSingleSignal(signal: any, config: TradingConfigData): Promise<void> {
     try {
-      console.log(`\n⚡ Executing signal for ${signal.symbol}:`);
+      console.log(`\n⚡ Processing signal for ${signal.symbol}:`);
       
       // Check position limits BEFORE executing signal
       const canExecute = await this.positionValidator.validatePositionLimits(signal.symbol, config);
