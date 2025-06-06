@@ -45,7 +45,7 @@ export class UserConfigManager {
         support_candle_count: this.validatePositiveInteger(config.support_candle_count, 128),
         max_positions_per_pair: this.validatePositiveInteger(config.max_positions_per_pair, 2),
         new_support_threshold_percent: this.validatePositiveNumber(config.new_support_threshold_percent, 2.0),
-        trading_pairs: configuredTradingPairs, // Use fresh config data
+        trading_pairs: configuredTradingPairs,
         is_active: Boolean(config.is_active),
         main_loop_interval_seconds: this.validateMainLoopInterval(config.main_loop_interval_seconds),
         auto_close_at_end_of_day: Boolean(config.auto_close_at_end_of_day),
@@ -61,9 +61,9 @@ export class UserConfigManager {
           config.quantity_increment_per_symbol, 
           { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01, 'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1 }
         ),
-        price_decimals_per_symbol: {}, // No longer used - dynamic from Bybit
-        quantity_decimals_per_symbol: {}, // No longer used - dynamic from Bybit
-        // Map max_active_pairs to max_concurrent_trades for consistency
+        // Removed deprecated decimal fields - now handled dynamically by BybitInstrumentService
+        price_decimals_per_symbol: {},
+        quantity_decimals_per_symbol: {},
         max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
         notes: config.notes || ''
@@ -100,31 +100,18 @@ export class UserConfigManager {
     if (interval === null || interval === undefined) return 30;
     
     const num = typeof interval === 'number' ? interval : parseInt(interval?.toString() || '30');
-    // Ensure interval is between 10 seconds and 10 minutes
     return isNaN(num) || num < 10 || num > 600 ? 30 : num;
   }
 
   private static validateTimeString(timeStr: any): string | null {
     if (!timeStr || typeof timeStr !== 'string') return null;
     
-    // Validate HH:MM:SS format
     const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
     return timeRegex.test(timeStr) ? timeStr : null;
   }
 
-  private static validateTradingPairs(pairs: any): string[] {
-    const validPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
-    
-    if (Array.isArray(pairs) && pairs.length > 0) {
-      const filtered = pairs.filter(pair => typeof pair === 'string' && validPairs.includes(pair));
-      return filtered.length > 0 ? filtered : ['BTCUSDT'];
-    }
-    return ['BTCUSDT'];
-  }
-
   private static validateJSONBObject(value: any, defaultValue: Record<string, number>): Record<string, number> {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Validate that all values are numbers and keys are valid
       const validated: Record<string, number> = {};
       for (const [key, val] of Object.entries(value)) {
         if (typeof key === 'string' && key.length > 0) {

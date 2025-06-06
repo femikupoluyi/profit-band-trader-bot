@@ -78,7 +78,7 @@ export class TradingPairsService {
   }
 
   /**
-   * Get trading pairs from user configuration first, then fallback to API
+   * Get trading pairs from user configuration
    */
   static async getConfiguredTradingPairs(userId: string): Promise<string[]> {
     try {
@@ -90,21 +90,21 @@ export class TradingPairsService {
         .eq('user_id', userId)
         .single();
 
-      if (error || !config) {
-        console.log('⚠️ No user config found, using API pairs');
-        return this.getCurrentPairs();
+      if (error) {
+        console.log('⚠️ No user config found, using fallback pairs');
+        return this.getFallbackPairs();
       }
 
-      if (config.trading_pairs && Array.isArray(config.trading_pairs) && config.trading_pairs.length > 0) {
+      if (config?.trading_pairs && Array.isArray(config.trading_pairs) && config.trading_pairs.length > 0) {
         console.log(`✅ Loaded ${config.trading_pairs.length} trading pairs from user config`);
         return config.trading_pairs;
       }
 
-      console.log('⚠️ User config has no trading pairs, using API pairs');
-      return this.getCurrentPairs();
+      console.log('⚠️ User config has no trading pairs, using fallback pairs');
+      return this.getFallbackPairs();
     } catch (error) {
       console.error('❌ Error loading configured trading pairs:', error);
-      return this.getCurrentPairs();
+      return this.getFallbackPairs();
     }
   }
 
