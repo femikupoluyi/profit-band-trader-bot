@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage, shouldShowPL } from '@/utils/formatters';
+import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage, shouldShowSpotPL } from '@/utils/formatters';
 import { Loader2 } from 'lucide-react';
 
 interface Trade {
@@ -122,7 +122,7 @@ const TradesReport = () => {
     const currentPrice = marketPrices[trade.symbol] || trade.price;
     
     // Check if we should show P&L for this trade
-    if (shouldShowPL(trade, undefined)) {
+    if (shouldShowSpotPL(trade, undefined)) {
       const pnl = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
       const percentage = calculateSideAwarePercentage(trade.side, trade.price, currentPrice);
       
@@ -172,7 +172,7 @@ const TradesReport = () => {
   }
 
   // Calculate summary statistics using side-aware P&L logic
-  const activeTrades = trades.filter(trade => shouldShowPL(trade, undefined));
+  const activeTrades = trades.filter(trade => shouldShowSpotPL(trade, undefined));
   const closedTrades = trades.filter(trade => trade.status === 'closed');
   
   const totalUnrealizedPL = activeTrades.reduce((sum, trade) => {
