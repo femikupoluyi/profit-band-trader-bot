@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { calculateSpotPL, shouldShowSpotPL } from '@/utils/formatters';
+import { calculateSpotPL, shouldShowSpotPL, getTradeEntryPrice } from '@/utils/formatters';
 
 interface TradingStats {
   totalTrades: number;
@@ -46,18 +46,24 @@ export const useTradingStats = (userId?: string) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const calculateActualPL = async (trade: any) => {
+    if (!trade) return 0;
+    
     try {
-      const entryPrice = parseFloat(trade.price.toString());
-      const quantity = parseFloat(trade.quantity.toString());
+      const entryPrice = getTradeEntryPrice(trade);
+      const quantity = parseFloat(trade.quantity?.toString() || '0');
+
+      if (!entryPrice || !quantity || quantity <= 0) {
+        return 0;
+      }
 
       // For closed trades, use the stored profit_loss if it exists and is reasonable
       if (['closed', 'cancelled'].includes(trade.status)) {
-        if (trade.profit_loss) {
+        if (trade.profit_loss !== null && trade.profit_loss !== undefined) {
           const storedPL = parseFloat(trade.profit_loss.toString());
           const volume = entryPrice * quantity;
           
           // Validate stored P&L is reasonable (not more than 50% of volume)
-          if (Math.abs(storedPL) <= volume * 0.5) {
+          if (!isNaN(storedPL) && Math.abs(storedPL) <= volume * 0.5) {
             return storedPL;
           }
           
@@ -78,11 +84,13 @@ export const useTradingStats = (userId?: string) => {
           .limit(1)
           .maybeSingle();
 
-        if (marketData) {
+        if (marketData && marketData.price) {
           const currentPrice = parseFloat(marketData.price.toString());
           
-          // Use spot P&L calculation (only for filled buys)
-          return calculateSpotPL(entryPrice, currentPrice, quantity);
+          if (!isNaN(currentPrice) && currentPrice > 0) {
+            // Use spot P&L calculation (only for filled buys)
+            return calculateSpotPL(entryPrice, currentPrice, quantity);
+          }
         }
       }
 
@@ -94,7 +102,10 @@ export const useTradingStats = (userId?: string) => {
   };
 
   const fetchTradingStats = async () => {
-    if (!userId) return;
+    if (!userId) {
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -107,7 +118,7 @@ export const useTradingStats = (userId?: string) => {
         .eq('user_id', userId)
         .maybeSingle();
 
-      if (configError) {
+      if (configError && configError.code !== 'PGRST116') {
         console.error('Error fetching config:', configError);
       }
 
@@ -121,7 +132,7 @@ export const useTradingStats = (userId?: string) => {
 
       if (tradesError) {
         console.error('Error fetching trades:', tradesError);
-        return;
+        throw tradesError;
       }
 
       // Get ALL active trades (not limited by time range) for active pairs and total active count
@@ -133,7 +144,7 @@ export const useTradingStats = (userId?: string) => {
 
       if (activeTradesError) {
         console.error('Error fetching active trades:', activeTradesError);
-        return;
+        throw activeTradesError;
       }
 
       const trades = tradesInRange || [];
@@ -160,12 +171,12 @@ export const useTradingStats = (userId?: string) => {
       let profitableClosedCount = 0;
 
       tradesWithActualPL.forEach(trade => {
-        const price = parseFloat(trade.price.toString());
-        const quantity = parseFloat(trade.quantity.toString());
-        const volume = price * quantity;
+        const entryPrice = getTradeEntryPrice(trade);
+        const quantity = parseFloat(trade.quantity?.toString() || '0');
+        const volume = entryPrice * quantity;
         const actualPL = trade.actualPL || 0;
         
-        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Entry=$${price.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Spot P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Entry=$${entryPrice.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Spot P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
         
         totalProfit += actualPL;
         totalVolume += volume;

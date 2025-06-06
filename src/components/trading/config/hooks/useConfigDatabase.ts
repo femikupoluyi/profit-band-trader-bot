@@ -12,7 +12,10 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
   const [hasExistingConfig, setHasExistingConfig] = useState(false);
 
   const fetchConfig = async () => {
-    if (!user) return null;
+    if (!user?.id) {
+      console.error('No user ID available for config fetch');
+      return null;
+    }
 
     try {
       const { data, error } = await supabase
@@ -45,7 +48,25 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
   };
 
   const saveConfig = async (configData: TradingConfigData) => {
-    if (!user) return false;
+    if (!user?.id) {
+      console.error('No user ID available for config save');
+      toast({
+        title: "Error",
+        description: "User authentication required.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (!configData) {
+      console.error('No config data provided');
+      toast({
+        title: "Error",
+        description: "Configuration data is required.",
+        variant: "destructive",
+      });
+      return false;
+    }
 
     setIsLoading(true);
     try {
@@ -56,31 +77,41 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
         .eq('user_id', user.id)
         .maybeSingle();
 
+      // Validate required fields
+      if (!configData.trading_pairs || configData.trading_pairs.length === 0) {
+        toast({
+          title: "Validation Error",
+          description: "At least one trading pair must be configured.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
       const dbData = {
-        max_active_pairs: configData.max_active_pairs,
-        max_order_amount_usd: configData.max_order_amount_usd,
-        max_portfolio_exposure_percent: configData.max_portfolio_exposure_percent,
-        daily_reset_time: configData.daily_reset_time,
-        chart_timeframe: configData.chart_timeframe,
-        entry_offset_percent: configData.entry_offset_percent,
-        take_profit_percent: configData.take_profit_percent,
-        support_candle_count: configData.support_candle_count,
-        max_positions_per_pair: configData.max_positions_per_pair,
-        new_support_threshold_percent: configData.new_support_threshold_percent,
+        max_active_pairs: Math.max(1, configData.max_active_pairs || 5),
+        max_order_amount_usd: Math.max(1, configData.max_order_amount_usd || 100),
+        max_portfolio_exposure_percent: Math.min(100, Math.max(1, configData.max_portfolio_exposure_percent || 25)),
+        daily_reset_time: configData.daily_reset_time || '00:00:00',
+        chart_timeframe: configData.chart_timeframe || '4h',
+        entry_offset_percent: Math.max(0, configData.entry_offset_percent || 0.5),
+        take_profit_percent: Math.max(0.1, configData.take_profit_percent || 1.0),
+        support_candle_count: Math.max(1, configData.support_candle_count || 128),
+        max_positions_per_pair: Math.max(1, configData.max_positions_per_pair || 2),
+        new_support_threshold_percent: Math.max(0.1, configData.new_support_threshold_percent || 2.0),
         trading_pairs: configData.trading_pairs,
-        is_active: configData.is_active,
-        main_loop_interval_seconds: configData.main_loop_interval_seconds,
-        auto_close_at_end_of_day: configData.auto_close_at_end_of_day,
-        eod_close_premium_percent: configData.eod_close_premium_percent,
-        manual_close_premium_percent: configData.manual_close_premium_percent,
-        support_lower_bound_percent: configData.support_lower_bound_percent,
-        support_upper_bound_percent: configData.support_upper_bound_percent,
-        minimum_notional_per_symbol: configData.minimum_notional_per_symbol,
-        quantity_increment_per_symbol: configData.quantity_increment_per_symbol,
-        price_decimals_per_symbol: configData.price_decimals_per_symbol,
-        quantity_decimals_per_symbol: configData.quantity_decimals_per_symbol,
-        max_drawdown_percent: configData.max_drawdown_percent,
-        notes: configData.notes,
+        is_active: Boolean(configData.is_active),
+        main_loop_interval_seconds: Math.min(600, Math.max(10, configData.main_loop_interval_seconds || 30)),
+        auto_close_at_end_of_day: Boolean(configData.auto_close_at_end_of_day),
+        eod_close_premium_percent: Math.max(0, configData.eod_close_premium_percent || 0.1),
+        manual_close_premium_percent: Math.max(0, configData.manual_close_premium_percent || 0.1),
+        support_lower_bound_percent: Math.max(0.1, configData.support_lower_bound_percent || 5.0),
+        support_upper_bound_percent: Math.max(0.1, configData.support_upper_bound_percent || 2.0),
+        minimum_notional_per_symbol: configData.minimum_notional_per_symbol || {},
+        quantity_increment_per_symbol: configData.quantity_increment_per_symbol || {},
+        price_decimals_per_symbol: configData.price_decimals_per_symbol || {},
+        quantity_decimals_per_symbol: configData.quantity_decimals_per_symbol || {},
+        max_drawdown_percent: Math.min(50, Math.max(1, configData.max_drawdown_percent || 10)),
+        notes: configData.notes || '',
         updated_at: new Date().toISOString(),
       };
 

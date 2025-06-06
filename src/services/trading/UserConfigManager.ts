@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingPairsService } from './core/TradingPairsService';
@@ -14,7 +15,7 @@ export class UserConfigManager {
         .from('trading_configs')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         if (error.code === 'PGRST116') {
@@ -62,8 +63,14 @@ export class UserConfigManager {
           {}
         ),
         // Removed deprecated decimal fields - now handled dynamically by BybitInstrumentService
-        price_decimals_per_symbol: {},
-        quantity_decimals_per_symbol: {},
+        price_decimals_per_symbol: this.validateJSONBObject(
+          config.price_decimals_per_symbol || {}, 
+          {}
+        ),
+        quantity_decimals_per_symbol: this.validateJSONBObject(
+          config.quantity_decimals_per_symbol || {}, 
+          {}
+        ),
         max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
         notes: config.notes || ''
@@ -159,6 +166,11 @@ export class UserConfigManager {
       // Validate order amount is reasonable
       if (config.max_order_amount_usd > 50000) {
         errors.push('Maximum order amount seems very high (>$50,000)');
+      }
+
+      // Validate time string format
+      if (config.daily_reset_time && !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(config.daily_reset_time)) {
+        errors.push('Invalid daily reset time format (expected HH:MM:SS)');
       }
 
       return { isValid: errors.length === 0, errors };

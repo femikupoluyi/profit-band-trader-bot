@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -8,8 +9,12 @@ export class PositionMonitorService {
   private bybitService: BybitService;
   private logger: TradingLogger;
   private orderPlacer: OrderPlacer;
+  private isMonitoring: boolean = false;
 
   constructor(userId: string, bybitService: BybitService, logger?: TradingLogger) {
+    if (!userId) {
+      throw new Error('UserId is required for PositionMonitorService');
+    }
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = logger || new TradingLogger(userId);
@@ -17,6 +22,12 @@ export class PositionMonitorService {
   }
 
   async monitorOrderFills(): Promise<void> {
+    if (this.isMonitoring) {
+      console.log('⚠️ Order fill monitoring already in progress, skipping...');
+      return;
+    }
+
+    this.isMonitoring = true;
     try {
       console.log('🔍 Monitoring order fills...');
 
@@ -41,13 +52,22 @@ export class PositionMonitorService {
       console.log(`👀 Monitoring ${pendingTrades.length} pending trades`);
 
       for (const trade of pendingTrades) {
-        await this.checkOrderStatus(trade);
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          await this.checkOrderStatus(trade);
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          await this.logger.logError(`Error checking trade ${trade.id}`, error, {
+            tradeId: trade.id,
+            symbol: trade.symbol
+          });
+        }
       }
 
     } catch (error) {
       await this.logger.logError('Position monitor exception', error);
+    } finally {
+      this.isMonitoring = false;
     }
   }
 
@@ -57,10 +77,55 @@ export class PositionMonitorService {
 
   async auditMissingTakeProfitOrders(configData?: any): Promise<void> {
     console.log('🔍 Auditing missing take profit orders...');
-    // This is a placeholder - implement if needed
+    
+    try {
+      // Get filled buy orders without take profit orders
+      const { data: filledBuys, error } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('side', 'buy')
+        .eq('status', 'filled')
+        .is('sell_order_id', null);
+
+      if (error) {
+        await this.logger.logError('Failed to fetch filled buy orders for TP audit', error);
+        return;
+      }
+
+      if (!filledBuys || filledBuys.length === 0) {
+        console.log('✅ No filled buy orders missing take profit orders');
+        return;
+      }
+
+      console.log(`🔍 Found ${filledBuys.length} filled buy orders without take profit orders`);
+
+      for (const trade of filledBuys) {
+        try {
+          // Try to find existing TP order on Bybit
+          await this.orderPlacer.findAndLinkTPOrder(trade.id, trade.symbol);
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          await this.logger.logError(`Failed to audit TP for trade ${trade.id}`, error, {
+            tradeId: trade.id,
+            symbol: trade.symbol
+          });
+        }
+      }
+
+      console.log('✅ Take profit audit completed');
+      
+    } catch (error) {
+      await this.logger.logError('Take profit audit failed', error);
+    }
   }
 
   private async checkOrderStatus(trade: any): Promise<void> {
+    if (!trade || !trade.bybit_order_id) {
+      console.log('⚠️ Invalid trade data or missing bybit_order_id');
+      return;
+    }
+
     try {
       console.log(`🔄 Checking status for trade ${trade.id} (${trade.symbol})`);
 
@@ -102,6 +167,16 @@ export class PositionMonitorService {
       const fillPrice = parseFloat(orderData.avgPrice || orderData.price || trade.price);
       const fillQuantity = parseFloat(orderData.cumExecQty || orderData.qty || trade.quantity);
 
+      if (isNaN(fillPrice) || isNaN(fillQuantity) || fillPrice <= 0 || fillQuantity <= 0) {
+        await this.logger.logError('Invalid fill data received', new Error('Invalid price or quantity'), {
+          tradeId: trade.id,
+          fillPrice,
+          fillQuantity,
+          orderData
+        });
+        return;
+      }
+
       console.log(`✅ Order filled: ${trade.symbol} ${trade.side} at ${fillPrice}`);
 
       const updateData: any = {
@@ -135,7 +210,11 @@ export class PositionMonitorService {
         console.log(`🔍 Looking for auto-generated TP order for ${trade.symbol}`);
         // Wait a moment for Bybit to create the TP order
         setTimeout(async () => {
-          await this.orderPlacer.findAndLinkTPOrder(trade.id, trade.symbol);
+          try {
+            await this.orderPlacer.findAndLinkTPOrder(trade.id, trade.symbol);
+          } catch (error) {
+            await this.logger.logError(`Failed to find TP order for trade ${trade.id}`, error);
+          }
         }, 2000);
       }
 
