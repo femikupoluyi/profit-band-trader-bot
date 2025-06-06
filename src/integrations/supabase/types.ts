@@ -910,11 +910,15 @@ export type Database = {
           main_loop_interval_seconds: number | null
           manual_close_premium_percent: number | null
           max_active_pairs: number | null
+          max_drawdown_percent: number | null
           max_order_amount_usd: number | null
           max_portfolio_exposure_percent: number | null
           max_positions_per_pair: number | null
           minimum_notional_per_symbol: Json | null
           new_support_threshold_percent: number | null
+          notes: string | null
+          price_decimals_per_symbol: Json | null
+          quantity_decimals_per_symbol: Json | null
           quantity_increment_per_symbol: Json | null
           support_candle_count: number | null
           support_lower_bound_percent: number | null
@@ -936,11 +940,15 @@ export type Database = {
           main_loop_interval_seconds?: number | null
           manual_close_premium_percent?: number | null
           max_active_pairs?: number | null
+          max_drawdown_percent?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
           max_positions_per_pair?: number | null
           minimum_notional_per_symbol?: Json | null
           new_support_threshold_percent?: number | null
+          notes?: string | null
+          price_decimals_per_symbol?: Json | null
+          quantity_decimals_per_symbol?: Json | null
           quantity_increment_per_symbol?: Json | null
           support_candle_count?: number | null
           support_lower_bound_percent?: number | null
@@ -962,11 +970,15 @@ export type Database = {
           main_loop_interval_seconds?: number | null
           manual_close_premium_percent?: number | null
           max_active_pairs?: number | null
+          max_drawdown_percent?: number | null
           max_order_amount_usd?: number | null
           max_portfolio_exposure_percent?: number | null
           max_positions_per_pair?: number | null
           minimum_notional_per_symbol?: Json | null
           new_support_threshold_percent?: number | null
+          notes?: string | null
+          price_decimals_per_symbol?: Json | null
+          quantity_decimals_per_symbol?: Json | null
           quantity_increment_per_symbol?: Json | null
           support_candle_count?: number | null
           support_lower_bound_percent?: number | null

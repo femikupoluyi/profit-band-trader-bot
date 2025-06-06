@@ -71,6 +71,7 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
         quantity_increment_per_symbol: configData.quantity_increment_per_symbol,
         price_decimals_per_symbol: configData.price_decimals_per_symbol,
         quantity_decimals_per_symbol: configData.quantity_decimals_per_symbol,
+        max_drawdown_percent: configData.max_drawdown_percent,
         notes: configData.notes,
         updated_at: new Date().toISOString(),
       };

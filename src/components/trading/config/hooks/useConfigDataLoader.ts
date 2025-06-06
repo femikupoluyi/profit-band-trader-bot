@@ -40,11 +40,11 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
         support_upper_bound_percent: parseFloat(data.support_upper_bound_percent?.toString() || '2.0'),
         minimum_notional_per_symbol: (data.minimum_notional_per_symbol as Record<string, number>) || { 'BTCUSDT': 10, 'ETHUSDT': 10 },
         quantity_increment_per_symbol: (data.quantity_increment_per_symbol as Record<string, number>) || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
-        price_decimals_per_symbol: ((data as any).price_decimals_per_symbol as Record<string, number>) || {},
-        quantity_decimals_per_symbol: ((data as any).quantity_decimals_per_symbol as Record<string, number>) || {},
+        price_decimals_per_symbol: (data.price_decimals_per_symbol as Record<string, number>) || {},
+        quantity_decimals_per_symbol: (data.quantity_decimals_per_symbol as Record<string, number>) || {},
         max_concurrent_trades: data.max_active_pairs || 20,
-        max_drawdown_percent: parseFloat(((data as any).max_drawdown_percent)?.toString() || '10.0'),
-        notes: (data as any).notes || ''
+        max_drawdown_percent: parseFloat(data.max_drawdown_percent?.toString() || '10.0'),
+        notes: data.notes || ''
       };
       
       console.log('Loaded config from database with all fields:', loadedConfig);
