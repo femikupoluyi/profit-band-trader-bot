@@ -50,29 +50,31 @@ export class TradingConfigManager {
       if (error) throw error;
       if (!data) throw new Error('No trading configuration found');
 
-      // Map database fields to service interface with correct field names
+      // Map database fields to service interface with proper validation
       this.config = {
-        main_loop_interval_seconds: data.main_loop_interval_seconds || 30,
-        trading_pairs: data.trading_pairs || ['BTCUSDT', 'ETHUSDT'],
-        take_profit_percentage: data.take_profit_percent || 1.0,
-        entry_above_support_percentage: data.entry_offset_percent || 0.5,
-        maximum_order_amount_usd: data.max_order_amount_usd || 100,
-        maximum_positions_per_pair: data.max_positions_per_pair || 2,
-        maximum_active_pairs: data.max_active_pairs || 5,
-        chart_timeframe: data.chart_timeframe || '4h',
-        support_analysis_candles: data.support_candle_count || 128,
-        support_lower_bound_percentage: data.support_lower_bound_percent || 5.0,
-        support_upper_bound_percentage: data.support_upper_bound_percent || 2.0,
-        minimum_notional_per_symbol: (typeof data.minimum_notional_per_symbol === 'object' && data.minimum_notional_per_symbol !== null) 
-          ? data.minimum_notional_per_symbol as Record<string, number>
-          : { 'BTCUSDT': 10, 'ETHUSDT': 10 },
-        quantity_increment_per_symbol: (typeof data.quantity_increment_per_symbol === 'object' && data.quantity_increment_per_symbol !== null)
-          ? data.quantity_increment_per_symbol as Record<string, number>
-          : { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
-        manual_close_premium_percentage: data.manual_close_premium_percent || 0.1,
-        auto_close_at_end_of_day: data.auto_close_at_end_of_day || false,
-        eod_close_premium_percentage: data.eod_close_premium_percent || 0.1,
-        is_active: data.is_active || false
+        main_loop_interval_seconds: this.validatePositiveInteger(data.main_loop_interval_seconds, 30),
+        trading_pairs: this.validateTradingPairs(data.trading_pairs),
+        take_profit_percentage: this.validatePositiveNumber(data.take_profit_percent, 1.0),
+        entry_above_support_percentage: this.validatePositiveNumber(data.entry_offset_percent, 0.5),
+        maximum_order_amount_usd: this.validatePositiveNumber(data.max_order_amount_usd, 100),
+        maximum_positions_per_pair: this.validatePositiveInteger(data.max_positions_per_pair, 2),
+        maximum_active_pairs: this.validatePositiveInteger(data.max_active_pairs, 5),
+        chart_timeframe: this.validateChartTimeframe(data.chart_timeframe),
+        support_analysis_candles: this.validatePositiveInteger(data.support_candle_count, 128),
+        support_lower_bound_percentage: this.validatePositiveNumber(data.support_lower_bound_percent, 5.0),
+        support_upper_bound_percentage: this.validatePositiveNumber(data.support_upper_bound_percent, 2.0),
+        minimum_notional_per_symbol: this.validateJSONBObject(
+          data.minimum_notional_per_symbol,
+          { 'BTCUSDT': 10, 'ETHUSDT': 10 }
+        ),
+        quantity_increment_per_symbol: this.validateJSONBObject(
+          data.quantity_increment_per_symbol,
+          { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
+        ),
+        manual_close_premium_percentage: this.validatePositiveNumber(data.manual_close_premium_percent, 0.1),
+        auto_close_at_end_of_day: Boolean(data.auto_close_at_end_of_day),
+        eod_close_premium_percentage: this.validatePositiveNumber(data.eod_close_premium_percent, 0.1),
+        is_active: Boolean(data.is_active)
       };
 
       console.log('✅ Trading config loaded successfully');
@@ -81,6 +83,49 @@ export class TradingConfigManager {
       console.error('❌ Error loading trading config:', error);
       throw error;
     }
+  }
+
+  private validatePositiveInteger(value: any, defaultValue: number): number {
+    if (value === null || value === undefined) return defaultValue;
+    const num = typeof value === 'number' ? value : parseInt(value?.toString() || defaultValue.toString());
+    return isNaN(num) || num <= 0 || !Number.isInteger(num) ? defaultValue : num;
+  }
+
+  private validatePositiveNumber(value: any, defaultValue: number): number {
+    if (value === null || value === undefined) return defaultValue;
+    const num = typeof value === 'number' ? value : parseFloat(value?.toString() || defaultValue.toString());
+    return isNaN(num) || num <= 0 ? defaultValue : num;
+  }
+
+  private validateChartTimeframe(timeframe: any): string {
+    const validTimeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d'];
+    return validTimeframes.includes(timeframe) ? timeframe : '4h';
+  }
+
+  private validateTradingPairs(pairs: any): string[] {
+    const validPairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'];
+    
+    if (Array.isArray(pairs) && pairs.length > 0) {
+      const filtered = pairs.filter(pair => typeof pair === 'string' && validPairs.includes(pair));
+      return filtered.length > 0 ? filtered : ['BTCUSDT'];
+    }
+    return ['BTCUSDT'];
+  }
+
+  private validateJSONBObject(value: any, defaultValue: Record<string, number>): Record<string, number> {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const validated: Record<string, number> = {};
+      for (const [key, val] of Object.entries(value)) {
+        if (typeof key === 'string' && key.length > 0) {
+          const numVal = typeof val === 'number' ? val : parseFloat(val?.toString() || '0');
+          if (!isNaN(numVal) && numVal > 0) {
+            validated[key] = numVal;
+          }
+        }
+      }
+      return Object.keys(validated).length > 0 ? validated : defaultValue;
+    }
+    return defaultValue;
   }
 
   async refreshConfig(): Promise<TradingConfig> {
@@ -94,9 +139,6 @@ export class TradingConfigManager {
     return this.config;
   }
 
-  /**
-   * Get config value by key with type safety
-   */
   getConfigValue<K extends keyof TradingConfig>(key: K): TradingConfig[K] {
     if (!this.config) {
       throw new Error('Configuration not loaded. Call loadConfig() first.');
@@ -104,16 +146,10 @@ export class TradingConfigManager {
     return this.config[key];
   }
 
-  /**
-   * Check if config is properly loaded and valid
-   */
   isConfigLoaded(): boolean {
     return this.config !== null;
   }
 
-  /**
-   * Validate config completeness
-   */
   validateConfig(): { isValid: boolean; errors: string[] } {
     if (!this.config) {
       return { isValid: false, errors: ['Configuration not loaded'] };

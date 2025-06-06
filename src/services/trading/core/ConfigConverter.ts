@@ -1,5 +1,5 @@
 
-import { TradingConfig } from '../config/TradingConfigManager';
+import { TradingConfig } from '../config/Trading-ConfigManager';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class ConfigConverter {
@@ -25,17 +25,17 @@ export class ConfigConverter {
       manual_close_premium_percent: config.manual_close_premium_percentage || 0.1,
       support_lower_bound_percent: config.support_lower_bound_percentage || 5.0,
       support_upper_bound_percent: config.support_upper_bound_percentage || 2.0,
-      minimum_notional_per_symbol: {
+      minimum_notional_per_symbol: config.minimum_notional_per_symbol || {
         'BTCUSDT': 10, 'ETHUSDT': 10, 'SOLUSDT': 10, 'BNBUSDT': 10, 'LTCUSDT': 10,
         'POLUSDT': 10, 'FETUSDT': 10, 'XRPUSDT': 10, 'XLMUSDT': 10
       },
-      quantity_increment_per_symbol: {
+      quantity_increment_per_symbol: config.quantity_increment_per_symbol || {
         'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01,
         'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1
       },
       price_decimals_per_symbol: {},
       quantity_decimals_per_symbol: {},
-      // Use maximum_active_pairs for max_concurrent_trades to maintain consistency
+      // Map maximum_active_pairs to max_concurrent_trades for consistency
       max_concurrent_trades: config.maximum_active_pairs || 20,
       // Use default values for fields not in TradingConfig type
       max_drawdown_percent: 10.0,
