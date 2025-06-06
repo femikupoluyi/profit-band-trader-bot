@@ -20,6 +20,11 @@ interface Trade {
   created_at: string;
   updated_at: string;
   bybit_order_id: string | null;
+  buy_order_id?: string;
+  sell_order_id?: string;
+  buy_fill_price?: number;
+  tp_price?: number;
+  sell_status?: string;
 }
 
 const TradesReport = () => {
@@ -117,33 +122,37 @@ const TradesReport = () => {
     return side === 'buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
   };
 
-  // Calculate P&L and percentage for each trade using spot logic
+  // Calculate P&L and percentage for each trade using new schema
   const getTradeMetrics = (trade: Trade) => {
     const currentPrice = marketPrices[trade.symbol] || trade.price;
     
     // For closed trades, use stored profit_loss
     if (trade.status === 'closed' && trade.profit_loss !== null) {
-      const volume = trade.price * trade.quantity;
+      const entryPrice = trade.buy_fill_price || trade.price;
+      const volume = entryPrice * trade.quantity;
       const percentage = volume > 0 ? (trade.profit_loss / volume) * 100 : 0;
       
       return {
         showPL: true,
         pnl: trade.profit_loss,
         percentage,
-        currentPrice: trade.price // Use entry price for closed trades
+        currentPrice: entryPrice, // Use entry price for closed trades
+        entryPrice
       };
     }
 
-    // Check if we should show P&L for this trade (filled buy only)
+    // Check if we should show P&L for this trade (filled buy with linked TP)
     if (shouldShowSpotPL(trade)) {
-      const pnl = calculateSpotPL(trade.price, currentPrice, trade.quantity);
-      const percentage = calculateSpotPercentage(trade.price, currentPrice);
+      const entryPrice = trade.buy_fill_price || trade.price;
+      const pnl = calculateSpotPL(entryPrice, currentPrice, trade.quantity);
+      const percentage = calculateSpotPercentage(entryPrice, currentPrice);
       
       return {
         showPL: true,
         pnl,
         percentage,
-        currentPrice
+        currentPrice,
+        entryPrice
       };
     }
 
@@ -151,7 +160,8 @@ const TradesReport = () => {
       showPL: false,
       pnl: 0,
       percentage: 0,
-      currentPrice
+      currentPrice,
+      entryPrice: trade.buy_fill_price || trade.price
     };
   };
 
@@ -171,7 +181,7 @@ const TradesReport = () => {
     );
   }
 
-  // Calculate summary statistics using spot P&L logic
+  // Calculate summary statistics using new schema
   const activeTrades = trades.filter(trade => shouldShowSpotPL(trade));
   const closedTrades = trades.filter(trade => trade.status === 'closed');
   
@@ -190,7 +200,7 @@ const TradesReport = () => {
     <Card>
       <CardHeader>
         <CardTitle>Trades Report</CardTitle>
-        <CardDescription>Complete trading history with spot P&L calculations</CardDescription>
+        <CardDescription>Complete trading history with embedded TP and precise entry prices</CardDescription>
         
         {/* Summary Statistics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
@@ -245,7 +255,7 @@ const TradesReport = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>{trade.order_type}</TableCell>
-                  <TableCell>{formatCurrency(trade.price)}</TableCell>
+                  <TableCell>{formatCurrency(metrics.entryPrice)}</TableCell>
                   <TableCell>{formatCurrency(metrics.currentPrice)}</TableCell>
                   <TableCell>{trade.quantity.toFixed(8)}</TableCell>
                   <TableCell>

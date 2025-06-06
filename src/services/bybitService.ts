@@ -93,6 +93,41 @@ export class BybitService {
     }
   }
 
+  async getOpenOrders(params: {
+    category?: string;
+    symbol?: string;
+    limit?: number;
+  } = {}): Promise<any> {
+    try {
+      console.log(`📊 [BYBIT] Getting open orders...`);
+      await this.logger?.logSuccess('[BYBIT] Getting open orders');
+      
+      const queryParams = {
+        category: params.category || 'spot',
+        limit: (params.limit || 50).toString(),
+        ...params
+      };
+
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/order/realtime',
+        method: 'GET',
+        params: queryParams
+      });
+      
+      if (response.retCode === 0) {
+        console.log(`✅ [BYBIT] Retrieved ${response.result?.list?.length || 0} open orders`);
+      } else {
+        console.error('❌ [BYBIT] Failed to get open orders:', response);
+      }
+
+      return response;
+    } catch (error) {
+      console.error('❌ [BYBIT] Error getting open orders:', error);
+      await this.logger?.logError('[BYBIT] Error getting open orders', error);
+      throw error;
+    }
+  }
+
   async placeOrder(params: any): Promise<any> {
     try {
       console.log(`📝 [BYBIT] Placing order for ${params.symbol}...`);

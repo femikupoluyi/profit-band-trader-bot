@@ -10,8 +10,8 @@ export const formatPercentage = (entry: number, current: number): string => {
 };
 
 /**
- * Calculate SPOT trading P&L - Only for filled buy positions
- * @param entryPrice - Entry price of the filled buy position
+ * Calculate SPOT trading P&L - Only for filled buy positions with linked TP sells
+ * @param entryPrice - Buy fill price (actual fill price from Bybit)
  * @param currentPrice - Current market price
  * @param quantity - Position quantity
  * @returns P&L value (positive for profit, negative for loss)
@@ -22,8 +22,8 @@ export const calculateSpotPL = (entryPrice: number, currentPrice: number, quanti
 };
 
 /**
- * Calculate SPOT trading percentage change - Only for filled buy positions
- * @param entryPrice - Entry price of the filled buy position
+ * Calculate SPOT trading percentage change - Only for filled buy positions with linked TP sells
+ * @param entryPrice - Buy fill price (actual fill price from Bybit)
  * @param currentPrice - Current market price
  * @returns Percentage change (positive for profit, negative for loss)
  */
@@ -35,18 +35,19 @@ export const calculateSpotPercentage = (entryPrice: number, currentPrice: number
 };
 
 /**
- * Check if a position should show P&L (filled buy with pending take-profit sell)
+ * Check if a position should show P&L (filled buy with linked pending TP sell)
  * @param trade - The trade object to check
- * @param sellTrade - Optional corresponding sell trade object
  * @returns True if P&L should be displayed
  */
-export const shouldShowSpotPL = (trade: any, sellTrade?: any): boolean => {
+export const shouldShowSpotPL = (trade: any): boolean => {
   // Only show P&L if:
   // 1. Trade is a filled buy
-  // 2. No corresponding sell trade exists, OR sell trade is still pending
+  // 2. Has a linked sell order ID (auto-generated TP)
+  // 3. Sell status is pending (not yet filled)
   return trade.side === 'buy' && 
          trade.status === 'filled' && 
-         (!sellTrade || sellTrade.status === 'pending');
+         trade.sell_order_id && 
+         trade.sell_status === 'pending';
 };
 
 // Legacy functions - kept for backward compatibility but marked as deprecated

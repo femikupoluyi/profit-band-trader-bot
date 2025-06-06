@@ -14,19 +14,22 @@ interface ActiveTradeRowProps {
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
   const currentPrice = trade.currentPrice || trade.price;
   
-  // Calculate P&L only for filled buy positions using spot logic
+  // Calculate P&L only for positions with filled buy and linked pending TP sell
   let spotPL = 0;
   let spotPercentage = 0;
   let showPL = false;
+  let entryPrice = trade.price; // Default to original price
 
   // Use the spot P&L logic to determine if we should show P&L
   if (shouldShowSpotPL(trade)) {
     showPL = true;
-    spotPL = calculateSpotPL(trade.price, currentPrice, trade.quantity);
-    spotPercentage = calculateSpotPercentage(trade.price, currentPrice);
+    // Use buy_fill_price if available, otherwise fall back to price
+    entryPrice = trade.buy_fill_price || trade.price;
+    spotPL = calculateSpotPL(entryPrice, currentPrice, trade.quantity);
+    spotPercentage = calculateSpotPercentage(entryPrice, currentPrice);
   }
 
-  console.log(`ActiveTradeRow ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, ShowPL=${showPL}, EntryPrice=${trade.price}, CurrentPrice=${currentPrice}, SpotPL=${spotPL.toFixed(2)}, SpotPercentage=${spotPercentage.toFixed(2)}%`);
+  console.log(`ActiveTradeRow ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, ShowPL=${showPL}, EntryPrice=${entryPrice}, CurrentPrice=${currentPrice}, SellOrderId=${trade.sell_order_id}, SellStatus=${trade.sell_status}, SpotPL=${spotPL.toFixed(2)}, SpotPercentage=${spotPercentage.toFixed(2)}%`);
 
   return (
     <TableRow>
@@ -41,7 +44,7 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
         </span>
       </TableCell>
       <TableCell>{trade.quantity.toFixed(8)}</TableCell>
-      <TableCell>{formatCurrency(trade.price)}</TableCell>
+      <TableCell>{formatCurrency(entryPrice)}</TableCell>
       <TableCell>{formatCurrency(currentPrice)}</TableCell>
       <TableCell>{formatCurrency(trade.volume || 0)}</TableCell>
       <TableCell>
