@@ -32,7 +32,12 @@ export class ConfigConverter {
       quantity_increment_per_symbol: {
         'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01,
         'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1
-      }
+      },
+      price_decimals_per_symbol: {},
+      quantity_decimals_per_symbol: {},
+      max_concurrent_trades: config.maximum_active_pairs || 20,
+      max_drawdown_percent: 10.0,
+      notes: ''
     };
   }
 }

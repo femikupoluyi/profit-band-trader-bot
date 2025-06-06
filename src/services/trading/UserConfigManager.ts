@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
@@ -57,7 +56,18 @@ export class UserConfigManager {
         quantity_increment_per_symbol: this.validateJSONBObject(
           config.quantity_increment_per_symbol, 
           { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001, 'LTCUSDT': 0.01, 'POLUSDT': 1, 'FETUSDT': 1, 'XRPUSDT': 0.1, 'XLMUSDT': 1 }
-        )
+        ),
+        price_decimals_per_symbol: this.validateJSONBObject(
+          (config as any).price_decimals_per_symbol, 
+          {}
+        ),
+        quantity_decimals_per_symbol: this.validateJSONBObject(
+          (config as any).quantity_decimals_per_symbol, 
+          {}
+        ),
+        max_concurrent_trades: this.validatePositiveInteger((config as any).max_concurrent_trades || config.max_active_pairs, 20),
+        max_drawdown_percent: this.validatePositiveNumber((config as any).max_drawdown_percent, 10.0),
+        notes: (config as any).notes || ''
       };
 
       return tradingConfig;
