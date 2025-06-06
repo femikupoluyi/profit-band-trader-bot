@@ -145,7 +145,7 @@ export class MainTradingEngine {
     console.log('✅ Main Trading Engine stopped');
   }
 
-  async manualClosePosition(tradeId: string): Promise<void> {
+  async manualClosePosition(tradeId: string): Promise<{ success: boolean; message: string; data?: any }> {
     if (!tradeId || typeof tradeId !== 'string') {
       throw new Error('Valid tradeId is required for manual close');
     }
