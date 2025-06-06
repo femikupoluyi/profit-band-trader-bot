@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './trading/core/TradingLogger';
 
@@ -174,6 +173,41 @@ export class BybitService {
       return response;
     } catch (error) {
       console.error('❌ [BYBIT] Error getting order history:', error);
+      throw error;
+    }
+  }
+
+  async getExecutionHistory(params: {
+    category?: string;
+    symbol?: string;
+    startTime?: string;
+    endTime?: string;
+    limit?: number;
+  } = {}): Promise<any> {
+    try {
+      console.log(`📊 [BYBIT] Getting execution history...`);
+      
+      const queryParams = {
+        category: params.category || 'spot',
+        limit: (params.limit || 50).toString(),
+        ...params
+      };
+
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/execution/list',
+        method: 'GET',
+        params: queryParams
+      });
+      
+      if (response.retCode === 0) {
+        console.log(`✅ [BYBIT] Retrieved ${response.result?.list?.length || 0} execution records`);
+      } else {
+        console.error('❌ [BYBIT] Failed to get execution history:', response);
+      }
+
+      return response;
+    } catch (error) {
+      console.error('❌ [BYBIT] Error getting execution history:', error);
       throw error;
     }
   }

@@ -31,7 +31,7 @@ export class TransactionReconciliationService {
       console.log('🔄 Starting transaction reconciliation with Bybit...');
       await this.logger.logSuccess('Starting transaction reconciliation');
 
-      // Get recent execution history from Bybit - using generic API call since getExecutionHistory doesn't exist
+      // Get recent execution history from Bybit
       const bybitExecutions = await this.getBybitExecutionHistory(lookbackHours);
       
       if (!bybitExecutions || bybitExecutions.length === 0) {
@@ -68,21 +68,41 @@ export class TransactionReconciliationService {
       
       console.log(`📈 Fetching Bybit execution history from ${new Date(startTime).toISOString()}`);
       
-      // Use generic API call since getExecutionHistory method doesn't exist
-      const response = await this.bybitService.makeApiCall('/v5/execution/list', 'GET', {
-        category: 'spot',
-        startTime: startTime.toString(),
-        limit: 100
-      });
+      // Use the existing getOrderHistory method as it returns filled orders which are our executions
+      const response = await this.bybitService.getOrderHistory(100);
 
       if (response.retCode !== 0) {
         console.error('Failed to fetch Bybit execution history:', response.retMsg);
         return [];
       }
 
-      return response.result?.list || [];
+      // Convert order history to execution records format
+      const executionRecords: BybitTransactionRecord[] = [];
+      const orders = response.result?.list || [];
+
+      for (const order of orders) {
+        // Only include filled orders within our time window
+        const orderTime = parseInt(order.updatedTime || order.createdTime);
+        if (orderTime >= startTime && order.orderStatus === 'Filled') {
+          executionRecords.push({
+            symbol: order.symbol,
+            side: order.side,
+            execTime: order.updatedTime || order.createdTime,
+            execPrice: order.avgPrice || order.price,
+            execQty: order.qty,
+            orderId: order.orderId,
+            execType: 'Trade',
+            execValue: (parseFloat(order.avgPrice || order.price) * parseFloat(order.qty)).toString(),
+            feeRate: '0', // Not available in order history
+            tradeId: order.orderId // Use orderId as tradeId since we don't have separate trade IDs
+          });
+        }
+      }
+
+      return executionRecords;
     } catch (error) {
       console.error('Error fetching Bybit execution history:', error);
+      await this.logger.logError('Failed to fetch Bybit execution history', error);
       return [];
     }
   }
