@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -24,11 +25,11 @@ export interface TradingConfigData {
   support_upper_bound_percent: number;
   minimum_notional_per_symbol: Record<string, number>;
   quantity_increment_per_symbol: Record<string, number>;
-  price_decimals_per_symbol?: Record<string, number>;
-  quantity_decimals_per_symbol?: Record<string, number>;
-  max_concurrent_trades?: number;
-  max_drawdown_percent?: number;
-  notes?: string;
+  price_decimals_per_symbol: Record<string, number>;
+  quantity_decimals_per_symbol: Record<string, number>;
+  max_concurrent_trades: number;
+  max_drawdown_percent: number;
+  notes: string;
 }
 
 const getDefaultConfig = (): TradingConfigData => ({
@@ -52,6 +53,8 @@ const getDefaultConfig = (): TradingConfigData => ({
   support_upper_bound_percent: 2.0,
   minimum_notional_per_symbol: { 'BTCUSDT': 10, 'ETHUSDT': 10 },
   quantity_increment_per_symbol: { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
+  price_decimals_per_symbol: {},
+  quantity_decimals_per_symbol: {},
   max_concurrent_trades: 20,
   max_drawdown_percent: 10.0,
   notes: ''
@@ -107,11 +110,11 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
           support_upper_bound_percent: parseFloat(data.support_upper_bound_percent?.toString() || '2.0'),
           minimum_notional_per_symbol: (data.minimum_notional_per_symbol as Record<string, number>) || { 'BTCUSDT': 10, 'ETHUSDT': 10 },
           quantity_increment_per_symbol: (data.quantity_increment_per_symbol as Record<string, number>) || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
-          price_decimals_per_symbol: (data as any).price_decimals_per_symbol || {},
-          quantity_decimals_per_symbol: (data as any).quantity_decimals_per_symbol || {},
+          price_decimals_per_symbol: ((data as any).price_decimals_per_symbol as Record<string, number>) || {},
+          quantity_decimals_per_symbol: ((data as any).quantity_decimals_per_symbol as Record<string, number>) || {},
           max_concurrent_trades: data.max_active_pairs || 20,
           max_drawdown_percent: 10.0,
-          notes: ''
+          notes: (data as any).notes || ''
         };
         
         console.log('Loaded config from database with all fields:', loadedConfig);
@@ -156,6 +159,9 @@ export const useTradingConfig = (onConfigUpdate?: () => void) => {
         support_upper_bound_percent: config.support_upper_bound_percent,
         minimum_notional_per_symbol: config.minimum_notional_per_symbol,
         quantity_increment_per_symbol: config.quantity_increment_per_symbol,
+        price_decimals_per_symbol: config.price_decimals_per_symbol,
+        quantity_decimals_per_symbol: config.quantity_decimals_per_symbol,
+        notes: config.notes,
         updated_at: new Date().toISOString(),
       };
 
