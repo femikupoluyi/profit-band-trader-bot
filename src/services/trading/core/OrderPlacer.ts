@@ -1,198 +1,209 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
-import { ConfigurableFormatter } from './ConfigurableFormatter';
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { TradingLogger } from './TradingLogger';
 
 export class OrderPlacer {
   private userId: string;
   private bybitService: BybitService;
+  private logger: TradingLogger;
 
-  constructor(userId: string, bybitService: BybitService) {
+  constructor(userId: string, bybitService: BybitService, logger: TradingLogger) {
     this.userId = userId;
     this.bybitService = bybitService;
+    this.logger = logger;
   }
 
-  async placeRealBybitOrder(signal: any, quantity: number, entryPrice: number, takeProfitPrice: number): Promise<void> {
+  async placeOrderWithTP(
+    symbol: string,
+    side: 'Buy' | 'Sell',
+    quantity: string,
+    price: string,
+    tpPrice?: string
+  ): Promise<{ success: boolean; orderId?: string; error?: string }> {
     try {
-      console.log(`🔄 Placing REAL limit buy order with embedded TP on Bybit for ${signal.symbol}:`);
-      console.log(`  Quantity: ${quantity}`);
-      console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
-      console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)}`);
-      
-      // Get instrument info for precise formatting
-      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(signal.symbol);
-      if (!instrumentInfo) {
-        throw new Error(`Failed to get instrument info for ${signal.symbol}`);
-      }
+      console.log(`🔄 Placing ${side} order for ${symbol}: qty=${quantity}, price=${price}, tp=${tpPrice}`);
 
-      console.log(`📋 Using instrument info for ${signal.symbol}:`, instrumentInfo);
-
-      // CRITICAL: Use Bybit instrument info for ALL price and quantity formatting
-      const formattedQuantity = BybitInstrumentService.formatQuantity(signal.symbol, quantity, instrumentInfo);
-      const formattedEntryPrice = BybitInstrumentService.formatPrice(signal.symbol, entryPrice, instrumentInfo);
-      const formattedTakeProfitPrice = BybitInstrumentService.formatPrice(signal.symbol, takeProfitPrice, instrumentInfo);
-
-      console.log(`  🔧 Formatted Quantity: ${formattedQuantity} (${instrumentInfo.quantityDecimals} decimals)`);
-      console.log(`  🔧 Formatted Entry Price: ${formattedEntryPrice} (${instrumentInfo.priceDecimals} decimals)`);
-      console.log(`  🔧 Formatted Take Profit Price: ${formattedTakeProfitPrice} (${instrumentInfo.priceDecimals} decimals)`);
-
-      // Validate the order meets Bybit requirements
-      if (!BybitInstrumentService.validateOrder(signal.symbol, parseFloat(formattedEntryPrice), parseFloat(formattedQuantity), instrumentInfo)) {
-        throw new Error(`Order validation failed for ${signal.symbol}`);
-      }
-
-      // Place buy order with embedded take-profit using Bybit's TP functionality
-      const buyOrderParams = {
-        category: 'spot' as const,
-        symbol: signal.symbol,
-        side: 'Buy' as const,
-        orderType: 'Limit' as const,
-        qty: formattedQuantity,
-        price: formattedEntryPrice,
-        timeInForce: 'GTC' as const,
-        // Embed take-profit in the buy order
-        takeProfit: formattedTakeProfitPrice
+      // Prepare order parameters with embedded TP
+      const orderParams: any = {
+        category: 'spot',
+        symbol,
+        side,
+        orderType: 'Limit',
+        qty: quantity,
+        price: price,
       };
 
-      console.log('📝 Placing REAL BUY order with embedded TP:', buyOrderParams);
-      const buyOrderResult = await this.bybitService.placeOrder(buyOrderParams);
-
-      if (buyOrderResult && buyOrderResult.retCode === 0 && buyOrderResult.result?.orderId) {
-        const bybitBuyOrderId = buyOrderResult.result.orderId;
-        console.log(`✅ REAL Bybit BUY order with embedded TP placed successfully: ${bybitBuyOrderId}`);
-
-        // Create trade record for the buy order
-        const { data: trade, error } = await supabase
-          .from('trades')
-          .insert({
-            user_id: this.userId,
-            symbol: signal.symbol,
-            side: 'buy',
-            order_type: 'limit',
-            price: parseFloat(formattedEntryPrice),
-            quantity: parseFloat(formattedQuantity),
-            status: 'pending',
-            bybit_order_id: bybitBuyOrderId,
-            buy_order_id: bybitBuyOrderId,
-            tp_price: parseFloat(formattedTakeProfitPrice),
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        console.log(`✅ Trade record created for REAL Bybit buy order with embedded TP: ${bybitBuyOrderId}`);
-        
-        await this.logActivity('order_placed', `REAL limit buy order with embedded TP placed on Bybit for ${signal.symbol}`, {
-          symbol: signal.symbol,
-          quantity: formattedQuantity,
-          entryPrice: parseFloat(formattedEntryPrice),
-          takeProfitPrice: parseFloat(formattedTakeProfitPrice),
-          formattedPrice: formattedEntryPrice,
-          orderValue: parseFloat(formattedQuantity) * parseFloat(formattedEntryPrice),
-          bybitOrderId: bybitBuyOrderId,
-          tradeId: trade.id,
-          orderType: 'REAL_BYBIT_LIMIT_ORDER_WITH_TP',
-          instrumentInfo: {
-            priceDecimals: instrumentInfo.priceDecimals,
-            quantityDecimals: instrumentInfo.quantityDecimals,
-            tickSize: instrumentInfo.tickSize,
-            basePrecision: instrumentInfo.basePrecision
-          }
-        });
-
-      } else {
-        console.error(`❌ Bybit order FAILED - retCode: ${buyOrderResult?.retCode}, retMsg: ${buyOrderResult?.retMsg}`);
-        throw new Error(`Bybit order failed: ${buyOrderResult?.retMsg || 'Unknown error'}`);
+      // Add take-profit if provided (for buy orders)
+      if (side === 'Buy' && tpPrice) {
+        orderParams.takeProfit = tpPrice;
+        console.log(`📈 Adding take-profit to buy order: ${tpPrice}`);
       }
 
-    } catch (error) {
-      console.error(`❌ Error placing REAL order with embedded TP for ${signal.symbol}:`, error);
-      throw error;
-    }
-  }
-
-  // Query Bybit for the auto-generated TP sell order after buy fill
-  async findAndLinkTakeProfitOrder(filledBuyTrade: any): Promise<void> {
-    try {
-      console.log(`🔍 Looking for auto-generated TP sell order for ${filledBuyTrade.symbol}`);
+      // Place order on Bybit
+      const response = await this.bybitService.placeOrder(orderParams);
       
-      // Query Bybit for open sell orders for this symbol
-      const openOrdersResponse = await this.bybitService.getOpenOrders({
-        category: 'spot',
-        symbol: filledBuyTrade.symbol
-      });
-
-      if (openOrdersResponse && openOrdersResponse.retCode === 0 && openOrdersResponse.result?.list) {
-        // Find the sell order that matches our TP price
-        const sellOrders = openOrdersResponse.result.list.filter((order: any) => 
-          order.side === 'Sell' && 
-          parseFloat(order.price) === filledBuyTrade.tp_price
-        );
-
-        if (sellOrders.length > 0) {
-          const sellOrder = sellOrders[0];
-          console.log(`✅ Found auto-generated TP sell order: ${sellOrder.orderId}`);
-
-          // Update the trade record with sell order information
-          const { error: updateError } = await supabase
-            .from('trades')
-            .update({
-              sell_order_id: sellOrder.orderId,
-              sell_status: 'pending',
-              buy_fill_price: filledBuyTrade.price,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', filledBuyTrade.id);
-
-          if (updateError) {
-            console.error(`❌ Error updating trade with sell order info:`, updateError);
-            throw updateError;
-          }
-
-          console.log(`✅ Trade record updated with TP sell order: ${sellOrder.orderId}`);
-          
-          await this.logActivity('order_linked', `Auto-generated TP sell order linked for ${filledBuyTrade.symbol}`, {
-            symbol: filledBuyTrade.symbol,
-            buyOrderId: filledBuyTrade.buy_order_id,
-            sellOrderId: sellOrder.orderId,
-            tpPrice: filledBuyTrade.tp_price,
-            buyFillPrice: filledBuyTrade.price,
-            tradeId: filledBuyTrade.id
-          });
-        } else {
-          console.warn(`⚠️ No matching TP sell order found for ${filledBuyTrade.symbol} with TP price ${filledBuyTrade.tp_price}`);
-          
-          await this.logActivity('order_not_found', `Auto-generated TP sell order not found for ${filledBuyTrade.symbol}`, {
-            symbol: filledBuyTrade.symbol,
-            expectedTpPrice: filledBuyTrade.tp_price,
-            tradeId: filledBuyTrade.id
-          });
-        }
+      if (response.retCode !== 0 || !response.result?.orderId) {
+        await this.logger.logError('Order placement failed', new Error(`Bybit error: ${response.retMsg}`), {
+          symbol,
+          side,
+          quantity,
+          price,
+          tpPrice,
+          response
+        });
+        return { success: false, error: response.retMsg || 'Unknown error' };
       }
-    } catch (error) {
-      console.error(`❌ Error finding TP sell order for ${filledBuyTrade.symbol}:`, error);
-      await this.logActivity('order_search_failed', `Failed to find TP sell order for ${filledBuyTrade.symbol}`, {
-        symbol: filledBuyTrade.symbol,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        tradeId: filledBuyTrade.id
+
+      const orderId = response.result.orderId;
+      console.log(`✅ Order placed successfully: ${orderId}`);
+
+      await this.logger.logSuccess(`Order placed: ${side} ${quantity} ${symbol} at ${price}`, {
+        orderId,
+        symbol,
+        side,
+        quantity,
+        price,
+        tpPrice,
+        hasEmbeddedTP: !!tpPrice
       });
+
+      return { success: true, orderId };
+
+    } catch (error) {
+      await this.logger.logError('Order placement exception', error, {
+        symbol,
+        side,
+        quantity,
+        price,
+        tpPrice
+      });
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
+  async storeTrade(
+    symbol: string,
+    side: 'buy' | 'sell',
+    quantity: number,
+    price: number,
+    orderId: string,
+    tpPrice?: number
+  ): Promise<{ success: boolean; tradeId?: string; error?: string }> {
     try {
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: type,
-          message,
-          data: data || null,
-        });
+      console.log(`💾 Storing trade: ${side} ${quantity} ${symbol} at ${price}, orderId=${orderId}`);
+
+      const tradeData: any = {
+        user_id: this.userId,
+        symbol,
+        side,
+        quantity,
+        price,
+        status: 'pending',
+        order_type: 'limit',
+        bybit_order_id: orderId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // For buy orders with TP, store the TP price and set initial values
+      if (side === 'buy' && tpPrice) {
+        tradeData.buy_order_id = orderId;
+        tradeData.tp_price = tpPrice;
+        tradeData.sell_status = 'pending'; // Will be updated when we find the auto-generated sell order
+        console.log(`📊 Storing buy order with TP: ${tpPrice}`);
+      }
+
+      const { data, error } = await supabase
+        .from('trades')
+        .insert(tradeData)
+        .select('id')
+        .single();
+
+      if (error) {
+        await this.logger.logError('Failed to store trade', error, tradeData);
+        return { success: false, error: error.message };
+      }
+
+      console.log(`✅ Trade stored with ID: ${data.id}`);
+      return { success: true, tradeId: data.id };
+
     } catch (error) {
-      console.error('Error logging activity:', error);
+      await this.logger.logError('Store trade exception', error, {
+        symbol,
+        side,
+        quantity,
+        price,
+        orderId,
+        tpPrice
+      });
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async findAndLinkTPOrder(tradeId: string, symbol: string): Promise<void> {
+    try {
+      console.log(`🔍 Searching for auto-generated TP sell order for ${symbol}`);
+
+      // Get open orders for this symbol
+      const openOrders = await this.bybitService.getOpenOrders(symbol);
+      
+      if (openOrders.retCode !== 0 || !openOrders.result?.list) {
+        console.log(`⚠️ Failed to get open orders for ${symbol}: ${openOrders.retMsg}`);
+        return;
+      }
+
+      // Look for sell orders (auto-generated TP orders)
+      const sellOrders = openOrders.result.list.filter((order: any) => 
+        order.side === 'Sell' && order.symbol === symbol
+      );
+
+      if (sellOrders.length === 0) {
+        console.log(`ℹ️ No sell orders found for ${symbol} yet`);
+        return;
+      }
+
+      // Take the most recent sell order (likely the auto-generated TP)
+      const tpOrder = sellOrders[0];
+      const sellOrderId = tpOrder.orderId;
+      const tpPrice = parseFloat(tpOrder.price);
+
+      console.log(`🎯 Found potential TP sell order: ${sellOrderId} at ${tpPrice}`);
+
+      // Update the trade record with sell order details
+      const { error } = await supabase
+        .from('trades')
+        .update({
+          sell_order_id: sellOrderId,
+          tp_price: tpPrice,
+          sell_status: 'pending',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', tradeId);
+
+      if (error) {
+        await this.logger.logError('Failed to link TP order', error, {
+          tradeId,
+          sellOrderId,
+          tpPrice
+        });
+        return;
+      }
+
+      console.log(`✅ Linked TP sell order ${sellOrderId} to trade ${tradeId}`);
+      
+      await this.logger.logSuccess(`Linked auto-generated TP order for ${symbol}`, {
+        tradeId,
+        sellOrderId,
+        tpPrice,
+        symbol
+      });
+
+    } catch (error) {
+      await this.logger.logError('Find TP order exception', error, {
+        tradeId,
+        symbol
+      });
     }
   }
 }

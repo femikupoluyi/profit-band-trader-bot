@@ -1,7 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from './TradingLogger';
 import { OrderPlacer } from './OrderPlacer';
 
@@ -11,156 +10,167 @@ export class PositionMonitorService {
   private logger: TradingLogger;
   private orderPlacer: OrderPlacer;
 
-  constructor(userId: string, bybitService: BybitService) {
+  constructor(userId: string, bybitService: BybitService, logger: TradingLogger) {
     this.userId = userId;
     this.bybitService = bybitService;
-    this.logger = new TradingLogger(userId);
-    this.bybitService.setLogger(this.logger);
-    this.orderPlacer = new OrderPlacer(userId, bybitService);
+    this.logger = logger;
+    this.orderPlacer = new OrderPlacer(userId, bybitService, logger);
   }
 
-  async checkOrderFills(config: TradingConfigData): Promise<void> {
+  async monitorOrderFills(): Promise<void> {
     try {
-      console.log('📊 Checking order fills and linking auto-generated TP orders...');
-      
-      // Get pending buy orders from database
-      const { data: pendingBuyTrades, error } = await supabase
+      console.log('🔍 Monitoring order fills...');
+
+      // Get pending orders that need monitoring
+      const { data: pendingTrades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .eq('side', 'buy')
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .not('bybit_order_id', 'is', null);
 
       if (error) {
-        console.error('❌ Error fetching pending buy trades:', error);
-        await this.logger.logError('Error fetching pending buy trades', error);
+        await this.logger.logError('Failed to fetch pending trades', error);
         return;
       }
 
-      if (!pendingBuyTrades || pendingBuyTrades.length === 0) {
-        console.log('📭 No pending buy orders to check');
+      if (!pendingTrades || pendingTrades.length === 0) {
+        console.log('📭 No pending trades to monitor');
         return;
       }
 
-      console.log(`📋 Found ${pendingBuyTrades.length} pending buy orders to check for fills`);
-      await this.logger.logSuccess(`Found ${pendingBuyTrades.length} pending buy orders to check`);
+      console.log(`👀 Monitoring ${pendingTrades.length} pending trades`);
 
-      for (const trade of pendingBuyTrades) {
-        await this.checkSingleOrderFill(trade, config);
+      for (const trade of pendingTrades) {
+        await this.checkOrderStatus(trade);
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      console.log('✅ Order fill check completed with auto-TP linking');
-      await this.logger.logSuccess('Order fill check completed');
     } catch (error) {
-      console.error('❌ Error checking order fills:', error);
-      await this.logger.logError('Error checking order fills', error);
-      throw error;
+      await this.logger.logError('Position monitor exception', error);
     }
   }
 
-  private async checkSingleOrderFill(trade: any, config: TradingConfigData): Promise<void> {
+  private async checkOrderStatus(trade: any): Promise<void> {
     try {
-      if (!trade.buy_order_id) {
-        console.log(`⚠️ Trade ${trade.id} has no buy order ID, skipping`);
-        return;
-      }
-
-      console.log(`🔍 Checking buy order ${trade.buy_order_id} for ${trade.symbol}`);
+      console.log(`🔄 Checking status for trade ${trade.id} (${trade.symbol})`);
 
       // Get order status from Bybit
-      const orderStatus = await this.bybitService.getOrderStatus(trade.buy_order_id);
+      const orderStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
       
-      if (orderStatus && orderStatus.retCode === 0 && orderStatus.result?.list?.length > 0) {
-        const order = orderStatus.result.list[0];
-        
-        if (order.orderStatus === 'Filled') {
-          console.log(`✅ Buy order ${trade.buy_order_id} is filled - finding auto-generated TP order`);
-          
-          // Update trade status to filled with actual fill price
-          const actualFillPrice = parseFloat(order.avgPrice || order.price);
-          
-          const { error: updateError } = await supabase
-            .from('trades')
-            .update({ 
-              status: 'filled',
-              buy_fill_price: actualFillPrice,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', trade.id);
+      if (orderStatus.retCode !== 0) {
+        console.log(`⚠️ Failed to get order status for ${trade.bybit_order_id}: ${orderStatus.retMsg}`);
+        return;
+      }
 
-          if (updateError) {
-            console.error(`❌ Error updating trade ${trade.id}:`, updateError);
-            await this.logger.logError(`Error updating trade ${trade.id}`, updateError, {
-              tradeId: trade.id
-            });
-            return;
-          }
+      const orderData = orderStatus.result?.list?.[0];
+      if (!orderData) {
+        console.log(`📭 No order data found for ${trade.bybit_order_id}`);
+        return;
+      }
 
-          console.log(`✅ Updated trade ${trade.id} status to filled with fill price ${actualFillPrice}`);
-          await this.logger.log('trade_filled', `Buy order filled for ${trade.symbol}`, {
-            tradeId: trade.id,
-            symbol: trade.symbol,
-            buyOrderId: trade.buy_order_id,
-            fillPrice: actualFillPrice,
-            quantity: trade.quantity
-          });
+      console.log(`📊 Order ${trade.bybit_order_id} status: ${orderData.orderStatus}`);
 
-          // Find and link the auto-generated TP sell order
-          const updatedTrade = { ...trade, buy_fill_price: actualFillPrice };
-          await this.orderPlacer.findAndLinkTakeProfitOrder(updatedTrade);
-          
-        } else {
-          console.log(`⏳ Buy order ${trade.buy_order_id} status: ${order.orderStatus}`);
-        }
-      } else {
-        console.log(`⚠️ Invalid response for order ${trade.buy_order_id}:`, orderStatus);
+      // Handle filled orders
+      if (orderData.orderStatus === 'Filled' && trade.status !== 'filled') {
+        await this.handleOrderFill(trade, orderData);
+      }
+      // Handle cancelled orders
+      else if (['Cancelled', 'Rejected'].includes(orderData.orderStatus) && trade.status !== 'cancelled') {
+        await this.handleOrderCancellation(trade, orderData);
       }
 
     } catch (error) {
-      console.error(`❌ Error checking buy order ${trade.buy_order_id}:`, error);
-      await this.logger.logError(`Failed to check buy order status`, error, {
+      await this.logger.logError(`Order status check failed for trade ${trade.id}`, error, {
         tradeId: trade.id,
-        buyOrderId: trade.buy_order_id
+        bybitOrderId: trade.bybit_order_id
       });
-      throw error;
     }
   }
 
-  // Method to audit filled buys and ensure they have linked TP orders
-  async auditMissingTakeProfitOrders(config: TradingConfigData): Promise<void> {
+  private async handleOrderFill(trade: any, orderData: any): Promise<void> {
     try {
-      console.log('🔍 Auditing filled buy orders for missing TP order links...');
-      
-      // Get all filled buy orders without sell_order_id
-      const { data: filledBuys, error: filledError } = await supabase
+      const fillPrice = parseFloat(orderData.avgPrice || orderData.price || trade.price);
+      const fillQuantity = parseFloat(orderData.cumExecQty || orderData.qty || trade.quantity);
+
+      console.log(`✅ Order filled: ${trade.symbol} ${trade.side} at ${fillPrice}`);
+
+      const updateData: any = {
+        status: 'filled',
+        price: fillPrice,
+        quantity: fillQuantity,
+        updated_at: new Date().toISOString()
+      };
+
+      // For buy orders, store the fill price and look for auto-generated TP order
+      if (trade.side === 'buy') {
+        updateData.buy_fill_price = fillPrice;
+        updateData.buy_order_id = trade.bybit_order_id;
+      }
+
+      // Update trade status
+      const { error } = await supabase
         .from('trades')
-        .select('*')
-        .eq('user_id', this.userId)
-        .eq('side', 'buy')
-        .eq('status', 'filled')
-        .is('sell_order_id', null);
+        .update(updateData)
+        .eq('id', trade.id);
 
-      if (filledError) {
-        console.error('❌ Error fetching filled buy orders:', filledError);
+      if (error) {
+        await this.logger.logError('Failed to update filled trade', error, { tradeId: trade.id });
         return;
       }
 
-      if (!filledBuys || filledBuys.length === 0) {
-        console.log('📭 No filled buy orders missing TP links found');
-        return;
+      console.log(`📝 Updated trade ${trade.id} status to filled`);
+
+      // For buy orders with TP, try to find and link the auto-generated sell order
+      if (trade.side === 'buy' && trade.tp_price) {
+        console.log(`🔍 Looking for auto-generated TP order for ${trade.symbol}`);
+        // Wait a moment for Bybit to create the TP order
+        setTimeout(async () => {
+          await this.orderPlacer.findAndLinkTPOrder(trade.id, trade.symbol);
+        }, 2000);
       }
 
-      console.log(`📋 Found ${filledBuys.length} filled buy orders missing TP links`);
+      await this.logger.logSuccess(`Order filled: ${trade.side} ${trade.symbol} at ${fillPrice}`, {
+        tradeId: trade.id,
+        symbol: trade.symbol,
+        side: trade.side,
+        fillPrice,
+        fillQuantity,
+        hasTP: !!trade.tp_price
+      });
 
-      for (const buyTrade of filledBuys) {
-        console.log(`🔍 Searching for TP order for filled buy ${buyTrade.symbol}`);
-        await this.orderPlacer.findAndLinkTakeProfitOrder(buyTrade);
-      }
-
-      console.log('✅ TP order audit completed');
     } catch (error) {
-      console.error('❌ Error during TP order audit:', error);
-      await this.logger.logError('TP order audit failed', error);
+      await this.logger.logError(`Handle order fill failed for trade ${trade.id}`, error);
+    }
+  }
+
+  private async handleOrderCancellation(trade: any, orderData: any): Promise<void> {
+    try {
+      console.log(`❌ Order cancelled: ${trade.symbol} ${trade.side}`);
+
+      const { error } = await supabase
+        .from('trades')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', trade.id);
+
+      if (error) {
+        await this.logger.logError('Failed to update cancelled trade', error, { tradeId: trade.id });
+        return;
+      }
+
+      await this.logger.logSuccess(`Order cancelled: ${trade.side} ${trade.symbol}`, {
+        tradeId: trade.id,
+        symbol: trade.symbol,
+        side: trade.side,
+        reason: orderData.orderStatus
+      });
+
+    } catch (error) {
+      await this.logger.logError(`Handle order cancellation failed for trade ${trade.id}`, error);
     }
   }
 }

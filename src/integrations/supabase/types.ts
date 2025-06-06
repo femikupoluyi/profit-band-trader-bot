@@ -854,6 +854,8 @@ export type Database = {
       }
       trades: {
         Row: {
+          buy_fill_price: number | null
+          buy_order_id: string | null
           bybit_order_id: string | null
           created_at: string | null
           id: string
@@ -861,13 +863,18 @@ export type Database = {
           price: number
           profit_loss: number | null
           quantity: number
+          sell_order_id: string | null
+          sell_status: string | null
           side: string
           status: string
           symbol: string
+          tp_price: number | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
+          buy_fill_price?: number | null
+          buy_order_id?: string | null
           bybit_order_id?: string | null
           created_at?: string | null
           id?: string
@@ -875,13 +882,18 @@ export type Database = {
           price: number
           profit_loss?: number | null
           quantity: number
+          sell_order_id?: string | null
+          sell_status?: string | null
           side: string
           status: string
           symbol: string
+          tp_price?: number | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
+          buy_fill_price?: number | null
+          buy_order_id?: string | null
           bybit_order_id?: string | null
           created_at?: string | null
           id?: string
@@ -889,9 +901,12 @@ export type Database = {
           price?: number
           profit_loss?: number | null
           quantity?: number
+          sell_order_id?: string | null
+          sell_status?: string | null
           side?: string
           status?: string
           symbol?: string
+          tp_price?: number | null
           updated_at?: string | null
           user_id?: string
         }
