@@ -1,14 +1,17 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { SignalExecutionService } from './signalExecutionService';
+import { SignalExecutionService } from './core/SignalExecutionService';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
 export class SignalProcessorService {
   private userId: string;
   private signalExecutionService: SignalExecutionService;
+  private config: TradingConfigData;
 
-  constructor(userId: string, signalExecutionService: SignalExecutionService) {
+  constructor(userId: string, signalExecutionService: SignalExecutionService, config: TradingConfigData) {
     this.userId = userId;
     this.signalExecutionService = signalExecutionService;
+    this.config = config;
   }
 
   async processSignals(): Promise<void> {
@@ -38,20 +41,8 @@ export class SignalProcessorService {
         console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${signal.price} (ID: ${signal.id})`);
       });
 
-      for (const signal of signals) {
-        console.log(`\n⚡ EXECUTING SIGNAL ${signal.id} for ${signal.symbol}:`);
-        console.log(`  Type: ${signal.signal_type}`);
-        console.log(`  Price: $${signal.price}`);
-        console.log(`  Confidence: ${signal.confidence}%`);
-        console.log(`  Created: ${signal.created_at}`);
-        
-        try {
-          await this.signalExecutionService.executeSignal(signal);
-          console.log(`✅ Signal ${signal.id} executed successfully`);
-        } catch (error) {
-          console.error(`❌ Error executing signal ${signal.id}:`, error);
-        }
-      }
+      // Execute signals using the config
+      await this.signalExecutionService.executeSignal(this.config);
       
       console.log(`✅ Finished processing ${signals.length} signals\n`);
     } catch (error) {

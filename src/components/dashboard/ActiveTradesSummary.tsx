@@ -2,14 +2,20 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage } from '@/utils/formatters';
 
 interface ActiveTradesSummaryProps {
   trades: ActiveTrade[];
 }
 
 const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
-  const totalUnrealizedPL = trades.reduce((sum, trade) => sum + (trade.unrealizedPL || 0), 0);
+  // Calculate totals using side-aware calculations
+  const totalUnrealizedPL = trades.reduce((sum, trade) => {
+    const currentPrice = trade.currentPrice || trade.price;
+    const actualPL = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
+    return sum + actualPL;
+  }, 0);
+  
   const totalVolume = trades.reduce((sum, trade) => sum + (trade.volume || 0), 0);
   const totalPositionValue = trades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
@@ -17,10 +23,10 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
   }, 0);
   const totalCount = trades.length;
   
-  // Calculate total unrealized percentage based on total volume invested
+  // Calculate total unrealized percentage based on total volume invested using side-aware calculation
   const totalUnrealizedPercentage = totalVolume > 0 ? (totalUnrealizedPL / totalVolume) * 100 : 0;
 
-  console.log('Summary calculations:', {
+  console.log('Summary calculations with side-aware P&L:', {
     totalCount,
     totalVolume: totalVolume.toFixed(2),
     totalUnrealizedPL: totalUnrealizedPL.toFixed(2),

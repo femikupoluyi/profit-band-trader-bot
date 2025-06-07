@@ -1,70 +1,75 @@
 
 import React from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Key, Activity, BarChart3, FileText } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import TradingStats from './TradingStats';
 import TradingConfig from '@/components/trading/TradingConfig';
+import ActiveTrades from './ActiveTrades';
 import TradeHistory from '@/components/trading/TradeHistory';
 import TradingLogs from '@/components/trading/TradingLogs';
-import ApiCredentials from '@/components/trading/ApiCredentials';
-import TradingStatus from '@/components/trading/TradingStatus';
-import TradesReport from '@/components/trading/TradesReport';
+
+import { User } from '@supabase/supabase-js';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import TradingLogicOverview from '../trading/TradingLogicOverview';
 
 interface DashboardTabsProps {
-  onConfigUpdate: () => void;
+  user: User | null;
+  userConfig: TradingConfigData | null;
+  stats: {
+    totalTrades: number;
+    activePairs: number;
+    totalProfit: number;
+    closedPositionsProfit: number;
+    isActive: boolean;
+    totalActive: number;
+    totalClosed: number;
+    totalProfitableClosed: number;
+    totalVolume: number;
+    profitPercentage: number;
+  };
+  isLoading: boolean;
+  timeRange: { from: Date; to: Date };
+  onTimeRangeChange: (range: { from: Date; to: Date }) => void;
 }
 
-const DashboardTabs = ({ onConfigUpdate }: DashboardTabsProps) => {
+const DashboardTabs = ({ user, userConfig, stats, isLoading, timeRange, onTimeRangeChange }: DashboardTabsProps) => {
   return (
-    <Tabs defaultValue="config" className="space-y-6">
-      <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto">
-        <TabsTrigger value="config" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
-          <Settings className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">Config</span>
-        </TabsTrigger>
-        <TabsTrigger value="api" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
-          <Key className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">API</span>
-        </TabsTrigger>
-        <TabsTrigger value="status" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
-          <Activity className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">Status</span>
-        </TabsTrigger>
-        <TabsTrigger value="trades" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
-          <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">Trades</span>
-        </TabsTrigger>
-        <TabsTrigger value="reports" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
-          <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">Reports</span>
-        </TabsTrigger>
-        <TabsTrigger value="logs" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 p-2 sm:p-3">
-          <Activity className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">Logs</span>
-        </TabsTrigger>
+    <Tabs defaultValue="overview" className="space-y-4">
+      <TabsList className="grid w-full grid-cols-6">
+        <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="active-trades">Active Trades</TabsTrigger>
+        <TabsTrigger value="config">Configuration</TabsTrigger>
+        <TabsTrigger value="history">Trade History</TabsTrigger>
+        <TabsTrigger value="logs">Logs</TabsTrigger>
+        <TabsTrigger value="logic">Trading Logic</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="config">
-        <TradingConfig onConfigUpdate={onConfigUpdate} />
+      <TabsContent value="overview" className="space-y-4">
+        <TradingStats
+          stats={stats}
+          isLoading={isLoading}
+          timeRange={timeRange}
+          onTimeRangeChange={onTimeRangeChange}
+        />
       </TabsContent>
 
-      <TabsContent value="api">
-        <ApiCredentials />
+      <TabsContent value="active-trades" className="space-y-4">
+        <ActiveTrades />
       </TabsContent>
 
-      <TabsContent value="status">
-        <TradingStatus />
+      <TabsContent value="config" className="space-y-4">
+        {user && <TradingConfig />}
       </TabsContent>
 
-      <TabsContent value="trades">
+      <TabsContent value="history" className="space-y-4">
         <TradeHistory />
       </TabsContent>
 
-      <TabsContent value="reports">
-        <TradesReport />
+      <TabsContent value="logs" className="space-y-4">
+        <TradingLogs />
       </TabsContent>
 
-      <TabsContent value="logs">
-        <TradingLogs />
+      <TabsContent value="logic" className="space-y-4">
+        <TradingLogicOverview />
       </TabsContent>
     </Tabs>
   );

@@ -1,97 +1,42 @@
 
-import { TradingEngine } from './trading/tradingEngine';
-import { supabase } from '@/integrations/supabase/client';
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { EngineLifecycleManager } from './trading/EngineLifecycleManager';
+import { EODSimulationManager } from './trading/EODSimulationManager';
 
 class TradingManager {
-  private static instance: TradingManager;
-  private engines: Map<string, TradingEngine> = new Map();
+  private engineManager: EngineLifecycleManager;
+  private eodManager: EODSimulationManager;
 
-  private constructor() {}
-
-  static getInstance(): TradingManager {
-    if (!TradingManager.instance) {
-      TradingManager.instance = new TradingManager();
-    }
-    return TradingManager.instance;
+  constructor() {
+    this.engineManager = new EngineLifecycleManager();
+    this.eodManager = new EODSimulationManager();
   }
 
   async startTradingForUser(userId: string): Promise<void> {
-    try {
-      // Check if already running
-      if (this.engines.has(userId)) {
-        console.log(`Trading already running for user ${userId}`);
-        return;
-      }
-
-      // Get user's trading config
-      const { data: config, error } = await (supabase as any)
-        .from('trading_configs')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .single();
-
-      if (error || !config) {
-        console.log(`No active trading config found for user ${userId}`);
-        return;
-      }
-
-      // Create and start trading engine
-      const engine = new TradingEngine(userId, config);
-      await engine.initialize();
-      await engine.start();
-
-      this.engines.set(userId, engine);
-      console.log(`Trading started for user ${userId}`);
-    } catch (error) {
-      console.error(`Error starting trading for user ${userId}:`, error);
-    }
+    return this.engineManager.startEngine(userId);
   }
 
   async stopTradingForUser(userId: string): Promise<void> {
-    const engine = this.engines.get(userId);
-    if (engine) {
-      await engine.stop();
-      this.engines.delete(userId);
-      console.log(`Trading stopped for user ${userId}`);
-    }
+    return this.engineManager.stopEngine(userId);
   }
 
   async restartTradingForUser(userId: string): Promise<void> {
-    await this.stopTradingForUser(userId);
-    await this.startTradingForUser(userId);
+    return this.engineManager.restartEngine(userId);
   }
 
   isRunningForUser(userId: string): boolean {
-    return this.engines.has(userId);
+    return this.engineManager.isEngineRunning(userId);
   }
 
-  async checkAllActiveConfigs(): Promise<void> {
-    try {
-      const { data: activeConfigs } = await (supabase as any)
-        .from('trading_configs')
-        .select('user_id')
-        .eq('is_active', true);
-
-      if (activeConfigs) {
-        for (const config of activeConfigs) {
-          if (!this.isRunningForUser(config.user_id)) {
-            await this.startTradingForUser(config.user_id);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error checking active configs:', error);
+  async simulateEndOfDay(userId: string): Promise<void> {
+    // Pass the running engines map from the engine manager to the EOD manager
+    const runningEngine = this.engineManager.getRunningEngine(userId);
+    const runningEngines = new Map();
+    if (runningEngine) {
+      runningEngines.set(userId, runningEngine);
     }
+    
+    return this.eodManager.simulateEndOfDay(userId, runningEngines);
   }
 }
 
-export const tradingManager = TradingManager.getInstance();
-
-// Auto-start trading for active users when the app loads
-if (typeof window !== 'undefined') {
-  setTimeout(() => {
-    tradingManager.checkAllActiveConfigs();
-  }, 5000); // Wait 5 seconds after app load
-}
+export const tradingManager = new TradingManager();

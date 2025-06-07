@@ -1,0 +1,56 @@
+
+export interface TradingConfigData {
+  max_active_pairs: number;
+  max_order_amount_usd: number;
+  max_portfolio_exposure_percent: number;
+  daily_reset_time: string;
+  chart_timeframe: string;
+  entry_offset_percent: number;
+  take_profit_percent: number;
+  support_candle_count: number;
+  max_positions_per_pair: number;
+  new_support_threshold_percent: number;
+  trading_pairs: string[];
+  is_active: boolean;
+  main_loop_interval_seconds: number;
+  auto_close_at_end_of_day: boolean;
+  eod_close_premium_percent: number;
+  manual_close_premium_percent: number;
+  support_lower_bound_percent: number;
+  support_upper_bound_percent: number;
+  minimum_notional_per_symbol: Record<string, number>;
+  quantity_increment_per_symbol: Record<string, number>;
+  price_decimals_per_symbol: Record<string, number>;
+  quantity_decimals_per_symbol: Record<string, number>;
+  max_concurrent_trades: number;
+  max_drawdown_percent: number;
+  notes: string;
+}
+
+export const getDefaultConfig = (): TradingConfigData => ({
+  max_active_pairs: 20,
+  max_order_amount_usd: 50.0,
+  max_portfolio_exposure_percent: 20.0,
+  daily_reset_time: '00:00:00',
+  chart_timeframe: '1m',
+  entry_offset_percent: 0.5,
+  take_profit_percent: 1.0,
+  support_candle_count: 128,
+  max_positions_per_pair: 2,
+  new_support_threshold_percent: 1.0,
+  trading_pairs: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LTCUSDT', 'POLUSDT', 'FETUSDT', 'XRPUSDT', 'XLMUSDT'],
+  is_active: false,
+  main_loop_interval_seconds: 30,
+  auto_close_at_end_of_day: false,
+  eod_close_premium_percent: 0.1,
+  manual_close_premium_percent: 0.1,
+  support_lower_bound_percent: 5.0,
+  support_upper_bound_percent: 2.0,
+  minimum_notional_per_symbol: { 'BTCUSDT': 10, 'ETHUSDT': 10 },
+  quantity_increment_per_symbol: { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 },
+  price_decimals_per_symbol: {},
+  quantity_decimals_per_symbol: {},
+  max_concurrent_trades: 20,
+  max_drawdown_percent: 10.0,
+  notes: ''
+});

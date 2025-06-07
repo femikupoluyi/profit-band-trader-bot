@@ -5,6 +5,7 @@ import { TradeExecutor } from './tradeExecutor';
 import { MarketScanner } from './marketScanner';
 import { SignalGenerator } from './signalGenerator';
 import { SignalAnalyzer } from './signalAnalyzer';
+import { TradeSyncService } from './tradeSyncService';
 import { BybitService } from '../bybitService';
 
 interface TradingServices {
@@ -14,6 +15,7 @@ interface TradingServices {
   marketScanner: MarketScanner;
   signalGenerator: SignalGenerator;
   signalAnalyzer: SignalAnalyzer;
+  tradeSyncService: TradeSyncService;
 }
 
 export class LoopManager {
@@ -74,6 +76,11 @@ export class LoopManager {
       console.log('🔄 STARTING TRADING CYCLE at', new Date().toISOString());
       console.log('='.repeat(80));
 
+      // 0. ENHANCED SYNC: Ensure all trades are synced with Bybit and detect closed positions
+      console.log('\n🔄 STEP 0: COMPREHENSIVE TRADE SYNCHRONIZATION...');
+      await this.services.tradeSyncService.syncAllActiveTrades();
+      await this.services.tradeSyncService.detectAndRecordClosedPositions();
+
       // 1. FIRST PRIORITY: Monitor positions and fill pending orders
       console.log('\n📊 STEP 1: MONITORING POSITIONS...');
       await this.services.positionMonitor.monitorPositions();
@@ -82,9 +89,9 @@ export class LoopManager {
       console.log('\n🔍 STEP 2: SCANNING MARKETS...');
       await this.services.marketScanner.scanMarkets();
 
-      // 3. Analyze markets and generate signals
+      // 3. Analyze markets and generate signals - fix method name
       console.log('\n📈 STEP 3: ANALYZING SIGNALS...');
-      await this.services.signalAnalyzer.analyzeAndCreateSignals();
+      await this.services.signalAnalyzer.analyzeAndCreateSignals(this.config);
 
       // 4. Execute trades based on signals
       console.log('\n⚡ STEP 4: PROCESSING SIGNALS...');

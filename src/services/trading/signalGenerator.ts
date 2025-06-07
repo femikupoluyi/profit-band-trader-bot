@@ -1,7 +1,15 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { TradingSignal, SupportLevel } from './types';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { SupportLevel } from './core/TypeDefinitions';
+
+export interface GeneratedSignal {
+  symbol: string;
+  action: 'buy' | 'sell';
+  price: number;
+  confidence: number;
+  reasoning: string;
+}
 
 export class SignalGenerator {
   private userId: string;
@@ -12,68 +20,52 @@ export class SignalGenerator {
     this.config = config;
   }
 
-  async generateSignal(
-    symbol: string, 
-    currentPrice: number, 
-    supportLevel: SupportLevel
-  ): Promise<TradingSignal | null> {
+  async generateSignal(symbol: string, currentPrice: number, supportLevel: SupportLevel): Promise<GeneratedSignal | null> {
     try {
-      // Use config values for calculations
-      const entryOffsetPercent = this.config.entry_offset_percent || 0.5;
-      const takeProfitPercent = this.config.take_profit_percent || 1.0;
+      // Check if price is near support level with entry offset
+      const entryOffset = this.config.entry_offset_percent || 0.5;
+      const targetEntryPrice = supportLevel.price * (1 + entryOffset / 100);
       
-      const entryPrice = supportLevel.price * (1 + entryOffsetPercent / 100);
-      const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
-
-      // RELAXED entry conditions for better signal generation
-      // Allow signals when price is within 5% range around support level
-      const supportLowerBound = supportLevel.price * 0.95;  // 5% below support
-      const supportUpperBound = entryPrice * 1.02;          // 2% above entry price
-      const priceWithinRange = currentPrice >= supportLowerBound && currentPrice <= supportUpperBound;
+      // Only generate buy signal if current price is close to our target entry
+      const priceDistance = Math.abs(currentPrice - targetEntryPrice) / targetEntryPrice;
       
-      console.log(`\n🎯 DETAILED SIGNAL CHECK for ${symbol}:`);
-      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
-      console.log(`  Support Level: $${supportLevel.price.toFixed(4)}`);
-      console.log(`  Entry Price: $${entryPrice.toFixed(4)} (${entryOffsetPercent}% above support)`);
-      console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)} (${takeProfitPercent}% above entry)`);
-      console.log(`  Signal Range: $${supportLowerBound.toFixed(4)} - $${supportUpperBound.toFixed(4)}`);
-      console.log(`  Range Check: ${priceWithinRange ? '✅ IN RANGE' : '❌ OUT OF RANGE'}`);
-      console.log(`  Support Strength: ${supportLevel.strength}`);
-
-      if (priceWithinRange) {
-        const signal: TradingSignal = {
-          symbol,
-          action: 'buy',
-          price: currentPrice,
-          confidence: Math.max(supportLevel.strength, 0.7),
-          reasoning: `BUY SIGNAL: Price ${currentPrice.toFixed(4)} within range ${supportLowerBound.toFixed(4)}-${supportUpperBound.toFixed(4)}. Support at ${supportLevel.price.toFixed(4)}, Entry at ${entryPrice.toFixed(4)}, TP at ${takeProfitPrice.toFixed(4)}`,
-          supportLevel: supportLevel.price,
-          takeProfitPrice: takeProfitPrice,
-        };
-
-        console.log(`🚀 GENERATING BUY SIGNAL for ${symbol}:`);
-        console.log(`  Signal: ${JSON.stringify(signal, null, 2)}`);
-        
-        await this.createSignal(signal);
-        return signal;
-      } else {
-        const belowRange = currentPrice < supportLowerBound;
-        const aboveRange = currentPrice > supportUpperBound;
-        console.log(`❌ NO SIGNAL for ${symbol}: Price ${currentPrice.toFixed(4)} is ${belowRange ? 'BELOW' : 'ABOVE'} signal range`);
-        console.log(`  ${belowRange ? 'Too low' : 'Too high'} - need price between ${supportLowerBound.toFixed(4)} and ${supportUpperBound.toFixed(4)}`);
+      if (priceDistance > 0.02) { // More than 2% away
         return null;
       }
+
+      // Calculate confidence based on support strength and price proximity
+      let confidence = supportLevel.strength * 0.6; // Base confidence from support
+      
+      // Add proximity factor
+      const proximityFactor = Math.max(0, 1 - (priceDistance * 50)); // Closer = higher confidence
+      confidence += proximityFactor * 0.4;
+
+      // Minimum confidence threshold
+      if (confidence < 0.3) {
+        return null;
+      }
+
+      const signal: GeneratedSignal = {
+        symbol,
+        action: 'buy',
+        price: targetEntryPrice,
+        confidence: Math.min(1, confidence),
+        reasoning: `Price near support level at $${supportLevel.price.toFixed(4)} with ${supportLevel.touches} touches. Entry at $${targetEntryPrice.toFixed(4)} (+${entryOffset}% above support)`
+      };
+
+      // Store signal in database
+      await this.storeSignal(signal);
+
+      return signal;
     } catch (error) {
-      console.error(`Error generating signal for ${symbol}:`, error);
+      console.error('Error generating signal:', error);
       return null;
     }
   }
 
-  private async createSignal(signal: TradingSignal): Promise<void> {
+  private async storeSignal(signal: GeneratedSignal): Promise<void> {
     try {
-      console.log(`📝 CREATING SIGNAL IN DATABASE for ${signal.symbol}:`);
-      
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('trading_signals')
         .insert({
           user_id: this.userId,
@@ -82,40 +74,57 @@ export class SignalGenerator {
           price: signal.price,
           confidence: signal.confidence,
           reasoning: signal.reasoning,
-          processed: false,
-        })
-        .select()
-        .single();
+          processed: false
+        });
 
       if (error) {
-        console.error('❌ DATABASE ERROR creating signal:', error);
+        console.error('Error storing signal:', error);
         throw error;
       }
 
-      console.log(`✅ SIGNAL CREATED SUCCESSFULLY:`, data);
-
-      await this.logActivity('signal_generated', `BUY signal created for ${signal.symbol} at $${signal.price.toFixed(4)}`, {
-        signal,
-        signalId: data.id,
-        createdAt: data.created_at
-      });
+      console.log(`✅ Signal stored for ${signal.symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
     } catch (error) {
-      console.error('❌ Error creating signal:', error);
+      console.error('Error storing signal in database:', error);
+      throw error;
     }
   }
 
-  private async logActivity(type: string, message: string, data?: any): Promise<void> {
-    try {
-      await supabase
-        .from('trading_logs')
-        .insert({
-          user_id: this.userId,
-          log_type: type,
-          message,
-          data: data || null,
-        });
-    } catch (error) {
-      console.error('Error logging activity:', error);
+  /**
+   * Check if we should generate a signal based on current market conditions
+   */
+  shouldGenerateSignal(symbol: string, currentPrice: number, supportLevel: SupportLevel): boolean {
+    // Check support bounds
+    const lowerBound = this.config.support_lower_bound_percent || 5.0;
+    const upperBound = this.config.support_upper_bound_percent || 2.0;
+    
+    const distanceFromSupport = ((currentPrice - supportLevel.price) / supportLevel.price) * 100;
+    
+    // Price should be within bounds
+    if (distanceFromSupport < -lowerBound || distanceFromSupport > upperBound) {
+      return false;
     }
+
+    // Support should be strong enough
+    if (supportLevel.strength < 0.3) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Calculate optimal entry price based on support and configuration
+   */
+  calculateEntryPrice(supportLevel: SupportLevel): number {
+    const entryOffset = this.config.entry_offset_percent || 0.5;
+    return supportLevel.price * (1 + entryOffset / 100);
+  }
+
+  /**
+   * Calculate take profit price based on entry and configuration
+   */
+  calculateTakeProfitPrice(entryPrice: number): number {
+    const takeProfitPercent = this.config.take_profit_percent || 1.0;
+    return entryPrice * (1 + takeProfitPercent / 100);
   }
 }

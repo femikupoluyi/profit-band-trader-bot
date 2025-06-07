@@ -6,6 +6,7 @@ import { SignalAnalyzer } from './signalAnalyzer';
 import { SignalGenerator } from './signalGenerator';
 import { TradeExecutor } from './tradeExecutor';
 import { PositionMonitor } from './positionMonitor';
+import { TradeSyncService } from './tradeSyncService';
 
 export interface TradingServices {
   bybitService: BybitService;
@@ -14,6 +15,7 @@ export interface TradingServices {
   signalGenerator: SignalGenerator;
   tradeExecutor: TradeExecutor;
   positionMonitor: PositionMonitor;
+  tradeSyncService: TradeSyncService;
 }
 
 export class ServiceInitializer {
@@ -35,7 +37,9 @@ export class ServiceInitializer {
       max_positions_per_pair: this.config.max_positions_per_pair || 2,
       new_support_threshold_percent: this.config.new_support_threshold_percent || 2.0,
       max_active_pairs: this.config.max_active_pairs || 5,
-      support_candle_count: this.config.support_candle_count || 20
+      support_candle_count: this.config.support_candle_count || 20,
+      minimum_notional_per_symbol: this.config.minimum_notional_per_symbol || { 'BTCUSDT': 10, 'ETHUSDT': 10 },
+      quantity_increment_per_symbol: this.config.quantity_increment_per_symbol || { 'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001 }
     };
     
     console.log('Initializing trading services with validated config:', {
@@ -48,10 +52,11 @@ export class ServiceInitializer {
     });
     
     const marketScanner = new MarketScanner(this.userId, bybitService, validatedConfig);
-    const signalAnalyzer = new SignalAnalyzer(this.userId, validatedConfig);
+    const signalAnalyzer = new SignalAnalyzer(this.userId, bybitService);
     const signalGenerator = new SignalGenerator(this.userId, validatedConfig);
     const tradeExecutor = new TradeExecutor(this.userId, validatedConfig, bybitService);
     const positionMonitor = new PositionMonitor(this.userId, bybitService, validatedConfig);
+    const tradeSyncService = new TradeSyncService(this.userId, bybitService);
 
     return {
       bybitService,
@@ -59,7 +64,8 @@ export class ServiceInitializer {
       signalAnalyzer,
       signalGenerator,
       tradeExecutor,
-      positionMonitor
+      positionMonitor,
+      tradeSyncService
     };
   }
 }

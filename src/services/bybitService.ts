@@ -1,185 +1,243 @@
-
-interface BybitCredentials {
-  apiKey: string;
-  apiSecret: string;
-  testnet: boolean;
-}
-
-interface OrderRequest {
-  category: string;
-  symbol: string;
-  side: 'Buy' | 'Sell';
-  orderType: 'Market' | 'Limit';
-  qty: string;
-  price?: string;
-  timeInForce?: string;
-}
-
-interface MarketPrice {
-  symbol: string;
-  price: number;
-  timestamp: number;
-}
+import { supabase } from '@/integrations/supabase/client';
+import { TradingLogger } from './trading/core/TradingLogger';
 
 export class BybitService {
-  private credentials: BybitCredentials;
+  private apiKey: string;
+  private apiSecret: string;
   private baseUrl: string;
-  private isBrowserEnvironment: boolean;
+  private logger: TradingLogger | null = null;
   private isDemoTrading: boolean;
 
-  constructor(credentials: BybitCredentials) {
-    this.credentials = credentials;
-    this.isDemoTrading = true; // Force demo trading mode
-    // Use demo URL for demo trading as per Bybit documentation
-    this.baseUrl = this.isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
-    this.isBrowserEnvironment = typeof window !== 'undefined';
+  constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true) {
+    this.apiKey = apiKey;
+    this.apiSecret = apiSecret;
+    this.isDemoTrading = isDemoTrading;
+    this.baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
     
-    console.log('BybitService initialized:', {
-      demoTrading: this.isDemoTrading,
-      apiKey: credentials.apiKey ? `${credentials.apiKey.substring(0, 8)}...` : 'Missing',
-      isBrowser: this.isBrowserEnvironment,
-      baseUrl: this.baseUrl
-    });
+    console.log(`🔧 BybitService initialized with ${isDemoTrading ? 'DEMO' : 'MAINNET'} trading URL: ${this.baseUrl}`);
+    console.log(`🔑 API Key: ${apiKey ? apiKey.substring(0, 8) + '...' : 'NOT SET'}`);
+    console.log(`🔐 API Secret: ${apiSecret ? 'SET (' + apiSecret.length + ' chars)' : 'NOT SET'}`);
   }
 
-  private async callBybitAPI(endpoint: string, method: string = 'GET', params: Record<string, any> = {}): Promise<any> {
-    try {
-      const { supabase } = await import('@/integrations/supabase/client');
-      
-      console.log(`🚀 Making FRESH API call to Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange: ${method} ${endpoint}`, params);
-      
-      // Add timestamp and random value to prevent any caching
-      const timestamp = Date.now();
-      const randomValue = Math.random().toString(36).substring(7);
-      const requestParams = {
-        ...params,
-        _t: timestamp,
-        _cache_bust: randomValue // Additional anti-cache parameter
-      };
-      
-      const { data, error } = await supabase.functions.invoke('bybit-api', {
-        body: {
-          endpoint,
-          method,
-          params: requestParams,
-          isDemoTrading: this.isDemoTrading,
-          timestamp,
-          cacheBust: randomValue
-        }
-      });
-
-      if (error) {
-        console.error('❌ Edge function error:', error);
-        throw new Error(`Bybit API call failed: ${error.message}`);
-      }
-
-      console.log(`✅ Fresh API response received from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, data);
-      return data;
-    } catch (error) {
-      console.error('❌ Bybit API call error:', error);
-      throw error;
-    }
+  setLogger(logger: TradingLogger): void {
+    this.logger = logger;
   }
 
   async getAccountBalance(): Promise<any> {
     try {
-      console.log(`Fetching account balance from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange...`);
-      return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
-        accountType: 'UNIFIED'
+      console.log('💰 [BYBIT] Getting account balance...');
+      await this.logger?.logSuccess('[BYBIT] Getting account balance');
+      
+      const result = await this.callBybitEdgeFunction({
+        endpoint: '/v5/account/wallet-balance',
+        method: 'GET',
+        params: {
+          accountType: 'SPOT'
+        }
       });
+
+      console.log('✅ [BYBIT] Account balance retrieved successfully');
+      await this.logger?.logSuccess('[BYBIT] Account balance retrieved successfully');
+      return result;
     } catch (error) {
-      console.error(`Error fetching balance from ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      console.error('❌ [BYBIT] Error getting account balance:', error);
+      await this.logger?.logError('[BYBIT] Error getting account balance', error);
       throw error;
     }
   }
 
-  async getMarketPrice(symbol: string): Promise<MarketPrice> {
+  async getMarketPrice(symbol: string): Promise<any> {
     try {
-      console.log(`🔄 Fetching REAL-TIME price for ${symbol} from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange (NO CACHE)...`);
+      console.log(`📊 [BYBIT] Getting market price for ${symbol}...`);
+      await this.logger?.logSuccess(`[BYBIT] Getting market price for ${symbol}`);
       
-      // Force fresh API call with multiple anti-cache parameters
-      const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
-        category: 'spot',
-        symbol,
-        _nocache: Date.now(),
-        _fresh: Math.random(),
-        _live: true
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/market/tickers',
+        method: 'GET',
+        params: {
+          category: 'spot',
+          symbol: symbol
+        }
       });
-
-      if (response.retCode === 0 && response.result?.list?.[0]) {
+      
+      console.log(`📈 [BYBIT] Raw API response for ${symbol}:`, response);
+      
+      if (response.retCode === 0 && response.result?.list && response.result.list.length > 0) {
         const ticker = response.result.list[0];
         const price = parseFloat(ticker.lastPrice);
         
-        console.log(`✅ FRESH market price for ${symbol}: $${price.toFixed(6)} (from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange)`);
+        console.log(`✅ [BYBIT] Market price for ${symbol}: $${price}`);
+        await this.logger?.logSuccess(`[BYBIT] Market price for ${symbol}: $${price}`, { symbol, price });
+        
+        if (isNaN(price) || price <= 0) {
+          const errorMsg = `Invalid price received for ${symbol}: ${ticker.lastPrice}`;
+          console.error(`❌ [BYBIT] ${errorMsg}`);
+          await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg));
+          throw new Error(errorMsg);
+        }
+        
         return {
-          symbol,
-          price,
-          timestamp: Date.now(),
+          symbol: ticker.symbol,
+          price: price
         };
+      } else {
+        const errorMsg = `Failed to get market price for ${symbol}: ${response.retMsg || 'Unknown error'}`;
+        console.error(`❌ [BYBIT] ${errorMsg}`, response);
+        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { response });
+        throw new Error(errorMsg);
       }
-
-      console.error(`❌ Invalid response from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange for ${symbol}:`, response);
-      throw new Error(`Invalid response from Bybit for ${symbol}: ${response.retMsg || 'Unknown error'}`);
     } catch (error) {
-      console.error(`❌ Error fetching real-time price for ${symbol} from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, error);
-      throw new Error(`Failed to fetch real-time price for ${symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`❌ [BYBIT] Error getting market price for ${symbol}:`, error);
+      await this.logger?.logError(`[BYBIT] Error getting market price for ${symbol}`, error);
+      throw error;
     }
   }
 
-  async placeOrder(order: OrderRequest): Promise<any> {
+  async placeOrder(params: any): Promise<any> {
     try {
-      console.log(`Placing order on Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, order);
+      console.log(`📝 [BYBIT] Placing order for ${params.symbol}...`);
+      console.log(`🔧 [BYBIT] Using ${this.baseUrl.includes('demo') ? 'DEMO' : 'MAINNET'} Trading URL: ${this.baseUrl}`);
+      console.log(`📋 [BYBIT] Order params:`, params);
       
-      if (!order.symbol || !order.side || !order.orderType || !order.qty) {
-        throw new Error('Missing required order parameters');
-      }
-
-      if (order.orderType === 'Limit' && !order.price) {
-        throw new Error('Price is required for limit orders');
-      }
-
-      // Clean parameters - remove undefined values
-      const orderParams: Record<string, any> = {
-        category: order.category,
-        symbol: order.symbol,
-        side: order.side,
-        orderType: order.orderType,
-        qty: order.qty,
-      };
-
-      // Only add optional parameters if they exist
-      if (order.orderType === 'Limit' && order.price) {
-        orderParams.price = order.price;
-      }
+      await this.logger?.logTradeAction('Placing order', params.symbol, { 
+        orderParams: params,
+        tradingMode: this.baseUrl.includes('demo') ? 'DEMO' : 'MAINNET'
+      });
       
-      if (order.timeInForce) {
-        orderParams.timeInForce = order.timeInForce;
+      const result = await this.callBybitEdgeFunction({
+        endpoint: '/v5/order/create',
+        method: 'POST',
+        params: params
+      });
+      
+      if (result.retCode === 0) {
+        console.log(`✅ [BYBIT] Order placed successfully for ${params.symbol}:`, result);
+        await this.logger?.log('order_placed', `[BYBIT] Order placed successfully for ${params.symbol}`, { 
+          result,
+          orderId: result.result?.orderId 
+        });
       } else {
-        orderParams.timeInForce = order.orderType === 'Market' ? 'IOC' : 'GTC';
+        console.error(`❌ [BYBIT] Order failed for ${params.symbol}:`, result);
+        await this.logger?.log('order_failed', `[BYBIT] Order failed for ${params.symbol}`, { result });
       }
-
-      console.log(`Final order parameters for ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, orderParams);
-
-      const response = await this.callBybitAPI('/v5/order/create', 'POST', orderParams);
       
-      console.log(`Order response from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, response);
-      return response;
+      return result;
     } catch (error) {
-      console.error(`Error placing order on ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      console.error(`❌ [BYBIT] Error placing order for ${params.symbol}:`, error);
+      await this.logger?.logError(`[BYBIT] Error placing order for ${params.symbol}`, error);
       throw error;
     }
   }
 
   async getOrderStatus(orderId: string): Promise<any> {
     try {
-      console.log(`Fetching order status from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, orderId);
+      console.log(`🔍 [BYBIT] Getting order status for ${orderId}...`);
       
-      return await this.callBybitAPI('/v5/order/realtime', 'GET', {
-        category: 'spot',
-        orderId
+      const result = await this.callBybitEdgeFunction({
+        endpoint: '/v5/order/history',
+        method: 'GET',
+        params: {
+          category: 'spot',
+          orderId: orderId
+        }
       });
+
+      console.log(`✅ [BYBIT] Order status retrieved for ${orderId}:`, result);
+      return result;
     } catch (error) {
-      console.error(`Error fetching order status from ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      console.error(`❌ [BYBIT] Error getting order status for ${orderId}:`, error);
+      throw error;
+    }
+  }
+
+  async getOrderHistory(limit: number = 50): Promise<any> {
+    try {
+      console.log(`📊 [BYBIT] Getting order history (limit: ${limit})...`);
+      
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/order/history',
+        method: 'GET',
+        params: {
+          category: 'spot',
+          limit: limit.toString(),
+          orderStatus: 'Filled'
+        }
+      });
+      
+      if (response.retCode === 0) {
+        console.log(`✅ [BYBIT] Retrieved ${response.result?.list?.length || 0} order history records`);
+      } else {
+        console.error('❌ [BYBIT] Failed to get order history:', response);
+      }
+
+      return response;
+    } catch (error) {
+      console.error('❌ [BYBIT] Error getting order history:', error);
+      throw error;
+    }
+  }
+
+  async getExecutionHistory(params: {
+    category?: string;
+    symbol?: string;
+    startTime?: string;
+    endTime?: string;
+    limit?: number;
+  } = {}): Promise<any> {
+    try {
+      console.log(`📊 [BYBIT] Getting execution history...`);
+      
+      const queryParams = {
+        category: params.category || 'spot',
+        limit: (params.limit || 50).toString(),
+        ...params
+      };
+
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/execution/list',
+        method: 'GET',
+        params: queryParams
+      });
+      
+      if (response.retCode === 0) {
+        console.log(`✅ [BYBIT] Retrieved ${response.result?.list?.length || 0} execution records`);
+      } else {
+        console.error('❌ [BYBIT] Failed to get execution history:', response);
+      }
+
+      return response;
+    } catch (error) {
+      console.error('❌ [BYBIT] Error getting execution history:', error);
+      throw error;
+    }
+  }
+
+  private async callBybitEdgeFunction(request: any): Promise<any> {
+    try {
+      console.log(`🌐 [BYBIT] Calling edge function for ${request.endpoint}...`);
+      console.log(`📡 [BYBIT] Method: ${request.method}, Params:`, request.params);
+      
+      const { data: apiResponse, error: apiError } = await supabase.functions.invoke('bybit-api', {
+        body: {
+          endpoint: request.endpoint,
+          method: request.method,
+          params: request.params,
+          isDemoTrading: this.isDemoTrading
+        }
+      });
+      
+      if (apiError) {
+        console.error(`❌ [BYBIT] Edge function error:`, apiError);
+        await this.logger?.logError(`[BYBIT] Edge function error`, apiError);
+        throw new Error(`Bybit API Error: ${apiError.message}`);
+      }
+
+      console.log(`✅ [BYBIT] Edge function response:`, apiResponse);
+      return apiResponse;
+
+    } catch (error) {
+      console.error('❌ [BYBIT] Edge function call error:', error);
+      await this.logger?.logError('[BYBIT] Edge function call error', error);
       throw error;
     }
   }

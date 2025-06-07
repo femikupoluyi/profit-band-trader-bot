@@ -3,16 +3,19 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Play, Square, RotateCcw, Sunset, X, TestTube } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { tradingManager } from '@/services/tradingManager';
-import { Play, Square, RotateCcw, Activity } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const TradingStatus = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isRunning, setIsRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSimulatingEOD, setIsSimulatingEOD] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -22,7 +25,8 @@ const TradingStatus = () => {
 
   const checkTradingStatus = () => {
     if (user) {
-      setIsRunning(tradingManager.isRunningForUser(user.id));
+      const running = tradingManager.isRunningForUser(user.id);
+      setIsRunning(running);
     }
   };
 
@@ -38,9 +42,10 @@ const TradingStatus = () => {
         description: "Your trading bot is now active and monitoring markets.",
       });
     } catch (error) {
+      console.error('Failed to start trading:', error);
       toast({
-        title: "Error",
-        description: "Failed to start trading bot.",
+        title: "Failed to Start Trading",
+        description: error instanceof Error ? error.message : "Please check your configuration and try again.",
         variant: "destructive",
       });
     } finally {
@@ -60,9 +65,10 @@ const TradingStatus = () => {
         description: "Your trading bot has been stopped.",
       });
     } catch (error) {
+      console.error('Failed to stop trading:', error);
       toast({
-        title: "Error",
-        description: "Failed to stop trading bot.",
+        title: "Failed to Stop Trading",
+        description: "There was an error stopping the trading bot.",
         variant: "destructive",
       });
     } finally {
@@ -79,12 +85,13 @@ const TradingStatus = () => {
       setIsRunning(true);
       toast({
         title: "Trading Restarted",
-        description: "Your trading bot has been restarted with updated configuration.",
+        description: "Your trading bot has been restarted with the latest configuration.",
       });
     } catch (error) {
+      console.error('Failed to restart trading:', error);
       toast({
-        title: "Error",
-        description: "Failed to restart trading bot.",
+        title: "Failed to Restart Trading",
+        description: error instanceof Error ? error.message : "Please check your configuration and try again.",
         variant: "destructive",
       });
     } finally {
@@ -92,44 +99,119 @@ const TradingStatus = () => {
     }
   };
 
+  const handleSimulateEOD = async () => {
+    if (!user) return;
+    
+    setIsSimulatingEOD(true);
+    try {
+      console.log('🌅 Starting manual EOD simulation...');
+      await tradingManager.simulateEndOfDay(user.id);
+      
+      toast({
+        title: "End-of-Day Simulation Complete",
+        description: "Check the system logs for detailed results of the EOD simulation.",
+      });
+    } catch (error) {
+      console.error('Failed to simulate EOD:', error);
+      toast({
+        title: "EOD Simulation Failed",
+        description: error instanceof Error ? error.message : "Please check the system logs for details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSimulatingEOD(false);
+    }
+  };
+
+  const handleTestConnections = async () => {
+    if (!user) return;
+    
+    setIsTesting(true);
+    try {
+      console.log('🧪 Testing trading system connections...');
+      
+      // Test API credentials
+      const { data: credentials, error: credError } = await supabase
+        .from('api_credentials')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (credError || !credentials) {
+        throw new Error('API credentials not found');
+      }
+
+      // Test trading config
+      const { data: config, error: configError } = await supabase
+        .from('trading_configs')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (configError || !config) {
+        throw new Error('Trading configuration not found');
+      }
+
+      // Test database connection by fetching some trades
+      const { data: trades, error: tradesError } = await supabase
+        .from('trades')
+        .select('count')
+        .eq('user_id', user.id);
+
+      if (tradesError) {
+        throw new Error(`Database connection test failed: ${tradesError.message}`);
+      }
+
+      toast({
+        title: "System Test Complete",
+        description: "All connections and configurations are working properly.",
+      });
+
+    } catch (error) {
+      console.error('System test failed:', error);
+      toast({
+        title: "System Test Failed",
+        description: error instanceof Error ? error.message : "One or more system components failed testing.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Activity className="h-5 w-5" />
-          Trading Engine Status
+        <CardTitle className="flex items-center justify-between">
+          Trading Bot Status
+          <Badge variant={isRunning ? "default" : "secondary"}>
+            {isRunning ? "ACTIVE" : "STOPPED"}
+          </Badge>
         </CardTitle>
         <CardDescription>
-          Monitor and control your automated trading bot
+          Control your automated trading bot and monitor its status.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Engine Status:</span>
-          <Badge variant={isRunning ? "default" : "secondary"}>
-            {isRunning ? "Running" : "Stopped"}
-          </Badge>
-        </div>
-
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {!isRunning ? (
             <Button 
               onClick={handleStart} 
               disabled={isLoading}
-              className="flex-1"
+              className="flex items-center gap-2"
             >
-              <Play className="mr-2 h-4 w-4" />
-              Start Trading
+              <Play className="h-4 w-4" />
+              {isLoading ? "Starting..." : "Start Trading"}
             </Button>
           ) : (
             <Button 
               onClick={handleStop} 
               disabled={isLoading}
               variant="destructive"
-              className="flex-1"
+              className="flex items-center gap-2"
             >
-              <Square className="mr-2 h-4 w-4" />
-              Stop Trading
+              <Square className="h-4 w-4" />
+              {isLoading ? "Stopping..." : "Stop Trading"}
             </Button>
           )}
           
@@ -137,17 +219,38 @@ const TradingStatus = () => {
             onClick={handleRestart} 
             disabled={isLoading}
             variant="outline"
+            className="flex items-center gap-2"
           >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Restart
+            <RotateCcw className="h-4 w-4" />
+            {isLoading ? "Restarting..." : "Restart"}
+          </Button>
+
+          <Button 
+            onClick={handleSimulateEOD} 
+            disabled={isSimulatingEOD}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <Sunset className="h-4 w-4" />
+            {isSimulatingEOD ? "Simulating..." : "Simulate EOD"}
+          </Button>
+
+          <Button 
+            onClick={handleTestConnections} 
+            disabled={isTesting}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <TestTube className="h-4 w-4" />
+            {isTesting ? "Testing..." : "Test System"}
           </Button>
         </div>
 
-        {isRunning && (
-          <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-            ✅ Trading bot is actively monitoring markets and executing trades based on your configuration.
-          </div>
-        )}
+        <div className="text-sm text-gray-600">
+          <p><strong>Status:</strong> {isRunning ? "Bot is actively monitoring markets and executing trades" : "Bot is stopped - no trading activity"}</p>
+          <p><strong>EOD Simulation:</strong> Forces end-of-day logic to run and close profitable positions</p>
+          <p><strong>System Test:</strong> Verifies API credentials, database connection, and configuration</p>
+        </div>
       </CardContent>
     </Card>
   );

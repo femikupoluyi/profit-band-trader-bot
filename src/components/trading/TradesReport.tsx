@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, calculateSideAwarePL } from '@/utils/formatters';
 
 interface Trade {
   id: string;
@@ -73,7 +73,7 @@ const TradesReport = () => {
         return 0;
       }
 
-      // For active trades, calculate real-time P&L using current market price
+      // For active trades, calculate real-time P&L using current market price with side-aware calculation
       const { data: marketData } = await supabase
         .from('market_data')
         .select('price')
@@ -85,11 +85,8 @@ const TradesReport = () => {
       if (marketData) {
         const currentPrice = parseFloat(marketData.price.toString());
         
-        if (trade.side === 'buy') {
-          return (currentPrice - entryPrice) * quantity;
-        } else {
-          return (entryPrice - currentPrice) * quantity;
-        }
+        // Use side-aware P&L calculation
+        return calculateSideAwarePL(trade.side, entryPrice, currentPrice, quantity);
       }
 
       return 0;
@@ -160,7 +157,7 @@ const TradesReport = () => {
           
           const actualPL = await calculateActualPL(trade);
           
-          console.log(`Processing trade ${trade.symbol}: Price=$${price}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+          console.log(`Processing trade ${trade.symbol}: Side=${trade.side}, Price=$${price}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
           
           return {
             ...trade,
@@ -261,11 +258,17 @@ const TradesReport = () => {
   }, 0);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
   const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
+  
+  // Calculate closed positions profit
+  const closedPositionsProfit = trades
+    .filter(t => ['closed', 'cancelled'].includes(t.status))
+    .reduce((sum, trade) => sum + (trade.actualPL || 0), 0);
 
   console.log('Summary calculations with actual P&L:', {
     totalTrades,
     totalVolume: totalVolume.toFixed(2),
     totalPL: totalPL.toFixed(2),
+    closedPositionsProfit: closedPositionsProfit.toFixed(2),
     activeTrades,
     closedTrades
   });
@@ -382,7 +385,7 @@ const TradesReport = () => {
         </div>
 
         {/* Summary Statistics */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <div className="bg-muted/50 p-3 rounded-lg">
             <div className="text-sm text-muted-foreground">Total Trades</div>
             <div className="text-2xl font-bold">{totalTrades}</div>
@@ -400,9 +403,15 @@ const TradesReport = () => {
             <div className="text-2xl font-bold">{formatCurrency(totalVolume)}</div>
           </div>
           <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Actual P&L</div>
+            <div className="text-sm text-muted-foreground">Total P&L</div>
             <div className={`text-2xl font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(totalPL)}
+            </div>
+          </div>
+          <div className="bg-muted/50 p-3 rounded-lg">
+            <div className="text-sm text-muted-foreground">Closed P&L</div>
+            <div className={`text-2xl font-bold ${closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(closedPositionsProfit)}
             </div>
           </div>
         </div>
