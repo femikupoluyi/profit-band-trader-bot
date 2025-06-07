@@ -2,7 +2,7 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../bybitService';
 import { SignalProcessorService } from './signalProcessorService';
-import { SignalExecutionService } from './core/SignalExecutionService';
+import { SignalExecutionService } from './signalExecutionService';
 import { EndOfDayService } from './endOfDayService';
 
 export class TradeExecutor {
@@ -15,8 +15,8 @@ export class TradeExecutor {
     this.userId = userId;
     this.config = config;
     
-    const signalExecutionService = new SignalExecutionService(userId, bybitService);
-    this.signalProcessorService = new SignalProcessorService(userId, signalExecutionService, config);
+    const signalExecutionService = new SignalExecutionService(userId, config, bybitService);
+    this.signalProcessorService = new SignalProcessorService(userId, signalExecutionService);
     this.endOfDayService = new EndOfDayService(userId, config, bybitService);
   }
 

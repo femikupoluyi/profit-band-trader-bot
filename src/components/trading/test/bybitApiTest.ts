@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { TestResult } from './types';
-import { TEST_NAMES, TEST_SYMBOLS, TEST_CONFIG, TEST_MESSAGES } from './testConstants';
+import { TEST_NAMES, TEST_SYMBOLS } from './testConstants';
 
 export const runBybitApiTest = async (): Promise<TestResult> => {
   try {
@@ -13,7 +13,7 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
           category: 'spot',
           symbol: TEST_SYMBOLS.SOL
         },
-        isDemoTrading: TEST_CONFIG.ENVIRONMENT.isDemoTrading
+        isDemoTrading: true
       }
     });
     
@@ -21,27 +21,27 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
       return { 
         test: TEST_NAMES.BYBIT_API, 
         status: 'error', 
-        message: `${TEST_MESSAGES.ERROR.API_FAILED}: ${apiError.message}` 
+        message: `❌ API Error: ${apiError.message}` 
       };
     } else if (apiResponse?.retCode === 0) {
       const price = apiResponse.result?.list?.[0]?.lastPrice;
       return { 
         test: TEST_NAMES.BYBIT_API, 
         status: 'success', 
-        message: `${TEST_MESSAGES.SUCCESS.API_CONNECTION} SOL: $${price}` 
+        message: `✅ Bybit DEMO account API working! SOL: $${price}` 
       };
     } else {
       return { 
         test: TEST_NAMES.BYBIT_API, 
         status: 'error', 
-        message: `${TEST_MESSAGES.ERROR.API_FAILED}: ${apiResponse?.retMsg}` 
+        message: `❌ API returned error: ${apiResponse?.retMsg}` 
       };
     }
   } catch (error) {
     return { 
       test: TEST_NAMES.BYBIT_API, 
       status: 'error', 
-      message: `${TEST_MESSAGES.ERROR.API_FAILED}: ${error}` 
+      message: `❌ Connection failed: ${error}` 
     };
   }
 };

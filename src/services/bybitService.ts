@@ -1,298 +1,186 @@
-import crypto from 'crypto';
+
+interface BybitCredentials {
+  apiKey: string;
+  apiSecret: string;
+  testnet: boolean;
+}
+
+interface OrderRequest {
+  category: string;
+  symbol: string;
+  side: 'Buy' | 'Sell';
+  orderType: 'Market' | 'Limit';
+  qty: string;
+  price?: string;
+  timeInForce?: string;
+}
+
+interface MarketPrice {
+  symbol: string;
+  price: number;
+  timestamp: number;
+}
 
 export class BybitService {
-  private apiKey: string;
-  private apiSecret: string;
+  private credentials: BybitCredentials;
   private baseUrl: string;
-  private recvWindow: number;
-  private logger?: any;
+  private isBrowserEnvironment: boolean;
+  private isDemoTrading: boolean;
 
-  constructor(apiKey?: string, apiSecret?: string, useTestnet: boolean = false) {
-    // Set default empty credentials if not provided - they're not needed for public endpoints
-    this.apiKey = apiKey || '';
-    this.apiSecret = apiSecret || '';
-    // Use DEMO trading URL for live demo trading (not testnet)
-    this.baseUrl = useTestnet ? 'https://api-testnet.bybit.com' : 'https://api-demo.bybit.com';
-    this.recvWindow = 5000;
+  constructor(credentials: BybitCredentials) {
+    this.credentials = credentials;
+    this.isDemoTrading = true; // Force demo trading mode
+    // Use demo URL for demo trading as per Bybit documentation
+    this.baseUrl = this.isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
+    this.isBrowserEnvironment = typeof window !== 'undefined';
     
-    console.log(`🔧 BybitService initialized with ${useTestnet ? 'TESTNET' : 'DEMO TRADING'} URL: ${this.baseUrl}`);
+    console.log('BybitService initialized:', {
+      demoTrading: this.isDemoTrading,
+      apiKey: credentials.apiKey ? `${credentials.apiKey.substring(0, 8)}...` : 'Missing',
+      isBrowser: this.isBrowserEnvironment,
+      baseUrl: this.baseUrl
+    });
   }
 
-  // Add logger support for other services
-  setLogger(logger: any) {
-    this.logger = logger;
-  }
-
-  private async getHeaders(method: string, path: string, params: any = {}) {
-    // For public endpoints (like market data), we don't need authentication
-    if (!this.apiKey || !this.apiSecret) {
-      return {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
+  private async callBybitAPI(endpoint: string, method: string = 'GET', params: Record<string, any> = {}): Promise<any> {
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      
+      console.log(`🚀 Making FRESH API call to Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange: ${method} ${endpoint}`, params);
+      
+      // Add timestamp and random value to prevent any caching
+      const timestamp = Date.now();
+      const randomValue = Math.random().toString(36).substring(7);
+      const requestParams = {
+        ...params,
+        _t: timestamp,
+        _cache_bust: randomValue // Additional anti-cache parameter
       };
+      
+      const { data, error } = await supabase.functions.invoke('bybit-api', {
+        body: {
+          endpoint,
+          method,
+          params: requestParams,
+          isDemoTrading: this.isDemoTrading,
+          timestamp,
+          cacheBust: randomValue
+        }
+      });
+
+      if (error) {
+        console.error('❌ Edge function error:', error);
+        throw new Error(`Bybit API call failed: ${error.message}`);
+      }
+
+      console.log(`✅ Fresh API response received from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, data);
+      return data;
+    } catch (error) {
+      console.error('❌ Bybit API call error:', error);
+      throw error;
     }
-
-    const timestamp = Date.now().toString();
-    const queryString = Object.keys(params)
-      .sort()
-      .map(key => `${key}=${params[key]}`)
-      .join('&');
-
-    let sign = '';
-    if (method === 'GET') {
-      sign = crypto
-        .createHmac('sha256', this.apiSecret)
-        .update(timestamp + this.apiKey + this.recvWindow + queryString)
-        .digest('hex');
-    } else {
-      sign = crypto
-        .createHmac('sha256', this.apiSecret)
-        .update(timestamp + this.apiKey + this.recvWindow + JSON.stringify(params))
-        .digest('hex');
-    }
-
-    return {
-      'Content-Type': 'application/json',
-      'X-BAPI-API-KEY': this.apiKey,
-      'X-BAPI-TIMESTAMP': timestamp,
-      'X-BAPI-RECV-WINDOW': this.recvWindow.toString(),
-      'X-BAPI-SIGN': sign,
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache'
-    };
-  }
-
-  private createErrorResponse(message: string): any {
-    return { retCode: -1, retMsg: message, result: null };
   }
 
   async getAccountBalance(): Promise<any> {
     try {
-      if (!this.apiKey || !this.apiSecret) {
-        return this.createErrorResponse('API credentials required for account balance');
+      console.log(`Fetching account balance from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange...`);
+      return await this.callBybitAPI('/v5/account/wallet-balance', 'GET', {
+        accountType: 'UNIFIED'
+      });
+    } catch (error) {
+      console.error(`Error fetching balance from ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      throw error;
+    }
+  }
+
+  async getMarketPrice(symbol: string): Promise<MarketPrice> {
+    try {
+      console.log(`🔄 Fetching REAL-TIME price for ${symbol} from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange (NO CACHE)...`);
+      
+      // Force fresh API call with multiple anti-cache parameters
+      const response = await this.callBybitAPI('/v5/market/tickers', 'GET', {
+        category: 'spot',
+        symbol,
+        _nocache: Date.now(),
+        _fresh: Math.random(),
+        _live: true
+      });
+
+      if (response.retCode === 0 && response.result?.list?.[0]) {
+        const ticker = response.result.list[0];
+        const price = parseFloat(ticker.lastPrice);
+        
+        console.log(`✅ FRESH market price for ${symbol}: $${price.toFixed(6)} (from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange)`);
+        return {
+          symbol,
+          price,
+          timestamp: Date.now(),
+        };
       }
 
-      const response = await fetch(`${this.baseUrl}/v5/account/wallet-balance?accountType=SPOT`, {
-        method: 'GET',
-        headers: await this.getHeaders('GET', '/v5/account/wallet-balance', {accountType: 'SPOT'}),
-      });
+      console.error(`❌ Invalid response from Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange for ${symbol}:`, response);
+      throw new Error(`Invalid response from Bybit for ${symbol}: ${response.retMsg || 'Unknown error'}`);
+    } catch (error) {
+      console.error(`❌ Error fetching real-time price for ${symbol} from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, error);
+      throw new Error(`Failed to fetch real-time price for ${symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async placeOrder(order: OrderRequest): Promise<any> {
+    try {
+      console.log(`Placing order on Bybit ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, order);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (!order.symbol || !order.side || !order.orderType || !order.qty) {
+        throw new Error('Missing required order parameters');
+      }
+
+      if (order.orderType === 'Limit' && !order.price) {
+        throw new Error('Price is required for limit orders');
+      }
+
+      // Clean parameters - remove undefined values
+      const orderParams: Record<string, any> = {
+        category: order.category,
+        symbol: order.symbol,
+        side: order.side,
+        orderType: order.orderType,
+        qty: order.qty,
+      };
+
+      // Only add optional parameters if they exist
+      if (order.orderType === 'Limit' && order.price) {
+        orderParams.price = order.price;
       }
       
-      return await response.json();
+      if (order.timeInForce) {
+        orderParams.timeInForce = order.timeInForce;
+      } else {
+        orderParams.timeInForce = order.orderType === 'Market' ? 'IOC' : 'GTC';
+      }
+
+      console.log(`Final order parameters for ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, orderParams);
+
+      const response = await this.callBybitAPI('/v5/order/create', 'POST', orderParams);
+      
+      console.log(`Order response from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, response);
+      return response;
     } catch (error) {
-      console.error('Error getting account balance:', error);
-      return this.createErrorResponse(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Error placing order on ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      throw error;
     }
   }
 
   async getOrderStatus(orderId: string): Promise<any> {
-    if (!orderId) {
-      return this.createErrorResponse('Order ID is required');
-    }
-
-    if (!this.apiKey || !this.apiSecret) {
-      return this.createErrorResponse('API credentials required for order status');
-    }
-
     try {
-      const params = {
+      console.log(`Fetching order status from ${this.isDemoTrading ? 'DEMO' : 'MAIN'} exchange:`, orderId);
+      
+      return await this.callBybitAPI('/v5/order/realtime', 'GET', {
         category: 'spot',
-        orderId: orderId,
-      };
-      const response = await fetch(`${this.baseUrl}/v5/order/history?${new URLSearchParams(params)}`, {
-        method: 'GET',
-        headers: await this.getHeaders('GET', '/v5/order/history', params),
+        orderId
       });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      return await response.json();
     } catch (error) {
-      console.error('Error getting order status:', error);
-      return this.createErrorResponse(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async placeOrder(params: any): Promise<any> {
-    if (!params || !params.symbol || !params.side || !params.qty || !params.price) {
-      return this.createErrorResponse('Missing required order parameters (symbol, side, qty, price)');
-    }
-
-    if (!this.apiKey || !this.apiSecret) {
-      return this.createErrorResponse('API credentials required for placing orders');
-    }
-
-    try {
-      const response = await fetch(`${this.baseUrl}/v5/order/create`, {
-        method: 'POST',
-        headers: await this.getHeaders('POST', '/v5/order/create', params),
-        body: JSON.stringify(params),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error placing order:', error);
-      return this.createErrorResponse(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async cancelOrder(orderId: string, symbol: string): Promise<any> {
-    if (!orderId || !symbol) {
-      return this.createErrorResponse('Order ID and symbol are required');
-    }
-
-    if (!this.apiKey || !this.apiSecret) {
-      return this.createErrorResponse('API credentials required for cancelling orders');
-    }
-
-    try {
-      const params = {
-        category: 'spot',
-        symbol: symbol,
-        orderId: orderId,
-      };
-      const response = await fetch(`${this.baseUrl}/v5/order/cancel`, {
-        method: 'POST',
-        headers: await this.getHeaders('POST', '/v5/order/cancel', params),
-        body: JSON.stringify(params),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error cancelling order:', error);
-      return this.createErrorResponse(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async getOpenOrders(symbol?: string): Promise<any> {
-    if (!this.apiKey || !this.apiSecret) {
-      return this.createErrorResponse('API credentials required for open orders');
-    }
-
-    try {
-      const params: any = {
-        category: 'spot'
-      };
-      
-      if (symbol) {
-        params.symbol = symbol;
-      }
-
-      const response = await fetch(`${this.baseUrl}/v5/order/realtime`, {
-        method: 'GET',
-        headers: await this.getHeaders('GET', '/v5/order/realtime', params),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('Get open orders response:', data);
-      return data;
-    } catch (error) {
-      console.error('Error getting open orders:', error);
-      return this.createErrorResponse(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async getOrderHistory(symbol?: string, limit: number = 50): Promise<any> {
-    if (!this.apiKey || !this.apiSecret) {
-      return this.createErrorResponse('API credentials required for order history');
-    }
-
-    try {
-      const params: any = {
-        category: 'spot',
-        limit: Math.min(Math.max(limit, 1), 100).toString() // Ensure limit is between 1-100
-      };
-      
-      if (symbol) {
-        params.symbol = symbol;
-      }
-
-      const response = await fetch(`${this.baseUrl}/v5/order/history`, {
-        method: 'GET',
-        headers: await this.getHeaders('GET', '/v5/order/history', params),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('Get order history response:', data);
-      return data;
-    } catch (error) {
-      console.error('Error getting order history:', error);
-      return this.createErrorResponse(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  // Updated method with enhanced error handling and public access for DEMO trading
-  async getMarketPrice(symbol: string): Promise<{ price: number } | null> {
-    if (!symbol) {
-      console.error('Symbol is required for market price');
-      return null;
-    }
-
-    try {
-      console.log(`🔄 Fetching market price for ${symbol} from DEMO TRADING API: ${this.baseUrl}...`);
-      
-      // Public endpoint - no authentication required for demo trading
-      const response = await fetch(`${this.baseUrl}/v5/market/tickers?category=spot&symbol=${symbol}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        },
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`HTTP ${response.status} for ${symbol} on DEMO TRADING:`, errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      console.log(`📊 Raw DEMO TRADING API response for ${symbol}:`, data);
-      
-      if (data.retCode === 0 && data.result?.list?.[0]?.lastPrice) {
-        const price = parseFloat(data.result.list[0].lastPrice);
-        if (isNaN(price) || price <= 0) {
-          console.error(`Invalid price received for ${symbol} from DEMO TRADING:`, data.result.list[0].lastPrice);
-          return null;
-        }
-        console.log(`✅ Valid DEMO TRADING price for ${symbol}: $${price.toFixed(6)}`);
-        return { price };
-      } else if (data.retCode === 10001) {
-        console.error(`❌ Symbol ${symbol} not supported on DEMO TRADING:`, data.retMsg);
-        return null;
-      } else {
-        console.error(`❌ DEMO TRADING API error for ${symbol}:`, data);
-        return null;
-      }
-    } catch (error) {
-      console.error(`❌ Network error getting market price for ${symbol} from DEMO TRADING:`, error);
-      if (this.logger) {
-        await this.logger.logError(`DEMO TRADING market price fetch failed for ${symbol}`, error, { symbol });
-      }
-      return null;
+      console.error(`Error fetching order status from ${this.isDemoTrading ? 'demo' : 'main'} exchange:`, error);
+      throw error;
     }
   }
 }

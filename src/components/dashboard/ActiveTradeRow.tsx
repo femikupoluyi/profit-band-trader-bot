@@ -2,7 +2,7 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSpotPL, calculateSpotPercentage, shouldShowSpotPL, getTradeEntryPrice } from '@/utils/formatters';
+import { formatCurrency, formatPercentage } from '@/utils/formatters';
 import CloseTradeDialog from './CloseTradeDialog';
 
 interface ActiveTradeRowProps {
@@ -12,31 +12,6 @@ interface ActiveTradeRowProps {
 }
 
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
-  const currentPrice = trade.currentPrice || trade.price;
-  
-  // Use the corrected entry price logic
-  const entryPrice = getTradeEntryPrice(trade);
-  
-  // Calculate P&L using the fixed logic
-  let spotPL = 0;
-  let spotPercentage = 0;
-  let showPL = false;
-
-  // For closed trades, use stored profit_loss
-  if (trade.status === 'closed' && trade.profit_loss !== null) {
-    showPL = true;
-    spotPL = trade.profit_loss;
-    const volume = entryPrice * trade.quantity;
-    spotPercentage = volume > 0 ? (spotPL / volume) * 100 : 0;
-  } else if (shouldShowSpotPL(trade)) {
-    // For active positions with linked TP orders
-    showPL = true;
-    spotPL = calculateSpotPL(entryPrice, currentPrice, trade.quantity);
-    spotPercentage = calculateSpotPercentage(entryPrice, currentPrice);
-  }
-
-  console.log(`ActiveTradeRow ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, ShowPL=${showPL}, EntryPrice=${entryPrice}, CurrentPrice=${currentPrice}, SellOrderId=${trade.sell_order_id}, SellStatus=${trade.sell_status}, SpotPL=${spotPL.toFixed(2)}, SpotPercentage=${spotPercentage.toFixed(2)}%`);
-
   return (
     <TableRow>
       <TableCell className="font-medium">{trade.symbol}</TableCell>
@@ -50,30 +25,22 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
         </span>
       </TableCell>
       <TableCell>{trade.quantity.toFixed(8)}</TableCell>
-      <TableCell>{formatCurrency(entryPrice)}</TableCell>
-      <TableCell>{formatCurrency(currentPrice)}</TableCell>
+      <TableCell>{formatCurrency(trade.price)}</TableCell>
+      <TableCell>{formatCurrency(trade.currentPrice || trade.price)}</TableCell>
       <TableCell>{formatCurrency(trade.volume || 0)}</TableCell>
       <TableCell>
-        {showPL ? (
-          <span className={`font-medium ${
-            spotPL >= 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {formatCurrency(spotPL)}
-          </span>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
+        <span className={`font-medium ${
+          (trade.unrealizedPL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+        }`}>
+          {formatCurrency(trade.unrealizedPL || 0)}
+        </span>
       </TableCell>
       <TableCell>
-        {showPL ? (
-          <span className={`font-medium ${
-            spotPercentage >= 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {spotPercentage > 0 ? '+' : ''}{spotPercentage.toFixed(2)}%
-          </span>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
+        <span className={`font-medium ${
+          (trade.currentPrice || trade.price) >= trade.price ? 'text-green-600' : 'text-red-600'
+        }`}>
+          {formatPercentage(trade.price, trade.currentPrice || trade.price)}
+        </span>
       </TableCell>
       <TableCell>
         <span className={`px-2 py-1 rounded text-xs font-medium ${

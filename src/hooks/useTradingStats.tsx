@@ -2,13 +2,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { calculateSpotPL, shouldShowSpotPL, getTradeEntryPrice } from '@/utils/formatters';
 
 interface TradingStats {
   totalTrades: number;
   activePairs: number;
   totalProfit: number;
-  closedPositionsProfit: number;
   isActive: boolean;
   totalActive: number;
   totalClosed: number;
@@ -35,7 +33,6 @@ export const useTradingStats = (userId?: string) => {
     totalTrades: 0,
     activePairs: 0,
     totalProfit: 0,
-    closedPositionsProfit: 0,
     isActive: false,
     totalActive: 0,
     totalClosed: 0,
@@ -46,24 +43,18 @@ export const useTradingStats = (userId?: string) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const calculateActualPL = async (trade: any) => {
-    if (!trade) return 0;
-    
     try {
-      const entryPrice = getTradeEntryPrice(trade);
-      const quantity = parseFloat(trade.quantity?.toString() || '0');
-
-      if (!entryPrice || !quantity || quantity <= 0) {
-        return 0;
-      }
+      const entryPrice = parseFloat(trade.price.toString());
+      const quantity = parseFloat(trade.quantity.toString());
 
       // For closed trades, use the stored profit_loss if it exists and is reasonable
       if (['closed', 'cancelled'].includes(trade.status)) {
-        if (trade.profit_loss !== null && trade.profit_loss !== undefined) {
+        if (trade.profit_loss) {
           const storedPL = parseFloat(trade.profit_loss.toString());
           const volume = entryPrice * quantity;
           
           // Validate stored P&L is reasonable (not more than 50% of volume)
-          if (!isNaN(storedPL) && Math.abs(storedPL) <= volume * 0.5) {
+          if (Math.abs(storedPL) <= volume * 0.5) {
             return storedPL;
           }
           
@@ -74,23 +65,23 @@ export const useTradingStats = (userId?: string) => {
         return 0;
       }
 
-      // For active trades, only calculate P&L if they meet spot criteria (filled buys)
-      if (shouldShowSpotPL(trade)) {
-        const { data: marketData } = await supabase
-          .from('market_data')
-          .select('price')
-          .eq('symbol', trade.symbol)
-          .order('timestamp', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+      // For active trades, calculate real-time P&L using current market price
+      const { data: marketData } = await supabase
+        .from('market_data')
+        .select('price')
+        .eq('symbol', trade.symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-        if (marketData && marketData.price) {
-          const currentPrice = parseFloat(marketData.price.toString());
-          
-          if (!isNaN(currentPrice) && currentPrice > 0) {
-            // Use spot P&L calculation (only for filled buys)
-            return calculateSpotPL(entryPrice, currentPrice, quantity);
-          }
+      if (marketData) {
+        const currentPrice = parseFloat(marketData.price.toString());
+        
+        // Calculate actual P&L based on trade side
+        if (trade.side === 'buy') {
+          return (currentPrice - entryPrice) * quantity;
+        } else {
+          return (entryPrice - currentPrice) * quantity;
         }
       }
 
@@ -102,10 +93,7 @@ export const useTradingStats = (userId?: string) => {
   };
 
   const fetchTradingStats = async () => {
-    if (!userId) {
-      setIsLoading(false);
-      return;
-    }
+    if (!userId) return;
 
     setIsLoading(true);
     try {
@@ -118,7 +106,7 @@ export const useTradingStats = (userId?: string) => {
         .eq('user_id', userId)
         .maybeSingle();
 
-      if (configError && configError.code !== 'PGRST116') {
+      if (configError) {
         console.error('Error fetching config:', configError);
       }
 
@@ -132,7 +120,7 @@ export const useTradingStats = (userId?: string) => {
 
       if (tradesError) {
         console.error('Error fetching trades:', tradesError);
-        throw tradesError;
+        return;
       }
 
       // Get ALL active trades (not limited by time range) for active pairs and total active count
@@ -144,7 +132,7 @@ export const useTradingStats = (userId?: string) => {
 
       if (activeTradesError) {
         console.error('Error fetching active trades:', activeTradesError);
-        throw activeTradesError;
+        return;
       }
 
       const trades = tradesInRange || [];
@@ -153,7 +141,7 @@ export const useTradingStats = (userId?: string) => {
       console.log('Fetched trades in range:', trades.length);
       console.log('Fetched all active trades:', activeTrades.length);
 
-      // Calculate actual P&L for all trades using spot logic
+      // Calculate actual P&L for all trades
       const tradesWithActualPL = await Promise.all(
         trades.map(async (trade) => {
           const actualPL = await calculateActualPL(trade);
@@ -161,34 +149,28 @@ export const useTradingStats = (userId?: string) => {
         })
       );
 
-      // Calculate metrics with spot P&L logic
+      // Calculate metrics with actual P&L
       const totalTrades = tradesWithActualPL.length;
       const closedTrades = tradesWithActualPL.filter(t => ['closed', 'cancelled'].includes(t.status));
       
       let totalProfit = 0;
-      let closedPositionsProfit = 0;
       let totalVolume = 0;
       let profitableClosedCount = 0;
 
       tradesWithActualPL.forEach(trade => {
-        const entryPrice = getTradeEntryPrice(trade);
-        const quantity = parseFloat(trade.quantity?.toString() || '0');
-        const volume = entryPrice * quantity;
+        const price = parseFloat(trade.price.toString());
+        const quantity = parseFloat(trade.quantity.toString());
+        const volume = price * quantity;
         const actualPL = trade.actualPL || 0;
         
-        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Entry=$${entryPrice.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Spot P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+        console.log(`Trade ${trade.symbol}: Entry=$${price.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
         
         totalProfit += actualPL;
         totalVolume += volume;
         
-        // Add to closed positions profit only if trade is closed
-        if (['closed', 'cancelled'].includes(trade.status)) {
-          closedPositionsProfit += actualPL;
-          
-          // Count closed and cancelled trades with positive actual P&L as profitable
-          if (actualPL > 0) {
-            profitableClosedCount++;
-          }
+        // Count closed and cancelled trades with positive actual P&L as profitable
+        if (['closed', 'cancelled'].includes(trade.status) && actualPL > 0) {
+          profitableClosedCount++;
         }
       });
 
@@ -203,7 +185,6 @@ export const useTradingStats = (userId?: string) => {
         totalTrades,
         activePairs,
         totalProfit: Math.round(totalProfit * 100) / 100,
-        closedPositionsProfit: Math.round(closedPositionsProfit * 100) / 100,
         isActive: config?.is_active || false,
         totalActive: totalActiveCount,
         totalClosed: closedTrades.length,
@@ -212,7 +193,7 @@ export const useTradingStats = (userId?: string) => {
         profitPercentage: Math.round(profitPercentage * 100) / 100
       };
 
-      console.log('Calculated stats with spot P&L logic:', newStats);
+      console.log('Calculated stats with actual P&L:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);

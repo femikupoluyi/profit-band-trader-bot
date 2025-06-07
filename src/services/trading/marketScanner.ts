@@ -15,22 +15,22 @@ export class MarketScanner {
   }
 
   async scanMarkets(): Promise<void> {
-    // Clear ALL historical data first to remove any cache
+    // Clear ALL historical data first to remove testnet cache
     await this.clearAllHistoricalData();
     
     // Use trading pairs from config
     const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
-    console.log('🔍 SCANNING MARKETS on Bybit DEMO trading for symbols:', symbols);
+    console.log('🔍 SCANNING MARKETS on Bybit MAIN exchange for symbols:', symbols);
     console.log('Chart timeframe from config:', this.config.chart_timeframe);
     
     for (const symbol of symbols) {
       try {
-        console.log(`📊 Getting REAL-TIME price for ${symbol} from Bybit DEMO trading (FRESH DATA)...`);
+        console.log(`📊 Getting REAL-TIME price for ${symbol} from Bybit MAIN exchange (FRESH DATA)...`);
         
-        // Always fetch fresh real-time price from DEMO trading API
+        // Always fetch fresh real-time price from MAIN exchange API
         const marketPrice = await this.getRealtimePrice(symbol);
-        console.log(`✅ ${symbol} LIVE DEMO trading price: $${marketPrice.price.toFixed(6)}`);
+        console.log(`✅ ${symbol} LIVE MAIN exchange price: $${marketPrice.price.toFixed(6)}`);
         
         // Store current market data with real-time price
         const { error: insertError } = await supabase
@@ -39,7 +39,7 @@ export class MarketScanner {
             symbol,
             price: marketPrice.price,
             timestamp: new Date().toISOString(),
-            source: 'bybit_demo_realtime',
+            source: 'bybit_main_realtime',
           });
 
         if (insertError) {
@@ -47,24 +47,24 @@ export class MarketScanner {
           await this.logActivity('error', `Failed to store market data for ${symbol}`, { 
             error: insertError.message,
             price: marketPrice.price,
-            source: 'bybit_demo_trading'
+            source: 'bybit_main_exchange'
           });
         } else {
-          console.log(`✅ Market data stored for ${symbol} - DEMO trading Price: $${marketPrice.price.toFixed(6)}`);
+          console.log(`✅ Market data stored for ${symbol} - MAIN exchange Price: $${marketPrice.price.toFixed(6)}`);
         }
         
       } catch (error) {
-        console.error(`❌ Error scanning ${symbol} on DEMO trading:`, error);
-        await this.logActivity('error', `Failed to scan ${symbol} on DEMO trading - API call failed`, { 
+        console.error(`❌ Error scanning ${symbol} on MAIN exchange:`, error);
+        await this.logActivity('error', `Failed to scan ${symbol} on MAIN exchange - API call failed`, { 
           error: error instanceof Error ? error.message : 'Unknown error',
           symbol,
           timestamp: new Date().toISOString(),
-          source: 'bybit_demo_trading'
+          source: 'bybit_main_exchange'
         });
       }
     }
     
-    console.log('✅ MARKET SCAN COMPLETED - All prices fetched from DEMO trading in real-time');
+    console.log('✅ MARKET SCAN COMPLETED - All prices fetched from MAIN exchange in real-time');
   }
 
   private async clearAllHistoricalData(): Promise<void> {
@@ -89,12 +89,12 @@ export class MarketScanner {
 
   private async getRealtimePrice(symbol: string): Promise<{ price: number }> {
     try {
-      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading API (NO CACHE)...`);
+      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit MAIN exchange API (NO CACHE)...`);
       
-      // Force a fresh API call to Bybit DEMO trading - absolutely no caching
+      // Force a fresh API call to Bybit MAIN exchange - absolutely no caching
       const marketPrice = await this.bybitService.getMarketPrice(symbol);
       
-      console.log(`📈 FRESH price received for ${symbol} from DEMO trading: $${marketPrice.price.toFixed(6)}`);
+      console.log(`📈 FRESH price received for ${symbol} from MAIN exchange: $${marketPrice.price.toFixed(6)}`);
       
       // Validate the price is reasonable
       if (marketPrice.price <= 0 || !isFinite(marketPrice.price)) {
@@ -103,12 +103,12 @@ export class MarketScanner {
       
       return { price: marketPrice.price };
     } catch (error) {
-      console.error(`❌ Failed to fetch real-time price for ${symbol} from DEMO trading:`, error);
-      await this.logActivity('error', `Real-time price fetch failed for ${symbol} on DEMO trading`, {
+      console.error(`❌ Failed to fetch real-time price for ${symbol} from MAIN exchange:`, error);
+      await this.logActivity('error', `Real-time price fetch failed for ${symbol} on MAIN exchange`, {
         error: error instanceof Error ? error.message : 'Unknown error',
         symbol,
         timestamp: new Date().toISOString(),
-        source: 'bybit_demo_trading_api'
+        source: 'bybit_main_exchange_api'
       });
       throw error;
     }

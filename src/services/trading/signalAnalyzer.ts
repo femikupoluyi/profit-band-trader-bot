@@ -1,119 +1,113 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { BybitService } from '../bybitService';
-import { TradingLogger } from './core/TradingLogger';
+import { CandleDataService } from './candleDataService';
 import { SupportLevelAnalyzer } from './supportLevelAnalyzer';
 import { SignalGenerator } from './signalGenerator';
-import { SupportLevel } from './core/TypeDefinitions';
+import { PositionChecker } from './positionChecker';
 
 export class SignalAnalyzer {
   private userId: string;
-  private bybitService: BybitService;
-  private logger: TradingLogger;
-  private supportAnalyzer: SupportLevelAnalyzer;
+  private config: TradingConfigData;
+  private candleDataService: CandleDataService;
+  private supportLevelAnalyzer: SupportLevelAnalyzer;
   private signalGenerator: SignalGenerator;
+  private positionChecker: PositionChecker;
 
-  constructor(userId: string, bybitService: BybitService) {
+  constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
-    this.bybitService = bybitService;
-    this.logger = new TradingLogger(userId);
-    this.supportAnalyzer = new SupportLevelAnalyzer();
-    this.signalGenerator = new SignalGenerator(userId, {} as TradingConfigData); // Will be updated per call
+    this.config = config;
+    this.candleDataService = new CandleDataService();
+    this.supportLevelAnalyzer = new SupportLevelAnalyzer();
+    this.signalGenerator = new SignalGenerator(userId, config);
+    this.positionChecker = new PositionChecker(userId);
   }
 
-  async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
-    try {
-      console.log('🔍 Starting signal analysis for all symbols...');
-      await this.logger.logSystemInfo('Starting signal analysis', { symbolCount: config.trading_pairs.length });
-
-      // Update signal generator with current config
-      this.signalGenerator = new SignalGenerator(this.userId, config);
-
-      for (const symbol of config.trading_pairs) {
-        await this.analyzeSymbol(symbol, config);
-      }
-
-      console.log('✅ Signal analysis completed for all symbols');
-      await this.logger.logSuccess('Signal analysis completed');
-    } catch (error) {
-      console.error('❌ Error in signal analysis:', error);
-      await this.logger.logError('Signal analysis failed', error);
-      throw error;
-    }
-  }
-
-  // Keep backward compatibility
-  async analyzeSymbolsAndGenerateSignals(config: TradingConfigData): Promise<void> {
-    return this.analyzeAndCreateSignals(config);
-  }
-
-  private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
-    try {
-      console.log(`\n🔍 Analyzing ${symbol}...`);
-
-      // Get current market price
-      const marketData = await this.bybitService.getMarketPrice(symbol);
-      const currentPrice = marketData.price;
-      
-      console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(4)}`);
-
-      // Get recent market data for support analysis
-      const { data: recentData, error } = await supabase
-        .from('market_data')
-        .select('*')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false })
-        .limit(config.support_candle_count || 128);
-
-      if (error) {
-        console.error(`❌ Error fetching market data for ${symbol}:`, error);
-        await this.logger.logError(`Error fetching market data for ${symbol}`, error, { symbol });
-        return;
-      }
-
-      // SIMPLIFIED SUPPORT ANALYSIS - Always create a basic support level
-      let supportLevel: SupportLevel = {
-        price: currentPrice * 0.995, // Support 0.5% below current price
-        strength: 0.8,
-        timestamp: Date.now(),
-        touches: 3
-      };
-
-      // Try to get better support data if available
-      if (recentData && recentData.length >= 10) {
-        const candleData = recentData.map(d => ({
-          low: parseFloat(d.price.toString()),
-          high: parseFloat(d.price.toString()),
-          open: parseFloat(d.price.toString()),
-          close: parseFloat(d.price.toString()),
-          volume: parseFloat(d.volume?.toString() || '0'),
-          timestamp: new Date(d.timestamp).getTime()
-        }));
-
-        const analyzedSupport = this.supportAnalyzer.identifySupportLevel(candleData);
-        if (analyzedSupport && analyzedSupport.strength > 0.3) {
-          supportLevel = analyzedSupport;
-          console.log(`📊 Found stronger support at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
+  async analyzeAndCreateSignals(): Promise<void> {
+    // Use trading pairs from config
+    const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
+    
+    console.log('\n🔍 STARTING SIGNAL ANALYSIS...');
+    console.log('Trading pairs to analyze:', symbols);
+    console.log('Config values:', {
+      entryOffset: this.config.entry_offset_percent,
+      takeProfitPercent: this.config.take_profit_percent,
+      maxActivePairs: this.config.max_active_pairs,
+      maxPositionsPerPair: this.config.max_positions_per_pair
+    });
+    
+    for (const symbol of symbols) {
+      try {
+        console.log(`\n📈 ANALYZING ${symbol}...`);
+        
+        // Check if we already have too many positions for this pair
+        const hasOpenPosition = await this.positionChecker.hasOpenPosition(symbol);
+        if (hasOpenPosition) {
+          console.log(`⏭️  SKIPPING ${symbol} - already has open position`);
+          continue;
         }
-      }
 
-      // Generate signal if conditions are met
-      const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
-      if (signal) {
-        console.log(`🎯 Signal generated for ${symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
-        await this.logger.logSuccess(`Signal generated for ${symbol}`, {
-          symbol,
-          action: signal.action,
-          price: signal.price,
-          supportLevel: supportLevel.price
+        // Get current price from latest market data
+        const { data: latestPrice, error: priceError } = await supabase
+          .from('market_data')
+          .select('price')
+          .eq('symbol', symbol)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (priceError || !latestPrice) {
+          console.log(`❌ No current price data for ${symbol}`);
+          continue;
+        }
+
+        const currentPrice = parseFloat(latestPrice.price.toString());
+        console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(4)}`);
+
+        // Create a simplified support level for signal generation
+        // This ensures we always have a support level to work with
+        const supportLevelPrice = currentPrice * 0.995; // Support 0.5% below current price
+        const supportLevel = {
+          price: supportLevelPrice,
+          strength: 0.8,
+          touchCount: 3
+        };
+
+        console.log(`🎯 Using support level: $${supportLevelPrice.toFixed(4)} (0.5% below current price)`);
+        
+        // Generate signal with relaxed conditions
+        const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
+        
+        if (signal) {
+          console.log(`🚀 SIGNAL GENERATED for ${symbol}!`);
+        } else {
+          console.log(`📭 No signal generated for ${symbol}`);
+        }
+        
+      } catch (error) {
+        console.error(`❌ Error analyzing ${symbol}:`, error);
+        await this.logActivity('analysis_error', `Analysis failed for ${symbol}`, { 
+          error: error instanceof Error ? error.message : 'Unknown error',
+          symbol 
         });
-      } else {
-        console.log(`📭 No signal generated for ${symbol}`);
       }
+    }
+    
+    console.log('✅ SIGNAL ANALYSIS COMPLETED\n');
+  }
 
+  private async logActivity(type: string, message: string, data?: any): Promise<void> {
+    try {
+      await supabase
+        .from('trading_logs')
+        .insert({
+          user_id: this.userId,
+          log_type: type,
+          message,
+          data: data || null,
+        });
     } catch (error) {
-      console.error(`❌ Error analyzing ${symbol}:`, error);
-      await this.logger.logError(`Failed to analyze ${symbol}`, error, { symbol });
+      console.error('Error logging activity:', error);
     }
   }
 }

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,10 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Loader2, X } from 'lucide-react';
 import { ActiveTrade } from '@/types/trading';
 import { formatCurrency } from '@/utils/formatters';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth';
-import { BybitService } from '@/services/bybitService';
-import { ManualCloseService } from '@/services/trading/core/ManualCloseService';
 
 interface CloseTradeDialogProps {
   trade: ActiveTrade;
@@ -26,72 +24,106 @@ interface CloseTradeDialogProps {
   onClose: (trade: ActiveTrade) => void;
 }
 
-const CloseTradeDialog = ({ trade, isClosing: externalClosing, onClose }: CloseTradeDialogProps) => {
+const CloseTradeDialog = ({ trade, isClosing, onClose }: CloseTradeDialogProps) => {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleManualClose = async () => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "User not authenticated",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsProcessing(true);
-    
     try {
-      console.log(`🔄 Initiating manual close for trade ${trade.id} (${trade.symbol})`);
+      console.log(`Manually closing trade ${trade.id} for ${trade.symbol}`);
       
-      // Initialize Bybit service - using demo trading for safety
-      const bybitService = new BybitService(); // Fixed constructor call
-      const manualCloseService = new ManualCloseService(user.id, bybitService);
-      
-      // Execute the manual close
-      const result = await manualCloseService.closePosition(trade.id);
-      
-      if (result.success) {
-        console.log(`✅ Manual close successful:`, result);
-        
+      // First, verify the trade exists and is not already closed
+      const { data: currentTrade, error: fetchError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('id', trade.id)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching current trade:', fetchError);
         toast({
-          title: "Position Closed",
-          description: result.message,
-        });
-        
-        // Immediately update the UI to reflect the closed position
-        onClose(trade);
-        
-      } else {
-        console.error(`❌ Manual close failed:`, result);
-        
-        toast({
-          title: "Close Failed",
-          description: result.message,
+          title: "Error",
+          description: "Trade not found in database",
           variant: "destructive",
         });
+        return;
       }
+
+      if (currentTrade.status === 'closed') {
+        console.log('Trade is already closed');
+        toast({
+          title: "Info", 
+          description: "Trade is already closed",
+        });
+        onClose(trade);
+        return;
+      }
+
+      // Calculate current P&L if we have current price
+      let profitLoss = 0;
+      if (trade.currentPrice) {
+        if (currentTrade.side === 'buy') {
+          profitLoss = (trade.currentPrice - currentTrade.price) * currentTrade.quantity;
+        } else if (currentTrade.side === 'sell') {
+          profitLoss = (currentTrade.price - trade.currentPrice) * currentTrade.quantity;
+        }
+      }
+
+      // Update trade status to closed in database (only for valid statuses)
+      const { error: updateError } = await supabase
+        .from('trades')
+        .update({
+          status: 'closed',
+          profit_loss: profitLoss,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', trade.id)
+        .in('status', ['pending', 'filled', 'partial_filled']);
+
+      if (updateError) {
+        console.error('Error updating trade status:', updateError);
+        toast({
+          title: "Error",
+          description: `Failed to close trade: ${updateError.message}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`✅ Trade ${trade.id} manually closed successfully`);
       
-    } catch (error) {
-      console.error('❌ Unexpected error during manual close:', error);
-      
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'An unexpected error occurred while closing the position';
+      // Log the manual close activity with valid log type
+      await supabase
+        .from('trading_logs')
+        .insert({
+          user_id: currentTrade.user_id,
+          log_type: 'position_closed',
+          message: `Trade manually closed for ${trade.symbol}`,
+          data: {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            profitLoss,
+            previousStatus: currentTrade.status,
+            closedBy: 'manual'
+          }
+        });
       
       toast({
+        title: "Trade Closed",
+        description: `Successfully closed ${trade.symbol} position manually`,
+      });
+
+      // Call the parent callback to refresh the UI
+      onClose(trade);
+
+    } catch (error) {
+      console.error('Error in manual close:', error);
+      toast({
         title: "Error",
-        description: errorMessage,
+        description: `Failed to close trade: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive",
       });
-    } finally {
-      setIsProcessing(false);
     }
   };
-
-  const isClosing = externalClosing || isProcessing;
 
   return (
     <AlertDialog>
@@ -111,16 +143,14 @@ const CloseTradeDialog = ({ trade, isClosing: externalClosing, onClose }: CloseT
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Close Position on Exchange</AlertDialogTitle>
+          <AlertDialogTitle>Close Trade</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to close this {trade.symbol} position on Bybit?
+            Are you sure you want to manually close this {trade.symbol} position?
             <br />
             <br />
             <strong>Trade ID:</strong> {trade.id.substring(0, 8)}...
             <br />
             <strong>Current Status:</strong> {trade.status}
-            <br />
-            <strong>Side:</strong> {trade.side.toUpperCase()}
             <br />
             <strong>Entry Price:</strong> ${trade.price?.toFixed(6) || 'N/A'}
             <br />
@@ -133,27 +163,16 @@ const CloseTradeDialog = ({ trade, isClosing: externalClosing, onClose }: CloseT
             </span>
             <br />
             <br />
-            <em className="text-blue-600">
-              This will place a market sell order on Bybit to close your position. 
-              The position will only be marked as closed locally after Bybit confirms the order.
-            </em>
+            <em>Note: This will close the position in the database only. For live trading, ensure you also close the position on the exchange.</em>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isProcessing}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleManualClose}
-            disabled={isProcessing}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {isProcessing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Closing...
-              </>
-            ) : (
-              'Close on Exchange'
-            )}
+            Close Position
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
