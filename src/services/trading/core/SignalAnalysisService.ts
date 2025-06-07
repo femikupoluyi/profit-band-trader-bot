@@ -60,10 +60,19 @@ export class SignalAnalysisService {
         return;
       }
 
-      // Get current market price
+      // Get current market price with proper null checking
       const marketData = await this.bybitService.getMarketPrice(symbol);
-      const currentPrice = marketData.price;
       
+      if (!marketData || !marketData.price || marketData.price <= 0) {
+        console.log(`  ❌ Failed to get valid market price for ${symbol} (received: ${marketData?.price || 'null'})`);
+        await this.logger.logError(`Invalid market price for ${symbol}`, new Error('Market price unavailable'), { 
+          symbol, 
+          marketData: marketData || 'null' 
+        });
+        return;
+      }
+
+      const currentPrice = marketData.price;
       console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
 
       // Get recent market data for support analysis
@@ -86,7 +95,16 @@ export class SignalAnalysisService {
       }
 
       // Analyze support levels
-      const priceHistory = recentData.map(d => parseFloat(d.price.toString()));
+      const priceHistory = recentData.map(d => {
+        const price = parseFloat(d.price?.toString() || '0');
+        return isNaN(price) ? 0 : price;
+      }).filter(price => price > 0);
+
+      if (priceHistory.length === 0) {
+        console.log(`  ⚠️ No valid price history for ${symbol}`);
+        return;
+      }
+
       const supportLevel = this.supportLevelAnalyzer.identifySupportLevel(
         priceHistory.map((price, index) => ({
           low: price,
