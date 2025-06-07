@@ -24,14 +24,24 @@ export class MarketDataScannerService {
 
   async scanMarkets(config: TradingConfigData): Promise<void> {
     try {
-      console.log(`📊 Scanning ${config.trading_pairs.length} markets using edge function...`);
+      console.log(`📊 Scanning ${config.trading_pairs.length} markets using testnet API...`);
       await this.logger.logSuccess(`Starting market scan for ${config.trading_pairs.length} pairs`);
 
       // Clear old market data
       await this.clearOldMarketData();
 
-      // Process symbols with controlled concurrency - reduced for edge function
-      const results = await this.processSymbolsBatch(config.trading_pairs, 2); // Max 2 concurrent requests
+      // Filter symbols that actually work on testnet first
+      const workingSymbols = await this.validateSymbols(config.trading_pairs);
+      console.log(`📊 Found ${workingSymbols.length} working symbols on testnet: ${workingSymbols.join(', ')}`);
+
+      if (workingSymbols.length === 0) {
+        console.log('❌ No working symbols found on testnet');
+        await this.logger.logError('No working symbols found on testnet', new Error('Symbol validation failed'));
+        return;
+      }
+
+      // Process validated symbols with controlled concurrency
+      const results = await this.processSymbolsBatch(workingSymbols, 2); // Max 2 concurrent requests
 
       const successCount = results.filter(r => r.success).length;
       const failureCount = results.length - successCount;
@@ -48,6 +58,36 @@ export class MarketDataScannerService {
       await this.logger.logError('Market scan failed completely', error);
       throw error;
     }
+  }
+
+  private async validateSymbols(symbols: string[]): Promise<string[]> {
+    const workingSymbols: string[] = [];
+    
+    console.log('🔍 Validating symbols on testnet...');
+    
+    // Test each symbol individually to filter out unsupported ones
+    for (const symbol of symbols) {
+      try {
+        await this.rateLimiter.waitForPermission();
+        
+        const marketPrice = await this.bybitService.getMarketPrice(symbol);
+        
+        if (marketPrice && marketPrice.price && marketPrice.price > 0 && isFinite(marketPrice.price)) {
+          workingSymbols.push(symbol);
+          console.log(`✅ ${symbol}: Valid symbol with price $${marketPrice.price.toFixed(6)}`);
+        } else {
+          console.log(`❌ ${symbol}: Invalid or unsupported symbol`);
+        }
+        
+        // Small delay between validations
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+      } catch (error) {
+        console.log(`❌ ${symbol}: Validation failed -`, error);
+      }
+    }
+    
+    return workingSymbols;
   }
 
   private async processSymbolsBatch(symbols: string[], batchSize: number): Promise<Array<{symbol: string, success: boolean}>> {
@@ -82,7 +122,7 @@ export class MarketDataScannerService {
   }
 
   private async scanSymbolWithRetry(symbol: string, maxRetries: number = 2): Promise<boolean> {
-    const endpoint = 'bybit-edge-function';
+    const endpoint = 'bybit-testnet-api';
     
     // Check circuit breaker
     if (!this.connectionManager.isConnectionHealthy(endpoint)) {
@@ -95,9 +135,14 @@ export class MarketDataScannerService {
         // Apply rate limiting
         await this.rateLimiter.waitForPermission();
         
-        console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol} via edge function...`);
+        console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol} via testnet API...`);
         
         const marketPrice = await this.bybitService.getMarketPrice(symbol);
+        
+        if (!marketPrice || !marketPrice.price) {
+          throw new Error(`No market data returned for ${symbol}`);
+        }
+        
         const currentPrice = marketPrice.price;
 
         // Validate price
@@ -168,7 +213,7 @@ export class MarketDataScannerService {
           symbol,
           price,
           timestamp: new Date().toISOString(),
-          source: 'bybit_edge_function'
+          source: 'bybit_testnet_validated'
         });
 
       if (error) {

@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -25,7 +24,11 @@ export class SignalAnalysisService {
       console.log('📈 Starting signal analysis...');
       await this.logger.logSuccess('Starting signal analysis');
 
-      for (const symbol of config.trading_pairs) {
+      // Filter symbols that are actually available on testnet
+      const availableSymbols = await this.filterAvailableSymbols(config.trading_pairs);
+      console.log(`📊 Available symbols on testnet: ${availableSymbols.join(', ')}`);
+
+      for (const symbol of availableSymbols) {
         await this.analyzeSymbol(symbol, config);
       }
 
@@ -36,6 +39,32 @@ export class SignalAnalysisService {
       await this.logger.logError('Error in signal analysis', error);
       throw error;
     }
+  }
+
+  private async filterAvailableSymbols(symbols: string[]): Promise<string[]> {
+    const availableSymbols: string[] = [];
+    
+    // Test a few symbols to see which ones are available
+    for (const symbol of symbols.slice(0, 5)) { // Test first 5 to avoid rate limits
+      try {
+        const marketData = await this.bybitService.getMarketPrice(symbol);
+        if (marketData && marketData.price && marketData.price > 0) {
+          availableSymbols.push(symbol);
+        } else {
+          console.log(`❌ Symbol ${symbol} not available on testnet`);
+        }
+      } catch (error) {
+        console.log(`❌ Symbol ${symbol} failed validation:`, error);
+      }
+    }
+
+    // If no symbols are available, fall back to known working ones
+    if (availableSymbols.length === 0) {
+      console.log('⚠️ No symbols validated, using fallback list');
+      return ['BTCUSDT', 'ETHUSDT']; // Known to work on most testnets
+    }
+
+    return availableSymbols;
   }
 
   private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
@@ -60,11 +89,18 @@ export class SignalAnalysisService {
         return;
       }
 
-      // Get current market price with proper null checking
-      const marketData = await this.bybitService.getMarketPrice(symbol);
+      // Get current market price with comprehensive error handling
+      let marketData;
+      try {
+        marketData = await this.bybitService.getMarketPrice(symbol);
+      } catch (error) {
+        console.log(`  ❌ API error getting market price for ${symbol}:`, error);
+        await this.logger.logError(`API error for ${symbol}`, error, { symbol });
+        return;
+      }
       
       if (!marketData || !marketData.price || marketData.price <= 0) {
-        console.log(`  ❌ Failed to get valid market price for ${symbol} (received: ${marketData?.price || 'null'})`);
+        console.log(`  ❌ Invalid market price for ${symbol} (received: ${marketData?.price || 'null'})`);
         await this.logger.logError(`Invalid market price for ${symbol}`, new Error('Market price unavailable'), { 
           symbol, 
           marketData: marketData || 'null' 
@@ -94,7 +130,7 @@ export class SignalAnalysisService {
         return;
       }
 
-      // Analyze support levels
+      // Analyze support levels with enhanced validation
       const priceHistory = recentData.map(d => {
         const price = parseFloat(d.price?.toString() || '0');
         return isNaN(price) ? 0 : price;
