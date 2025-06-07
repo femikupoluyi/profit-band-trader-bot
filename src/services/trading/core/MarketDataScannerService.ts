@@ -24,19 +24,19 @@ export class MarketDataScannerService {
 
   async scanMarkets(config: TradingConfigData): Promise<void> {
     try {
-      console.log(`📊 Scanning ${config.trading_pairs.length} markets using testnet API...`);
-      await this.logger.logSuccess(`Starting market scan for ${config.trading_pairs.length} pairs`);
+      console.log(`📊 Scanning ${config.trading_pairs.length} markets using DEMO TRADING API...`);
+      await this.logger.logSuccess(`Starting market scan for ${config.trading_pairs.length} pairs on DEMO TRADING`);
 
       // Clear old market data
       await this.clearOldMarketData();
 
-      // Filter symbols that actually work on testnet first
+      // Filter symbols that actually work on demo trading first
       const workingSymbols = await this.validateSymbols(config.trading_pairs);
-      console.log(`📊 Found ${workingSymbols.length} working symbols on testnet: ${workingSymbols.join(', ')}`);
+      console.log(`📊 Found ${workingSymbols.length} working symbols on DEMO TRADING: ${workingSymbols.join(', ')}`);
 
       if (workingSymbols.length === 0) {
-        console.log('❌ No working symbols found on testnet');
-        await this.logger.logError('No working symbols found on testnet', new Error('Symbol validation failed'));
+        console.log('❌ No working symbols found on DEMO TRADING');
+        await this.logger.logError('No working symbols found on DEMO TRADING', new Error('Symbol validation failed'));
         return;
       }
 
@@ -63,7 +63,7 @@ export class MarketDataScannerService {
   private async validateSymbols(symbols: string[]): Promise<string[]> {
     const workingSymbols: string[] = [];
     
-    console.log('🔍 Validating symbols on testnet...');
+    console.log('🔍 Validating symbols on DEMO TRADING...');
     
     // Test each symbol individually to filter out unsupported ones
     for (const symbol of symbols) {
@@ -74,16 +74,16 @@ export class MarketDataScannerService {
         
         if (marketPrice && marketPrice.price && marketPrice.price > 0 && isFinite(marketPrice.price)) {
           workingSymbols.push(symbol);
-          console.log(`✅ ${symbol}: Valid symbol with price $${marketPrice.price.toFixed(6)}`);
+          console.log(`✅ ${symbol}: Valid symbol with DEMO TRADING price $${marketPrice.price.toFixed(6)}`);
         } else {
-          console.log(`❌ ${symbol}: Invalid or unsupported symbol`);
+          console.log(`❌ ${symbol}: Invalid or unsupported symbol on DEMO TRADING`);
         }
         
         // Small delay between validations
         await new Promise(resolve => setTimeout(resolve, 500));
         
       } catch (error) {
-        console.log(`❌ ${symbol}: Validation failed -`, error);
+        console.log(`❌ ${symbol}: DEMO TRADING validation failed -`, error);
       }
     }
     
@@ -122,7 +122,7 @@ export class MarketDataScannerService {
   }
 
   private async scanSymbolWithRetry(symbol: string, maxRetries: number = 2): Promise<boolean> {
-    const endpoint = 'bybit-testnet-api';
+    const endpoint = 'bybit-demo-trading-api';
     
     // Check circuit breaker
     if (!this.connectionManager.isConnectionHealthy(endpoint)) {
@@ -135,19 +135,19 @@ export class MarketDataScannerService {
         // Apply rate limiting
         await this.rateLimiter.waitForPermission();
         
-        console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol} via testnet API...`);
+        console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol} via DEMO TRADING API...`);
         
         const marketPrice = await this.bybitService.getMarketPrice(symbol);
         
         if (!marketPrice || !marketPrice.price) {
-          throw new Error(`No market data returned for ${symbol}`);
+          throw new Error(`No market data returned for ${symbol} from DEMO TRADING`);
         }
         
         const currentPrice = marketPrice.price;
 
         // Validate price
         if (!currentPrice || currentPrice <= 0 || !isFinite(currentPrice)) {
-          throw new Error(`Invalid price received: ${currentPrice}`);
+          throw new Error(`Invalid price received from DEMO TRADING: ${currentPrice}`);
         }
 
         // Check for suspicious price jumps
@@ -159,12 +159,12 @@ export class MarketDataScannerService {
         
         // Record success
         this.connectionManager.recordSuccess(endpoint);
-        console.log(`✅ ${symbol}: $${currentPrice.toFixed(6)} (attempt ${attempt})`);
+        console.log(`✅ ${symbol}: $${currentPrice.toFixed(6)} (DEMO TRADING attempt ${attempt})`);
         
         return true;
 
       } catch (error) {
-        console.error(`❌ Attempt ${attempt}/${maxRetries} failed for ${symbol}:`, error);
+        console.error(`❌ Attempt ${attempt}/${maxRetries} failed for ${symbol} on DEMO TRADING:`, error);
         
         // Record failure in connection manager
         this.connectionManager.recordFailure(endpoint, error);
@@ -178,7 +178,7 @@ export class MarketDataScannerService {
         }
         
         // Final failure
-        await this.logger.logError(`Failed to scan ${symbol} after ${maxRetries} attempts`, error, { 
+        await this.logger.logError(`Failed to scan ${symbol} after ${maxRetries} attempts on DEMO TRADING`, error, { 
           symbol, 
           attempts: attempt,
           finalAttempt: true 
@@ -213,7 +213,7 @@ export class MarketDataScannerService {
           symbol,
           price,
           timestamp: new Date().toISOString(),
-          source: 'bybit_testnet_validated'
+          source: 'bybit_demo_trading_validated'
         });
 
       if (error) {

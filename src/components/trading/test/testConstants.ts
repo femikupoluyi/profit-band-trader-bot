@@ -12,7 +12,10 @@ export const TEST_CONFIG = {
   ORDER_STATUS_CHECK_DELAY: 2000,
   ACCOUNT_TYPE: 'UNIFIED',
   ORDER_TIME_IN_FORCE: 'IOC',
-  ENVIRONMENT: TRADING_ENVIRONMENT
+  ENVIRONMENT: {
+    ...TRADING_ENVIRONMENT,
+    isDemoTrading: true // Ensure we're using demo trading, not testnet
+  }
 } as const;
 
 export const TEST_NAMES = {

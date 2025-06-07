@@ -7,15 +7,15 @@ export class BybitService {
   private recvWindow: number;
   private logger?: any;
 
-  constructor(apiKey?: string, apiSecret?: string, useTestnet: boolean = true) {
+  constructor(apiKey?: string, apiSecret?: string, useTestnet: boolean = false) {
     // Set default empty credentials if not provided - they're not needed for public endpoints
     this.apiKey = apiKey || '';
     this.apiSecret = apiSecret || '';
-    // Always use testnet for safety unless explicitly specified
-    this.baseUrl = useTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    // Use DEMO trading URL for live demo trading (not testnet)
+    this.baseUrl = useTestnet ? 'https://api-testnet.bybit.com' : 'https://api-demo.bybit.com';
     this.recvWindow = 5000;
     
-    console.log(`🔧 BybitService initialized with ${useTestnet ? 'TESTNET' : 'MAINNET'} URL: ${this.baseUrl}`);
+    console.log(`🔧 BybitService initialized with ${useTestnet ? 'TESTNET' : 'DEMO TRADING'} URL: ${this.baseUrl}`);
   }
 
   // Add logger support for other services
@@ -243,7 +243,7 @@ export class BybitService {
     }
   }
 
-  // Updated method with enhanced error handling and public access
+  // Updated method with enhanced error handling and public access for DEMO trading
   async getMarketPrice(symbol: string): Promise<{ price: number } | null> {
     if (!symbol) {
       console.error('Symbol is required for market price');
@@ -251,9 +251,9 @@ export class BybitService {
     }
 
     try {
-      console.log(`🔄 Fetching market price for ${symbol} from ${this.baseUrl}...`);
+      console.log(`🔄 Fetching market price for ${symbol} from DEMO TRADING API: ${this.baseUrl}...`);
       
-      // Public endpoint - no authentication required
+      // Public endpoint - no authentication required for demo trading
       const response = await fetch(`${this.baseUrl}/v5/market/tickers?category=spot&symbol=${symbol}`, {
         method: 'GET',
         headers: {
@@ -265,32 +265,32 @@ export class BybitService {
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`HTTP ${response.status} for ${symbol}:`, errorText);
+        console.error(`HTTP ${response.status} for ${symbol} on DEMO TRADING:`, errorText);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
       const data = await response.json();
-      console.log(`📊 Raw API response for ${symbol}:`, data);
+      console.log(`📊 Raw DEMO TRADING API response for ${symbol}:`, data);
       
       if (data.retCode === 0 && data.result?.list?.[0]?.lastPrice) {
         const price = parseFloat(data.result.list[0].lastPrice);
         if (isNaN(price) || price <= 0) {
-          console.error(`Invalid price received for ${symbol}:`, data.result.list[0].lastPrice);
+          console.error(`Invalid price received for ${symbol} from DEMO TRADING:`, data.result.list[0].lastPrice);
           return null;
         }
-        console.log(`✅ Valid price for ${symbol}: $${price.toFixed(6)}`);
+        console.log(`✅ Valid DEMO TRADING price for ${symbol}: $${price.toFixed(6)}`);
         return { price };
       } else if (data.retCode === 10001) {
-        console.error(`❌ Symbol ${symbol} not supported on testnet:`, data.retMsg);
+        console.error(`❌ Symbol ${symbol} not supported on DEMO TRADING:`, data.retMsg);
         return null;
       } else {
-        console.error(`❌ API error for ${symbol}:`, data);
+        console.error(`❌ DEMO TRADING API error for ${symbol}:`, data);
         return null;
       }
     } catch (error) {
-      console.error(`❌ Network error getting market price for ${symbol}:`, error);
+      console.error(`❌ Network error getting market price for ${symbol} from DEMO TRADING:`, error);
       if (this.logger) {
-        await this.logger.logError(`Market price fetch failed for ${symbol}`, error, { symbol });
+        await this.logger.logError(`DEMO TRADING market price fetch failed for ${symbol}`, error, { symbol });
       }
       return null;
     }
