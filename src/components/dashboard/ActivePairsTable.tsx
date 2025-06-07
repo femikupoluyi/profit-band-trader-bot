@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { ActiveTrade } from '@/types/trading';
+import { calculateSideAwarePL } from '@/utils/formatters';
 import ActiveTradeRow from './ActiveTradeRow';
 import ActiveTradesSummary from './ActiveTradesSummary';
 
@@ -29,8 +31,17 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
 
   const calculateActualPL = async (trade: any) => {
     try {
+      // Only calculate P&L for filled orders
+      if (trade.status !== 'filled') {
+        return {
+          currentPrice: parseFloat(trade.price.toString()),
+          unrealizedPL: 0
+        };
+      }
+
       const entryPrice = parseFloat(trade.price.toString());
       const quantity = parseFloat(trade.quantity.toString());
+      const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
       // Get current market price for P&L calculation
       const { data: marketData } = await supabase
@@ -44,18 +55,20 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       if (marketData) {
         const currentPrice = parseFloat(marketData.price.toString());
         
-        // Calculate actual P&L based on trade side
-        if (trade.side === 'buy') {
-          return {
-            currentPrice,
-            unrealizedPL: (currentPrice - entryPrice) * quantity
-          };
-        } else {
-          return {
-            currentPrice,
-            unrealizedPL: (entryPrice - currentPrice) * quantity
-          };
-        }
+        // Calculate actual P&L using fill price if available, with side-aware calculation
+        const unrealizedPL = calculateSideAwarePL(
+          trade.side,
+          entryPrice,
+          currentPrice,
+          quantity,
+          fillPrice,
+          trade.status
+        );
+        
+        return {
+          currentPrice,
+          unrealizedPL
+        };
       }
 
       return {
@@ -101,10 +114,11 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
             const entryPrice = parseFloat(trade.price.toString());
             const quantity = parseFloat(trade.quantity.toString());
             const volume = entryPrice * quantity;
+            const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
             const { currentPrice, unrealizedPL } = await calculateActualPL(trade);
             
-            console.log(`Trade ${trade.symbol}: Entry=$${entryPrice}, Current=$${currentPrice}, Qty=${quantity}, Actual Unrealized P&L=$${unrealizedPL.toFixed(2)}`);
+            console.log(`Trade ${trade.symbol}: Status=${trade.status}, Entry=$${entryPrice}, Fill=$${fillPrice || 'N/A'}, Current=$${currentPrice}, Qty=${quantity}, Unrealized P&L=$${unrealizedPL.toFixed(2)}`);
 
             return {
               ...trade,
@@ -114,6 +128,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
               currentPrice,
               unrealizedPL,
               volume,
+              fillPrice, // Add fill price for display
             };
           } catch (error) {
             console.error(`Error processing trade ${trade.id}:`, error);
@@ -127,12 +142,13 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
               currentPrice: entryPrice,
               unrealizedPL: 0,
               volume: entryPrice * quantity,
+              fillPrice: trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null,
             };
           }
         })
       );
 
-      console.log('Active trades with actual P&L:', tradesWithActualPL);
+      console.log('Active trades with fill price-aware P&L:', tradesWithActualPL);
       setActiveTrades(tradesWithActualPL);
     } catch (error) {
       console.error('Error fetching active trades:', error);
@@ -152,8 +168,8 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
     try {
       console.log('Manually closing trade:', trade.id);
 
-      // Use the current actual unrealized P&L as the final P&L
-      const finalPL = trade.unrealizedPL || 0;
+      // Use the current actual unrealized P&L as the final P&L (only for filled orders)
+      const finalPL = trade.status === 'filled' ? (trade.unrealizedPL || 0) : 0;
 
       // Update trade status to closed with final P&L
       const { error: updateError } = await supabase
@@ -180,19 +196,24 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
         .from('trading_logs')
         .insert({
           user_id: user?.id,
-          log_type: 'trade_closed',
+          log_type: 'position_closed',
           message: `Manually closed ${trade.symbol} position`,
           data: {
             tradeId: trade.id,
             symbol: trade.symbol,
             finalPL,
-            closeType: 'manual'
+            closeType: 'manual',
+            wasFilled: trade.status === 'filled'
           },
         });
 
+      const plMessage = trade.status === 'filled' 
+        ? `with ${finalPL >= 0 ? 'profit' : 'loss'} of $${Math.abs(finalPL).toFixed(2)}`
+        : 'with no P&L (unfilled order)';
+
       toast({
         title: "Trade Closed",
-        description: `Successfully closed ${trade.symbol} position with ${finalPL >= 0 ? 'profit' : 'loss'} of $${Math.abs(finalPL).toFixed(2)}`,
+        description: `Successfully closed ${trade.symbol} position ${plMessage}`,
       });
 
       // Refresh the trades list

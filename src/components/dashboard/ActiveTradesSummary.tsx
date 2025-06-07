@@ -2,33 +2,56 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage } from '@/utils/formatters';
+import { formatCurrency, calculateSideAwarePL } from '@/utils/formatters';
 
 interface ActiveTradesSummaryProps {
   trades: ActiveTrade[];
 }
 
 const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
-  // Calculate totals using side-aware calculations
-  const totalUnrealizedPL = trades.reduce((sum, trade) => {
+  // Only calculate P&L for filled orders using actual fill prices
+  const filledTrades = trades.filter(trade => trade.status === 'filled');
+  
+  const totalUnrealizedPL = filledTrades.reduce((sum, trade) => {
     const currentPrice = trade.currentPrice || trade.price;
-    const actualPL = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
+    const actualPL = calculateSideAwarePL(
+      trade.side, 
+      trade.price, 
+      currentPrice, 
+      trade.quantity,
+      trade.fillPrice, // Use actual fill price if available
+      trade.status
+    );
     return sum + actualPL;
   }, 0);
   
   const totalVolume = trades.reduce((sum, trade) => sum + (trade.volume || 0), 0);
-  const totalPositionValue = trades.reduce((sum, trade) => {
-    const currentPrice = trade.currentPrice || trade.price;
-    return sum + (currentPrice * trade.quantity);
-  }, 0);
-  const totalCount = trades.length;
   
-  // Calculate total unrealized percentage based on total volume invested using side-aware calculation
-  const totalUnrealizedPercentage = totalVolume > 0 ? (totalUnrealizedPL / totalVolume) * 100 : 0;
+  // Calculate total position value using actual fill prices for filled orders
+  const totalPositionValue = trades.reduce((sum, trade) => {
+    if (trade.status === 'filled') {
+      const effectivePrice = trade.fillPrice || trade.price;
+      return sum + (effectivePrice * trade.quantity);
+    }
+    return sum + (trade.price * trade.quantity);
+  }, 0);
+  
+  const totalCount = trades.length;
+  const filledCount = filledTrades.length;
+  
+  // Calculate total unrealized percentage based on filled orders only
+  const filledVolume = filledTrades.reduce((sum, trade) => {
+    const effectivePrice = trade.fillPrice || trade.price;
+    return sum + (effectivePrice * trade.quantity);
+  }, 0);
+  
+  const totalUnrealizedPercentage = filledVolume > 0 ? (totalUnrealizedPL / filledVolume) * 100 : 0;
 
-  console.log('Summary calculations with side-aware P&L:', {
+  console.log('Summary calculations with fill price-aware P&L:', {
     totalCount,
+    filledCount,
     totalVolume: totalVolume.toFixed(2),
+    filledVolume: filledVolume.toFixed(2),
     totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
     totalUnrealizedPercentage: totalUnrealizedPercentage.toFixed(2),
     totalPositionValue: totalPositionValue.toFixed(2)
@@ -36,7 +59,9 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
 
   return (
     <TableRow className="bg-muted/50 font-medium border-t-2">
-      <TableCell className="font-bold">Summary ({totalCount} positions)</TableCell>
+      <TableCell className="font-bold">
+        Summary ({totalCount} positions, {filledCount} filled)
+      </TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>
@@ -50,6 +75,9 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
         }`}>
           {formatCurrency(totalUnrealizedPL)}
         </span>
+        <div className="text-xs text-muted-foreground">
+          Filled orders only
+        </div>
       </TableCell>
       <TableCell>
         <span className={`font-bold ${
@@ -57,6 +85,9 @@ const ActiveTradesSummary = ({ trades }: ActiveTradesSummaryProps) => {
         }`}>
           {totalUnrealizedPercentage > 0 ? '+' : ''}{totalUnrealizedPercentage.toFixed(2)}%
         </span>
+        <div className="text-xs text-muted-foreground">
+          Filled orders only
+        </div>
       </TableCell>
       <TableCell>-</TableCell>
       <TableCell>-</TableCell>

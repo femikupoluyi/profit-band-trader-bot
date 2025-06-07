@@ -10,34 +10,69 @@ export const formatPercentage = (entry: number, current: number): string => {
 };
 
 /**
- * Calculate side-aware P&L for trading positions
+ * Calculate side-aware P&L for trading positions using actual fill prices
+ * Only calculates P&L for filled orders with valid fill prices
  * @param side - 'buy' or 'sell'
- * @param entryPrice - Entry price of the position
+ * @param entryPrice - Original entry price (fallback if no fill price)
  * @param currentPrice - Current market price
  * @param quantity - Position quantity
- * @returns P&L value (positive for profit, negative for loss)
+ * @param fillPrice - Actual fill price from exchange (optional)
+ * @param status - Trade status
+ * @returns P&L value (positive for profit, negative for loss, 0 for non-filled)
  */
-export const calculateSideAwarePL = (side: string, entryPrice: number, currentPrice: number, quantity: number): number => {
+export const calculateSideAwarePL = (
+  side: string, 
+  entryPrice: number, 
+  currentPrice: number, 
+  quantity: number,
+  fillPrice?: number,
+  status?: string
+): number => {
+  // Only calculate P&L for filled orders
+  if (status !== 'filled') {
+    return 0;
+  }
+
+  // Use actual fill price if available, otherwise fallback to entry price
+  const actualEntryPrice = fillPrice || entryPrice;
+  
   if (side === 'buy') {
-    return (currentPrice - entryPrice) * quantity;
+    return (currentPrice - actualEntryPrice) * quantity;
   } else {
-    return (entryPrice - currentPrice) * quantity;
+    return (actualEntryPrice - currentPrice) * quantity;
   }
 };
 
 /**
- * Calculate side-aware percentage change for trading positions
+ * Calculate side-aware percentage change for trading positions using actual fill prices
+ * Only calculates percentage for filled orders with valid fill prices
  * @param side - 'buy' or 'sell'
- * @param entryPrice - Entry price of the position
+ * @param entryPrice - Original entry price (fallback if no fill price)
  * @param currentPrice - Current market price
- * @returns Percentage change (positive for profit, negative for loss)
+ * @param fillPrice - Actual fill price from exchange (optional)
+ * @param status - Trade status
+ * @returns Percentage change (positive for profit, negative for loss, 0 for non-filled)
  */
-export const calculateSideAwarePercentage = (side: string, entryPrice: number, currentPrice: number): number => {
-  if (entryPrice === 0) return 0;
+export const calculateSideAwarePercentage = (
+  side: string, 
+  entryPrice: number, 
+  currentPrice: number,
+  fillPrice?: number,
+  status?: string
+): number => {
+  // Only calculate percentage for filled orders
+  if (status !== 'filled') {
+    return 0;
+  }
+
+  // Use actual fill price if available, otherwise fallback to entry price
+  const actualEntryPrice = fillPrice || entryPrice;
+  
+  if (actualEntryPrice === 0) return 0;
   
   if (side === 'buy') {
-    return ((currentPrice - entryPrice) / entryPrice) * 100;
+    return ((currentPrice - actualEntryPrice) / actualEntryPrice) * 100;
   } else {
-    return ((entryPrice - currentPrice) / entryPrice) * 100;
+    return ((actualEntryPrice - currentPrice) / actualEntryPrice) * 100;
   }
 };

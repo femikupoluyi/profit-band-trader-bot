@@ -11,4 +11,6 @@ export interface ActiveTrade {
   currentPrice?: number;
   unrealizedPL?: number;
   volume?: number;
+  fillPrice?: number; // Actual fill price from exchange
+  buy_fill_price?: number; // Database column name
 }

@@ -23,6 +23,7 @@ interface Trade {
   order_type: string;
   profit_loss?: number;
   actualPL?: number;
+  buy_fill_price?: number;
   created_at: string;
   updated_at: string;
   bybit_order_id?: string;
@@ -55,8 +56,9 @@ const TradesReport = () => {
     try {
       const entryPrice = parseFloat(trade.price.toString());
       const quantity = parseFloat(trade.quantity.toString());
+      const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
-      // For closed trades, use stored P&L if reasonable, otherwise use fallback
+      // For closed trades, use stored P&L if it exists and is reasonable
       if (['closed', 'cancelled'].includes(trade.status)) {
         if (trade.profit_loss) {
           const storedPL = parseFloat(trade.profit_loss.toString());
@@ -74,6 +76,11 @@ const TradesReport = () => {
       }
 
       // For active trades, calculate real-time P&L using current market price with side-aware calculation
+      // Only calculate P&L for filled orders
+      if (trade.status !== 'filled') {
+        return 0;
+      }
+
       const { data: marketData } = await supabase
         .from('market_data')
         .select('price')
@@ -85,8 +92,15 @@ const TradesReport = () => {
       if (marketData) {
         const currentPrice = parseFloat(marketData.price.toString());
         
-        // Use side-aware P&L calculation
-        return calculateSideAwarePL(trade.side, entryPrice, currentPrice, quantity);
+        // Use side-aware P&L calculation with actual fill price
+        return calculateSideAwarePL(
+          trade.side, 
+          entryPrice, 
+          currentPrice, 
+          quantity,
+          fillPrice,
+          trade.status
+        );
       }
 
       return 0;
@@ -154,15 +168,17 @@ const TradesReport = () => {
         (data || []).map(async (trade) => {
           const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
           const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
+          const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
           
           const actualPL = await calculateActualPL(trade);
           
-          console.log(`Processing trade ${trade.symbol}: Side=${trade.side}, Price=$${price}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+          console.log(`Processing trade ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, Price=$${price}, Fill=${fillPrice ? `$${fillPrice}` : 'N/A'}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}`);
           
           return {
             ...trade,
             quantity,
             price,
+            buy_fill_price: fillPrice,
             actualPL
           };
         })
@@ -185,7 +201,8 @@ const TradesReport = () => {
       'Side',
       'Type',
       'Quantity',
-      'Price',
+      'Order Price',
+      'Fill Price',
       'Volume',
       'Actual P&L',
       'Status',
@@ -195,7 +212,9 @@ const TradesReport = () => {
     const csvData = trades.map(trade => {
       const quantity = trade.quantity;
       const price = trade.price;
-      const volume = quantity * price;
+      const fillPrice = trade.buy_fill_price;
+      const effectivePrice = fillPrice || price;
+      const volume = quantity * effectivePrice;
       const actualPL = trade.actualPL || 0;
 
       return [
@@ -205,6 +224,7 @@ const TradesReport = () => {
         trade.order_type,
         quantity.toFixed(6),
         `$${price.toFixed(2)}`,
+        fillPrice ? `$${fillPrice.toFixed(2)}` : 'N/A',
         `$${volume.toFixed(2)}`,
         actualPL !== 0 ? `$${actualPL.toFixed(2)}` : '-',
         trade.status,
@@ -246,16 +266,20 @@ const TradesReport = () => {
     );
   };
 
-  // Calculate summary statistics with actual P&L
+  // Calculate summary statistics with fill price-aware actual P&L
   const totalTrades = trades.length;
+  const filledTrades = trades.filter(t => t.status === 'filled');
+  
   const totalVolume = trades.reduce((sum, trade) => {
     const price = trade.price;
     const quantity = trade.quantity;
     return sum + (price * quantity);
   }, 0);
+  
   const totalPL = trades.reduce((sum, trade) => {
     return sum + (trade.actualPL || 0);
   }, 0);
+  
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
   const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
   
@@ -264,8 +288,9 @@ const TradesReport = () => {
     .filter(t => ['closed', 'cancelled'].includes(t.status))
     .reduce((sum, trade) => sum + (trade.actualPL || 0), 0);
 
-  console.log('Summary calculations with actual P&L:', {
+  console.log('Summary calculations with fill price-aware P&L:', {
     totalTrades,
+    filledTrades: filledTrades.length,
     totalVolume: totalVolume.toFixed(2),
     totalPL: totalPL.toFixed(2),
     closedPositionsProfit: closedPositionsProfit.toFixed(2),
@@ -288,7 +313,7 @@ const TradesReport = () => {
           </Button>
         </CardTitle>
         <CardDescription>
-          Generate detailed reports of your trading activity within selected time frames.
+          Generate detailed reports of your trading activity. P&L calculations use actual fill prices from Bybit for filled orders only.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -407,12 +432,14 @@ const TradesReport = () => {
             <div className={`text-2xl font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(totalPL)}
             </div>
+            <div className="text-xs text-muted-foreground">Fill price based</div>
           </div>
           <div className="bg-muted/50 p-3 rounded-lg">
             <div className="text-sm text-muted-foreground">Closed P&L</div>
             <div className={`text-2xl font-bold ${closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(closedPositionsProfit)}
             </div>
+            <div className="text-xs text-muted-foreground">Fill price based</div>
           </div>
         </div>
 
@@ -435,7 +462,8 @@ const TradesReport = () => {
                   <TableHead>Side</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Quantity</TableHead>
-                  <TableHead>Price</TableHead>
+                  <TableHead>Order Price</TableHead>
+                  <TableHead>Fill Price</TableHead>
                   <TableHead>Volume</TableHead>
                   <TableHead>Actual P&L</TableHead>
                   <TableHead>Status</TableHead>
@@ -445,7 +473,9 @@ const TradesReport = () => {
                 {trades.map((trade) => {
                   const quantity = trade.quantity;
                   const price = trade.price;
-                  const volume = quantity * price;
+                  const fillPrice = trade.buy_fill_price;
+                  const effectivePrice = fillPrice || price;
+                  const volume = quantity * effectivePrice;
                   const actualPL = trade.actualPL || 0;
 
                   return (
@@ -458,6 +488,15 @@ const TradesReport = () => {
                       <TableCell className="capitalize">{trade.order_type}</TableCell>
                       <TableCell>{quantity.toFixed(6)}</TableCell>
                       <TableCell>${price.toFixed(2)}</TableCell>
+                      <TableCell>
+                        {fillPrice ? (
+                          <span className={fillPrice !== price ? 'text-blue-600 font-medium' : ''}>
+                            ${fillPrice.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
                       <TableCell>{formatCurrency(volume)}</TableCell>
                       <TableCell>
                         {actualPL !== 0 ? (
@@ -465,7 +504,7 @@ const TradesReport = () => {
                             {formatCurrency(actualPL)}
                           </span>
                         ) : (
-                          '-'
+                          <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
                       <TableCell>{getStatusBadge(trade.status)}</TableCell>

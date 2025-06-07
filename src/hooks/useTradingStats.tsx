@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -48,6 +49,7 @@ export const useTradingStats = (userId?: string) => {
     try {
       const entryPrice = parseFloat(trade.price.toString());
       const quantity = parseFloat(trade.quantity.toString());
+      const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
       // For closed trades, use the stored profit_loss if it exists and is reasonable
       if (['closed', 'cancelled'].includes(trade.status)) {
@@ -68,6 +70,11 @@ export const useTradingStats = (userId?: string) => {
       }
 
       // For active trades, calculate real-time P&L using current market price with side-aware calculation
+      // Only calculate P&L for filled orders
+      if (trade.status !== 'filled') {
+        return 0;
+      }
+
       const { data: marketData } = await supabase
         .from('market_data')
         .select('price')
@@ -79,8 +86,15 @@ export const useTradingStats = (userId?: string) => {
       if (marketData) {
         const currentPrice = parseFloat(marketData.price.toString());
         
-        // Use side-aware P&L calculation
-        return calculateSideAwarePL(trade.side, entryPrice, currentPrice, quantity);
+        // Use side-aware P&L calculation with actual fill price
+        return calculateSideAwarePL(
+          trade.side, 
+          entryPrice, 
+          currentPrice, 
+          quantity,
+          fillPrice,
+          trade.status
+        );
       }
 
       return 0;
@@ -139,7 +153,7 @@ export const useTradingStats = (userId?: string) => {
       console.log('Fetched trades in range:', trades.length);
       console.log('Fetched all active trades:', activeTrades.length);
 
-      // Calculate actual P&L for all trades using side-aware calculation
+      // Calculate actual P&L for all trades using fill price-aware calculation
       const tradesWithActualPL = await Promise.all(
         trades.map(async (trade) => {
           const actualPL = await calculateActualPL(trade);
@@ -147,9 +161,10 @@ export const useTradingStats = (userId?: string) => {
         })
       );
 
-      // Calculate metrics with actual P&L
+      // Calculate metrics with fill price-aware actual P&L
       const totalTrades = tradesWithActualPL.length;
       const closedTrades = tradesWithActualPL.filter(t => ['closed', 'cancelled'].includes(t.status));
+      const filledTrades = tradesWithActualPL.filter(t => t.status === 'filled');
       
       let totalProfit = 0;
       let closedPositionsProfit = 0;
@@ -159,10 +174,12 @@ export const useTradingStats = (userId?: string) => {
       tradesWithActualPL.forEach(trade => {
         const price = parseFloat(trade.price.toString());
         const quantity = parseFloat(trade.quantity.toString());
-        const volume = price * quantity;
+        const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
+        const effectivePrice = fillPrice || price;
+        const volume = effectivePrice * quantity;
         const actualPL = trade.actualPL || 0;
         
-        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Entry=$${price.toFixed(2)}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Actual P&L=$${actualPL.toFixed(2)}, Status=${trade.status}`);
+        console.log(`Trade ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, Entry=$${price.toFixed(2)}, Fill=${fillPrice ? `$${fillPrice.toFixed(2)}` : 'N/A'}, Qty=${quantity.toFixed(6)}, Volume=$${volume.toFixed(2)}, Actual P&L=$${actualPL.toFixed(2)}`);
         
         totalProfit += actualPL;
         totalVolume += volume;
@@ -181,8 +198,9 @@ export const useTradingStats = (userId?: string) => {
       // Calculate profit percentage based on closed trades only
       const profitPercentage = closedTrades.length > 0 ? (profitableClosedCount / closedTrades.length) * 100 : 0;
 
-      // Get unique active trading pairs from ALL active trades
-      const activePairs = new Set(activeTrades.map(trade => trade.symbol)).size;
+      // Get unique active trading pairs from ALL active trades (only filled ones for accurate pair count)
+      const activeFilledTrades = activeTrades.filter(trade => trade.status === 'filled');
+      const activePairs = new Set(activeFilledTrades.map(trade => trade.symbol)).size;
       const totalActiveCount = activeTrades.length;
 
       const newStats = {
@@ -198,7 +216,7 @@ export const useTradingStats = (userId?: string) => {
         profitPercentage: Math.round(profitPercentage * 100) / 100
       };
 
-      console.log('Calculated stats with side-aware P&L:', newStats);
+      console.log('Calculated stats with fill price-aware P&L:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);

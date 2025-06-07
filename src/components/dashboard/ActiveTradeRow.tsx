@@ -14,9 +14,26 @@ interface ActiveTradeRowProps {
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
   const currentPrice = trade.currentPrice || trade.price;
   
-  // Calculate side-aware P&L and percentage
-  const sideAwarePL = calculateSideAwarePL(trade.side, trade.price, currentPrice, trade.quantity);
-  const sideAwarePercentage = calculateSideAwarePercentage(trade.side, trade.price, currentPrice);
+  // Calculate side-aware P&L and percentage using actual fill price for filled orders only
+  const sideAwarePL = calculateSideAwarePL(
+    trade.side, 
+    trade.price, 
+    currentPrice, 
+    trade.quantity,
+    trade.fillPrice, // Use actual fill price if available
+    trade.status
+  );
+  
+  const sideAwarePercentage = calculateSideAwarePercentage(
+    trade.side, 
+    trade.price, 
+    currentPrice,
+    trade.fillPrice, // Use actual fill price if available
+    trade.status
+  );
+
+  // Display price used for calculations
+  const effectiveEntryPrice = trade.status === 'filled' && trade.fillPrice ? trade.fillPrice : trade.price;
 
   return (
     <TableRow>
@@ -31,22 +48,37 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
         </span>
       </TableCell>
       <TableCell>{trade.quantity.toFixed(8)}</TableCell>
-      <TableCell>{formatCurrency(trade.price)}</TableCell>
+      <TableCell>
+        {formatCurrency(effectiveEntryPrice)}
+        {trade.status === 'filled' && trade.fillPrice && trade.fillPrice !== trade.price && (
+          <div className="text-xs text-muted-foreground">
+            Fill: {formatCurrency(trade.fillPrice)}
+          </div>
+        )}
+      </TableCell>
       <TableCell>{formatCurrency(currentPrice)}</TableCell>
       <TableCell>{formatCurrency(trade.volume || 0)}</TableCell>
       <TableCell>
-        <span className={`font-medium ${
-          sideAwarePL >= 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {formatCurrency(sideAwarePL)}
-        </span>
+        {trade.status === 'filled' ? (
+          <span className={`font-medium ${
+            sideAwarePL >= 0 ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {formatCurrency(sideAwarePL)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
       </TableCell>
       <TableCell>
-        <span className={`font-medium ${
-          sideAwarePercentage >= 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {sideAwarePercentage > 0 ? '+' : ''}{sideAwarePercentage.toFixed(2)}%
-        </span>
+        {trade.status === 'filled' ? (
+          <span className={`font-medium ${
+            sideAwarePercentage >= 0 ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {sideAwarePercentage > 0 ? '+' : ''}{sideAwarePercentage.toFixed(2)}%
+          </span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
       </TableCell>
       <TableCell>
         <span className={`px-2 py-1 rounded text-xs font-medium ${
