@@ -489,7 +489,7 @@ const TradesReport = () => {
                       <TableCell>{quantity.toFixed(6)}</TableCell>
                       <TableCell>${price.toFixed(2)}</TableCell>
                       <TableCell>
-                        {trade.status === 'filled' && fillPrice ? (
+                        {fillPrice ? (
                           <span className={fillPrice !== price ? 'text-blue-600 font-medium' : ''}>
                             ${fillPrice.toFixed(2)}
                           </span>
