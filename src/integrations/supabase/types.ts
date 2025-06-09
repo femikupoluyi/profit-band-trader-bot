@@ -267,6 +267,45 @@ export type Database = {
         }
         Relationships: []
       }
+      trading_signals: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          id: string
+          price: number
+          processed: boolean | null
+          reasoning: string | null
+          signal_type: string
+          symbol: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          price: number
+          processed?: boolean | null
+          reasoning?: string | null
+          signal_type: string
+          symbol: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          price?: number
+          processed?: boolean | null
+          reasoning?: string | null
+          signal_type?: string
+          symbol?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

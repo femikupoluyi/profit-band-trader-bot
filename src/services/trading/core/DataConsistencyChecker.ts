@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './TradingLogger';
 
@@ -244,7 +243,7 @@ export class DataConsistencyChecker {
       }
 
       // Check trading_signals for proper numeric fields
-      const { data: signals, error: signalsError } = await supabase
+      const { data: signals, error: signalsError } = await (supabase as any)
         .from('trading_signals')
         .select('id, price, confidence')
         .eq('user_id', userId)
@@ -305,7 +304,7 @@ export class DataConsistencyChecker {
       }
 
       // Remove signals with invalid data
-      const { error: deleteSignalsError } = await supabase
+      const { error: deleteSignalsError } = await (supabase as any)
         .from('trading_signals')
         .delete()
         .eq('user_id', userId)

@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './TradingLogger';
 
@@ -101,7 +100,7 @@ export class DatabaseConsistencyChecker {
       }
 
       // Check for signals without valid data
-      const { data: invalidSignals, error: signalsError } = await supabase
+      const { data: invalidSignals, error: signalsError } = await (supabase as any)
         .from('trading_signals')
         .select('id, symbol, signal_type')
         .eq('user_id', userId)
@@ -237,7 +236,7 @@ export class DatabaseConsistencyChecker {
     try {
       // Clean up old processed signals (older than 7 days)
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { error: signalsError } = await supabase
+      const { error: signalsError } = await (supabase as any)
         .from('trading_signals')
         .delete()
         .eq('user_id', userId)

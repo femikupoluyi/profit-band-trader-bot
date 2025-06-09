@@ -5,7 +5,7 @@ import { TEST_NAMES, TEST_SYMBOLS } from './testConstants';
 
 export const runSignalGenerationTest = async (userId: string): Promise<TestResult> => {
   try {
-    const { data: signal, error: signalError } = await supabase
+    const { data: signal, error: signalError } = await (supabase as any)
       .from('trading_signals')
       .insert({
         user_id: userId,
@@ -27,7 +27,7 @@ export const runSignalGenerationTest = async (userId: string): Promise<TestResul
       };
     } else {
       // Clean up test signal
-      await supabase
+      await (supabase as any)
         .from('trading_signals')
         .delete()
         .eq('id', signal.id);
