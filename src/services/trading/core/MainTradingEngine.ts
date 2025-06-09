@@ -80,8 +80,8 @@ export class MainTradingEngine {
       console.log('⚙️ Configuration loaded:', {
         isActive: config.is_active,
         tradingPairs: config.trading_pairs?.length || 0,
-        maxOrderAmount: config.max_order_amount_usd,
-        takeProfitPercent: config.take_profit_percent,
+        maxOrderAmount: config.maximum_order_amount_usd,
+        takeProfitPercent: config.take_profit_percentage,
         mainLoopInterval: config.main_loop_interval_seconds
       });
 
@@ -90,8 +90,8 @@ export class MainTradingEngine {
         details: {
           isActive: config.is_active,
           tradingPairsCount: config.trading_pairs?.length || 0,
-          maxOrderAmount: config.max_order_amount_usd,
-          takeProfitPercent: config.take_profit_percent,
+          maxOrderAmount: config.maximum_order_amount_usd,
+          takeProfitPercent: config.take_profit_percentage,
           mainLoopInterval: config.main_loop_interval_seconds
         }
       });
@@ -137,7 +137,7 @@ export class MainTradingEngine {
         details: {
           isActive: config.is_active,
           tradingPairsCount: config.trading_pairs?.length || 0,
-          maxOrderAmount: config.max_order_amount_usd,
+          maxOrderAmount: config.maximum_order_amount_usd,
           mainLoopInterval: config.main_loop_interval_seconds
         }
       });
@@ -154,7 +154,7 @@ export class MainTradingEngine {
       await this.logger.logEngineStatusChange('starting', {
         intervalSeconds: config.main_loop_interval_seconds,
         tradingPairsCount: config.trading_pairs?.length || 0,
-        maxOrderAmount: config.max_order_amount_usd
+        maxOrderAmount: config.maximum_order_amount_usd
       });
 
       // Reset cycle counter
