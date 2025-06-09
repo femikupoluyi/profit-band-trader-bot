@@ -1,6 +1,7 @@
 
 import { TRADING_ENVIRONMENT } from './core/TypeDefinitions';
 import { PriceFormatter } from './core/PriceFormatter';
+import { getSupportedTradingPairs } from '@/components/trading/test/testConstants';
 
 export class TradeValidation {
   static getFormattedQuantity(symbol: string, quantity: number): string {
@@ -17,18 +18,9 @@ export class TradeValidation {
     
     // Conservative minimum order values for demo trading
     const minOrderValues: Record<string, number> = {
-      'BTCUSDT': 25,
-      'ETHUSDT': 25,
-      'BNBUSDT': 25,
-      'SOLUSDT': 25,
-      'LTCUSDT': 25,
-      'ADAUSDT': 15,
-      'XRPUSDT': 15,
-      'DOGEUSDT': 15,
-      'MATICUSDT': 15,
-      'FETUSDT': 15,
-      'POLUSDT': 15,
-      'XLMUSDT': 15,
+      'BTCUSDT': 25, 'ETHUSDT': 25, 'BNBUSDT': 25, 'SOLUSDT': 25, 'LTCUSDT': 25,
+      'ADAUSDT': 15, 'XRPUSDT': 15, 'DOGEUSDT': 15, 'MATICUSDT': 15, 'FETUSDT': 15,
+      'POLUSDT': 15, 'XLMUSDT': 15,
     };
 
     const minValue = minOrderValues[symbol] || 25;
@@ -44,12 +36,7 @@ export class TradeValidation {
   }
 
   static validateSymbol(symbol: string): boolean {
-    const supportedSymbols = [
-      'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 
-      'XRPUSDT', 'LTCUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 
-      'POLUSDT', 'XLMUSDT'
-    ];
-    
+    const supportedSymbols = getSupportedTradingPairs();
     return supportedSymbols.includes(symbol);
   }
 
@@ -61,5 +48,9 @@ export class TradeValidation {
     };
     
     return minOrderValues[symbol] || 25;
+  }
+
+  static getSupportedSymbols(): string[] {
+    return getSupportedTradingPairs();
   }
 }

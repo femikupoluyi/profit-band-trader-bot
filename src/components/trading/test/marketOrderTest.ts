@@ -1,18 +1,21 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { TestResult } from './types';
-import { TEST_NAMES, TEST_SYMBOLS, TEST_CONFIG } from './testConstants';
+import { TEST_NAMES, TEST_CONFIG, getRandomTestSymbol } from './testConstants';
 
 export const runMarketOrderTest = async (): Promise<TestResult> => {
   try {
-    // Get current SOL price to calculate quantities for different amounts
+    // Use a random test symbol instead of hard-coded SOL
+    const testSymbol = getRandomTestSymbol();
+    
+    // Get current price for the selected symbol
     const { data: priceResponse } = await supabase.functions.invoke('bybit-api', {
       body: {
         endpoint: '/v5/market/tickers',
         method: 'GET',
         params: {
           category: 'spot',
-          symbol: TEST_SYMBOLS.SOL
+          symbol: testSymbol
         },
         isDemoTrading: true
       }
@@ -22,22 +25,22 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
       return { 
         test: TEST_NAMES.MARKET_ORDER, 
         status: 'error', 
-        message: '❌ Could not get SOL price for order calculation' 
+        message: `❌ Could not get ${testSymbol} price for order calculation` 
       };
     }
 
-    const solPrice = parseFloat(priceResponse.result?.list?.[0]?.lastPrice || '0');
-    console.log(`Current SOL price: $${solPrice}`);
+    const currentPrice = parseFloat(priceResponse.result?.list?.[0]?.lastPrice || '0');
+    console.log(`Current ${testSymbol} price: $${currentPrice}`);
 
     // Test with higher order amounts to meet minimum requirements: $100, $200, $500, $1000
     const testAmounts = [100, 200, 500, 1000];
     const results = [];
 
     for (const amount of testAmounts) {
-      console.log(`\n🧪 Testing market order with $${amount}...`);
+      console.log(`\n🧪 Testing market order with $${amount} for ${testSymbol}...`);
       
-      const quantity = (amount / solPrice).toFixed(6);
-      console.log(`Calculated quantity: ${quantity} SOL for $${amount}`);
+      const quantity = (amount / currentPrice).toFixed(6);
+      console.log(`Calculated quantity: ${quantity} ${testSymbol.replace('USDT', '')} for $${amount}`);
       
       const { data: orderResponse, error: orderError } = await supabase.functions.invoke('bybit-api', {
         body: {
@@ -45,7 +48,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
           method: 'POST',
           params: {
             category: 'spot',
-            symbol: TEST_SYMBOLS.SOL,
+            symbol: testSymbol,
             side: 'Buy',
             orderType: 'Market',
             qty: quantity,
@@ -68,7 +71,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
         return { 
           test: TEST_NAMES.MARKET_ORDER, 
           status: 'success', 
-          message: `✅ Market orders successful! Results:\n${results.join('\n')}`,
+          message: `✅ Market orders successful for ${testSymbol}! Results:\n${results.join('\n')}`,
           orderId 
         };
       } else if (orderResponse?.retCode === 10003) {
@@ -105,7 +108,7 @@ export const runMarketOrderTest = async (): Promise<TestResult> => {
       status = 'warning';
       summaryMessage = '⚠️ All test amounts below minimum order size - demo account may require $1000+ orders';
     } else {
-      summaryMessage = '❌ All market order tests failed';
+      summaryMessage = `❌ All market order tests failed for ${testSymbol}`;
     }
     
     return { 

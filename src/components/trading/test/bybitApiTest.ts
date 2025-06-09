@@ -1,17 +1,20 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { TestResult } from './types';
-import { TEST_NAMES, TEST_SYMBOLS, TEST_CONFIG, TEST_MESSAGES } from './testConstants';
+import { TEST_NAMES, TEST_CONFIG, TEST_MESSAGES, getRandomTestSymbol } from './testConstants';
 
 export const runBybitApiTest = async (): Promise<TestResult> => {
   try {
+    // Use a random test symbol instead of hard-coded SOL
+    const testSymbol = getRandomTestSymbol();
+    
     const { data: apiResponse, error: apiError } = await supabase.functions.invoke('bybit-api', {
       body: {
         endpoint: '/v5/market/tickers',
         method: 'GET',
         params: {
           category: 'spot',
-          symbol: TEST_SYMBOLS.SOL
+          symbol: testSymbol
         },
         isDemoTrading: TEST_CONFIG.ENVIRONMENT.isDemoTrading
       }
@@ -25,10 +28,11 @@ export const runBybitApiTest = async (): Promise<TestResult> => {
       };
     } else if (apiResponse?.retCode === 0) {
       const price = apiResponse.result?.list?.[0]?.lastPrice;
+      const symbolName = testSymbol.replace('USDT', '');
       return { 
         test: TEST_NAMES.BYBIT_API, 
         status: 'success', 
-        message: `${TEST_MESSAGES.SUCCESS.API_CONNECTION} SOL: $${price}` 
+        message: `${TEST_MESSAGES.SUCCESS.API_CONNECTION} ${symbolName}: $${price}` 
       };
     } else {
       return { 

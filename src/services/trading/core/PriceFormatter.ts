@@ -1,4 +1,6 @@
 
+import { getSupportedTradingPairs } from '@/components/trading/test/testConstants';
+
 export class PriceFormatter {
   // Symbol-specific precision mapping for common trading pairs
   private static readonly SYMBOL_PRECISION: Record<string, { price: number; quantity: number }> = {
@@ -11,7 +13,9 @@ export class PriceFormatter {
     'LTCUSDT': { price: 2, quantity: 2 },
     'POLUSDT': { price: 4, quantity: 0 },
     'FETUSDT': { price: 6, quantity: 0 },
-    'XLMUSDT': { price: 3, quantity: 0 } // Reduced from 4 to 3 decimals for price
+    'XLMUSDT': { price: 3, quantity: 0 },
+    'DOGEUSDT': { price: 6, quantity: 0 },
+    'MATICUSDT': { price: 6, quantity: 0 }
   };
 
   // Default precision for unknown symbols
@@ -37,21 +41,22 @@ export class PriceFormatter {
    * Get the minimum notional value for a symbol
    */
   static getMinimumNotional(symbol: string): number {
-    // Default minimum notional values
-    const minimumNotionals: Record<string, number> = {
-      'BTCUSDT': 10,
-      'ETHUSDT': 10,
-      'SOLUSDT': 10,
-      'BNBUSDT': 10,
-      'ADAUSDT': 10,
-      'XRPUSDT': 10,
-      'LTCUSDT': 10,
-      'POLUSDT': 10,
-      'FETUSDT': 10,
-      'XLMUSDT': 10
+    // Dynamic minimum notional values based on symbol
+    const minimumNotionals: Record<string, number> = {};
+    
+    // Initialize with supported symbols
+    getSupportedTradingPairs().forEach(pair => {
+      minimumNotionals[pair] = 10; // Default minimum
+    });
+    
+    // Override specific values
+    const specificMinimums = {
+      'BTCUSDT': 10, 'ETHUSDT': 10, 'SOLUSDT': 10, 'BNBUSDT': 10,
+      'ADAUSDT': 10, 'XRPUSDT': 10, 'LTCUSDT': 10, 'POLUSDT': 10,
+      'FETUSDT': 10, 'XLMUSDT': 10, 'DOGEUSDT': 10, 'MATICUSDT': 10
     };
-
-    return minimumNotionals[symbol] || 10;
+    
+    return specificMinimums[symbol] || minimumNotionals[symbol] || 10;
   }
 
   /**
@@ -59,16 +64,9 @@ export class PriceFormatter {
    */
   static getQuantityIncrement(symbol: string): number {
     const increments: Record<string, number> = {
-      'BTCUSDT': 0.00001,
-      'ETHUSDT': 0.0001,
-      'SOLUSDT': 0.01,
-      'BNBUSDT': 0.001,
-      'ADAUSDT': 1,
-      'XRPUSDT': 0.1,
-      'LTCUSDT': 0.01,
-      'POLUSDT': 1,
-      'FETUSDT': 1,
-      'XLMUSDT': 1
+      'BTCUSDT': 0.00001, 'ETHUSDT': 0.0001, 'SOLUSDT': 0.01, 'BNBUSDT': 0.001,
+      'ADAUSDT': 1, 'XRPUSDT': 0.1, 'LTCUSDT': 0.01, 'POLUSDT': 1,
+      'FETUSDT': 1, 'XLMUSDT': 1, 'DOGEUSDT': 1, 'MATICUSDT': 1
     };
 
     return increments[symbol] || 0.0001;
@@ -90,5 +88,28 @@ export class PriceFormatter {
     const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
     const formattedQuantity = parseFloat(quantity.toFixed(precision.quantity));
     return Math.abs(quantity - formattedQuantity) < Number.EPSILON;
+  }
+
+  /**
+   * Get all supported symbols with their precision settings
+   */
+  static getSupportedSymbolsWithPrecision(): Record<string, { price: number; quantity: number }> {
+    const supported: Record<string, { price: number; quantity: number }> = {};
+    
+    getSupportedTradingPairs().forEach(symbol => {
+      supported[symbol] = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
+    });
+    
+    return supported;
+  }
+
+  /**
+   * Update precision for a symbol dynamically
+   */
+  static updateSymbolPrecision(symbol: string, pricePrecision: number, quantityPrecision: number): void {
+    this.SYMBOL_PRECISION[symbol] = {
+      price: pricePrecision,
+      quantity: quantityPrecision
+    };
   }
 }

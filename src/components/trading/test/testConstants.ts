@@ -5,7 +5,9 @@ import { TRADING_ENVIRONMENT } from '@/services/trading/core/TypeDefinitions';
 export const TEST_SYMBOLS = {
   BTC: 'BTCUSDT',
   ETH: 'ETHUSDT',
-  SOL: 'SOLUSDT'
+  SOL: 'SOLUSDT',
+  BNB: 'BNBUSDT',
+  ADA: 'ADAUSDT'
 } as const;
 
 export const TEST_CONFIG = {
@@ -40,11 +42,19 @@ export const TEST_MESSAGES = {
 } as const;
 
 /**
- * Get available test symbols dynamically
+ * Get available test symbols dynamically from trading config
  * This function can be extended to fetch symbols from configuration or API
  */
 export const getTestSymbols = (): string[] => {
   return Object.values(TEST_SYMBOLS);
+};
+
+/**
+ * Get a random test symbol for testing
+ */
+export const getRandomTestSymbol = (): string => {
+  const symbols = getTestSymbols();
+  return symbols[Math.floor(Math.random() * symbols.length)];
 };
 
 /**
@@ -59,4 +69,15 @@ export const isValidTestSymbol = (symbol: string): boolean => {
   
   // Check if it's a USDT pair (common for testing)
   return symbol.endsWith('USDT') && symbol.length > 4;
+};
+
+/**
+ * Get supported trading pairs from a more dynamic source
+ */
+export const getSupportedTradingPairs = (): string[] => {
+  return [
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 
+    'XRPUSDT', 'LTCUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 
+    'POLUSDT', 'XLMUSDT'
+  ];
 };
