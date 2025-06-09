@@ -43,7 +43,7 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
 
     setIsLoading(true);
     try {
-      console.log('Fetching trading stats for user:', userId, 'Time range:', timeRange);
+      console.log('📊 Fetching trading stats for user:', userId, 'Time range:', timeRange);
 
       // Get trading config
       const { data: config, error: configError } = await supabase
@@ -53,7 +53,7 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
         .maybeSingle();
 
       if (configError) {
-        console.error('Error fetching config:', configError);
+        console.error('❌ Error fetching config:', configError);
       }
 
       // Get trades within time range for time-based metrics
@@ -65,7 +65,7 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
         .lte('created_at', timeRange.to.toISOString());
 
       if (tradesError) {
-        console.error('Error fetching trades:', tradesError);
+        console.error('❌ Error fetching trades:', tradesError);
         return;
       }
 
@@ -77,21 +77,26 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
         .in('status', ['pending', 'partial_filled', 'filled']);
 
       if (activeTradesError) {
-        console.error('Error fetching active trades:', activeTradesError);
+        console.error('❌ Error fetching active trades:', activeTradesError);
         return;
       }
 
       const trades = tradesInRange || [];
       const activeTrades = allActiveTrades || [];
       
-      console.log('Fetched trades in range:', trades.length);
-      console.log('Fetched all active trades:', activeTrades.length);
+      console.log('✅ Fetched trades in range:', trades.length);
+      console.log('✅ Fetched all active trades:', activeTrades.length);
 
       // Calculate actual P&L for all trades
       const tradesWithActualPL = await Promise.all(
         trades.map(async (trade) => {
-          const actualPL = await calculateActualPL(trade, userId);
-          return { ...trade, actualPL };
+          try {
+            const actualPL = await calculateActualPL(trade, userId);
+            return { ...trade, actualPL };
+          } catch (error) {
+            console.error(`❌ Error calculating P&L for trade ${trade.id}:`, error);
+            return { ...trade, actualPL: 0 };
+          }
         })
       );
 
@@ -112,10 +117,10 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
         totalProfitableClosed: metrics.profitableClosedCount,
       };
 
-      console.log('Calculated stats with corrected P&L logic:', newStats);
+      console.log('✅ Calculated stats with corrected P&L logic:', newStats);
       setStats(newStats);
     } catch (error) {
-      console.error('Error fetching trading stats:', error);
+      console.error('❌ Error fetching trading stats:', error);
       toast({
         title: "Error",
         description: "Failed to fetch trading statistics.",
@@ -126,6 +131,7 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
     }
   };
 
+  // Only fetch when userId or timeRange changes - no auto-refresh
   useEffect(() => {
     if (userId && timeRange) {
       fetchTradingStats();

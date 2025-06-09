@@ -27,13 +27,14 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
-  const { activeTrades, isLoading, refetch } = useActiveTrades();
+  // Enable auto-refresh for dashboard view
+  const { activeTrades, isLoading, refetch } = useActiveTrades(true);
 
   const handleCloseTrade = async (trade: ActiveTrade) => {
     setClosingTrades(prev => new Set(prev).add(trade.id));
     
     try {
-      console.log('Manually closing trade:', trade.id);
+      console.log('🔒 Manually closing trade:', trade.id);
 
       // Use the current actual unrealized P&L as the final P&L (only for filled orders)
       const finalPL = trade.status === 'filled' ? (trade.unrealizedPL || 0) : 0;
@@ -49,7 +50,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
         .eq('id', trade.id);
 
       if (updateError) {
-        console.error('Error closing trade:', updateError);
+        console.error('❌ Error closing trade:', updateError);
         toast({
           title: "Error",
           description: "Failed to close trade.",
@@ -91,7 +92,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
         onTradeUpdate();
       }
     } catch (error) {
-      console.error('Error closing trade:', error);
+      console.error('❌ Error closing trade:', error);
       toast({
         title: "Error",
         description: "Failed to close trade.",
@@ -107,6 +108,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   };
 
   const handleSyncComplete = () => {
+    console.log('🔄 Sync completed, refreshing data...');
     refetch();
     if (onTradeUpdate) {
       onTradeUpdate();

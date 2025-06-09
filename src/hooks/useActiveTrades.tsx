@@ -7,7 +7,7 @@ import { ActiveTrade } from '@/types/trading';
 import { calculateSideAwarePL } from '@/utils/formatters';
 import { getCurrentPrice } from '@/utils/priceUtils';
 
-export const useActiveTrades = () => {
+export const useActiveTrades = (enableAutoRefresh: boolean = false) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
@@ -52,7 +52,7 @@ export const useActiveTrades = () => {
         unrealizedPL: 0
       };
     } catch (error) {
-      console.error(`Error calculating actual P&L for trade ${trade.id}:`, error);
+      console.error(`❌ Error calculating actual P&L for trade ${trade.id}:`, error);
       return {
         currentPrice: parseFloat(trade.price.toString()),
         unrealizedPL: 0
@@ -65,7 +65,7 @@ export const useActiveTrades = () => {
 
     setIsLoading(true);
     try {
-      console.log('Fetching active trades for user:', user.id);
+      console.log('📊 Fetching active trades for user:', user.id);
 
       const { data: trades, error } = await supabase
         .from('trades')
@@ -75,7 +75,7 @@ export const useActiveTrades = () => {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching active trades:', error);
+        console.error('❌ Error fetching active trades:', error);
         toast({
           title: "Error",
           description: "Failed to fetch active trades.",
@@ -94,7 +94,7 @@ export const useActiveTrades = () => {
 
             const { currentPrice, unrealizedPL } = await calculateActualPL(trade);
             
-            console.log(`Trade ${trade.symbol}: Status=${trade.status}, Entry=$${entryPrice}, Fill=$${fillPrice || 'N/A'}, Current=$${currentPrice}, Qty=${quantity}, Unrealized P&L=$${unrealizedPL.toFixed(2)}`);
+            console.log(`📈 Trade ${trade.symbol}: Status=${trade.status}, Entry=$${entryPrice}, Fill=$${fillPrice || 'N/A'}, Current=$${currentPrice}, Qty=${quantity}, Unrealized P&L=$${unrealizedPL.toFixed(2)}`);
 
             return {
               ...trade,
@@ -107,7 +107,7 @@ export const useActiveTrades = () => {
               fillPrice, // Add fill price for display
             };
           } catch (error) {
-            console.error(`Error processing trade ${trade.id}:`, error);
+            console.error(`❌ Error processing trade ${trade.id}:`, error);
             const entryPrice = parseFloat(trade.price.toString());
             const quantity = parseFloat(trade.quantity.toString());
             return {
@@ -124,10 +124,10 @@ export const useActiveTrades = () => {
         })
       );
 
-      console.log('Active trades with corrected P&L:', tradesWithActualPL);
+      console.log('✅ Active trades with corrected P&L:', tradesWithActualPL);
       setActiveTrades(tradesWithActualPL);
     } catch (error) {
-      console.error('Error fetching active trades:', error);
+      console.error('❌ Error fetching active trades:', error);
       toast({
         title: "Error",
         description: "Failed to fetch active trades.",
@@ -142,11 +142,13 @@ export const useActiveTrades = () => {
     if (user?.id) {
       fetchActiveTrades();
       
-      // Refresh every 30 seconds
-      const interval = setInterval(fetchActiveTrades, 30000);
-      return () => clearInterval(interval);
+      // Only set up auto-refresh if explicitly enabled (for dashboard)
+      if (enableAutoRefresh) {
+        const interval = setInterval(fetchActiveTrades, 30000);
+        return () => clearInterval(interval);
+      }
     }
-  }, [user?.id]);
+  }, [user?.id, enableAutoRefresh]);
 
   return {
     activeTrades,

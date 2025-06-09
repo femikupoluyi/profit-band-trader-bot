@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,6 +44,7 @@ const TradesReport = () => {
   const [quickSelect, setQuickSelect] = useState<string>('7d');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  // Only fetch when user, timeRange, or statusFilter changes - no auto-refresh
   useEffect(() => {
     if (user) {
       fetchTrades();
@@ -56,7 +56,7 @@ const TradesReport = () => {
 
     setLoading(true);
     try {
-      console.log('Fetching trades for time range:', timeRange);
+      console.log('📊 Fetching trades for time range:', timeRange);
 
       let query = supabase
         .from('trades')
@@ -72,34 +72,48 @@ const TradesReport = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching trades:', error);
+        throw error;
+      }
 
-      console.log('Fetched trades:', data?.length || 0, 'trades');
+      console.log('✅ Fetched trades:', data?.length || 0, 'trades');
       
       // Calculate actual P&L for each trade
       const tradesWithActualPL = await Promise.all(
         (data || []).map(async (trade) => {
-          const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
-          const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
-          const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
-          
-          const actualPL = await calculateActualPL(trade, user.id);
-          
-          console.log(`Processing trade ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, Price=$${price}, Fill=${fillPrice ? `$${fillPrice}` : 'N/A'}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}`);
-          
-          return {
-            ...trade,
-            quantity,
-            price,
-            buy_fill_price: fillPrice,
-            actualPL
-          };
+          try {
+            const quantity = typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity;
+            const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
+            const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
+            
+            const actualPL = await calculateActualPL(trade, user.id);
+            
+            console.log(`📈 Processing trade ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, Price=$${price}, Fill=${fillPrice ? `$${fillPrice}` : 'N/A'}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}`);
+            
+            return {
+              ...trade,
+              quantity,
+              price,
+              buy_fill_price: fillPrice,
+              actualPL
+            };
+          } catch (error) {
+            console.error(`❌ Error processing trade ${trade.id}:`, error);
+            return {
+              ...trade,
+              quantity: typeof trade.quantity === 'string' ? parseFloat(trade.quantity) : trade.quantity,
+              price: typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price,
+              buy_fill_price: trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null,
+              actualPL: 0
+            };
+          }
         })
       );
       
       setTrades(tradesWithActualPL);
     } catch (error) {
-      console.error('Error fetching trades:', error);
+      console.error('❌ Error fetching trades:', error);
     } finally {
       setLoading(false);
     }
@@ -160,11 +174,10 @@ const TradesReport = () => {
     document.body.removeChild(link);
   };
 
-  // Calculate summary statistics with corrected P&L logic
   const metrics = calculateTradeMetrics(trades);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
 
-  console.log('Summary calculations with corrected P&L:', {
+  console.log('📊 Summary calculations with corrected P&L:', {
     ...metrics,
     activeTrades
   });
