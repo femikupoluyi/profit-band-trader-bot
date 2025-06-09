@@ -15,6 +15,7 @@ interface ApiCredential {
   exchange_name: string;
   api_key: string;
   api_secret: string;
+  api_url: string;
   testnet: boolean;
   is_active: boolean;
 }
@@ -27,6 +28,7 @@ const ApiCredentials = () => {
     exchange_name: 'bybit',
     api_key: '',
     api_secret: '',
+    api_url: 'https://api-testnet.bybit.com',
     testnet: true, // Default to DEMO trading
     is_active: true,
   });
@@ -58,7 +60,10 @@ const ApiCredentials = () => {
 
       if (data) {
         console.log('Found existing credentials:', { ...data, api_secret: '[HIDDEN]' });
-        setCredentials(data);
+        setCredentials({
+          ...data,
+          api_url: data.api_url || 'https://api-testnet.bybit.com'
+        });
         setHasExisting(true);
       } else {
         console.log('No existing credentials found');
@@ -66,7 +71,8 @@ const ApiCredentials = () => {
         setCredentials(prev => ({
           ...prev,
           testnet: true, // DEMO trading by default
-          is_active: true
+          is_active: true,
+          api_url: 'https://api-testnet.bybit.com'
         }));
       }
     } catch (error) {
@@ -86,6 +92,15 @@ const ApiCredentials = () => {
       return;
     }
 
+    if (!credentials.api_url) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter the API URL.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const credentialData = {
@@ -93,12 +108,17 @@ const ApiCredentials = () => {
         exchange_name: 'bybit',
         api_key: credentials.api_key,
         api_secret: credentials.api_secret,
+        api_url: credentials.api_url,
         testnet: true, // Force DEMO trading
         is_active: credentials.is_active,
         updated_at: new Date().toISOString(),
       };
 
-      console.log('Saving credentials for DEMO trading:', { ...credentialData, api_secret: '[HIDDEN]' });
+      console.log('Saving credentials for DEMO trading:', { 
+        ...credentialData, 
+        api_secret: '[HIDDEN]',
+        api_url: credentialData.api_url
+      });
 
       if (hasExisting) {
         const { error } = await (supabase as any)
@@ -237,6 +257,20 @@ const ApiCredentials = () => {
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="api_url">API URL</Label>
+          <Input
+            id="api_url"
+            type="url"
+            value={credentials.api_url}
+            onChange={(e) => setCredentials(prev => ({ ...prev, api_url: e.target.value }))}
+            placeholder="https://api-testnet.bybit.com"
+          />
+          <p className="text-sm text-gray-600">
+            Use https://api-testnet.bybit.com for demo trading or https://api.bybit.com for live trading
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="api_key">DEMO Trading API Key</Label>
           <Input
             id="api_key"
@@ -292,6 +326,8 @@ const ApiCredentials = () => {
         {hasExisting && (
           <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
             ✅ Bybit DEMO trading API credentials are configured and {credentials.is_active ? 'ACTIVE' : 'INACTIVE'}
+            <br />
+            <small>Using API URL: {credentials.api_url}</small>
             <br />
             <small>Using Bybit DEMO trading with virtual funds</small>
           </div>
