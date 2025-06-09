@@ -1,18 +1,15 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon, Download, Filter } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
-import { cn } from '@/lib/utils';
-import { formatCurrency, calculateSideAwarePL } from '@/utils/formatters';
-import { CredentialsManager } from '@/services/trading/credentialsManager';
+import { calculateActualPL, calculateTradeMetrics } from '@/utils/plCalculations';
+import TradesReportFilters from './TradesReportFilters';
+import TradesReportSummary from './TradesReportSummary';
+import TradesReportTable from './TradesReportTable';
 
 interface Trade {
   id: string;
@@ -53,115 +50,6 @@ const TradesReport = () => {
     }
   }, [user, timeRange, statusFilter]);
 
-  const getCurrentPrice = async (symbol: string) => {
-    try {
-      // First try to get from market_data table
-      const { data: marketData } = await supabase
-        .from('market_data')
-        .select('price')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (marketData && marketData.price) {
-        return parseFloat(marketData.price.toString());
-      }
-
-      // If no market data, try to get live price from Bybit
-      if (user) {
-        try {
-          const credentialsManager = new CredentialsManager(user.id);
-          const bybitService = await credentialsManager.fetchCredentials();
-          
-          if (bybitService) {
-            const priceData = await bybitService.getMarketPrice(symbol);
-            if (priceData && priceData.price) {
-              return priceData.price;
-            }
-          }
-        } catch (error) {
-          console.warn(`Could not fetch live price for ${symbol}:`, error);
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error(`Error getting current price for ${symbol}:`, error);
-      return null;
-    }
-  };
-
-  const calculateActualPL = async (trade: any) => {
-    try {
-      const entryPrice = parseFloat(trade.price.toString());
-      const quantity = parseFloat(trade.quantity.toString());
-      const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
-
-      // For closed trades, use stored P&L if it exists
-      if (['closed', 'cancelled'].includes(trade.status)) {
-        if (trade.profit_loss !== null && trade.profit_loss !== undefined) {
-          const storedPL = parseFloat(trade.profit_loss.toString());
-          console.log(`Using stored P&L for closed trade ${trade.symbol}: $${storedPL}`);
-          return storedPL;
-        }
-        return 0;
-      }
-
-      // For active filled trades, calculate real-time P&L
-      if (trade.status === 'filled') {
-        const currentPrice = await getCurrentPrice(trade.symbol);
-        
-        if (currentPrice) {
-          const actualPL = calculateSideAwarePL(
-            trade.side, 
-            entryPrice, 
-            currentPrice, 
-            quantity,
-            fillPrice,
-            trade.status
-          );
-          
-          console.log(`Calculated P&L for ${trade.symbol}: Entry=$${entryPrice}, Current=$${currentPrice}, P&L=$${actualPL}`);
-          return actualPL;
-        }
-      }
-
-      return 0;
-    } catch (error) {
-      console.error(`Error calculating actual P&L for trade ${trade.id}:`, error);
-      return 0;
-    }
-  };
-
-  const handleQuickSelect = (period: string) => {
-    setQuickSelect(period);
-    const now = new Date();
-    let from: Date;
-
-    switch (period) {
-      case '1d':
-        from = subDays(now, 1);
-        break;
-      case '7d':
-        from = subDays(now, 7);
-        break;
-      case '30d':
-        from = subDays(now, 30);
-        break;
-      case '90d':
-        from = subDays(now, 90);
-        break;
-      case '1y':
-        from = subDays(now, 365);
-        break;
-      default:
-        from = subDays(now, 7);
-    }
-
-    setTimeRange({ from, to: now });
-  };
-
   const fetchTrades = async () => {
     if (!user) return;
 
@@ -194,7 +82,7 @@ const TradesReport = () => {
           const price = typeof trade.price === 'string' ? parseFloat(trade.price) : trade.price;
           const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
           
-          const actualPL = await calculateActualPL(trade);
+          const actualPL = await calculateActualPL(trade, user.id);
           
           console.log(`Processing trade ${trade.symbol}: Side=${trade.side}, Status=${trade.status}, Price=$${price}, Fill=${fillPrice ? `$${fillPrice}` : 'N/A'}, Qty=${quantity}, Actual P&L=$${actualPL.toFixed(2)}`);
           
@@ -271,55 +159,13 @@ const TradesReport = () => {
     document.body.removeChild(link);
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      filled: "default",
-      pending: "secondary",
-      cancelled: "outline",
-      partial_filled: "secondary",
-      closed: "default"
-    };
-    return <Badge variant={variants[status] || "outline"}>{status.replace('_', ' ')}</Badge>;
-  };
-
-  const getSideBadge = (side: string) => {
-    return (
-      <Badge variant={side === 'buy' ? "default" : "destructive"}>
-        {side.toUpperCase()}
-      </Badge>
-    );
-  };
-
   // Calculate summary statistics with corrected P&L logic
-  const totalTrades = trades.length;
-  const filledTrades = trades.filter(t => t.status === 'filled');
-  
-  const totalVolume = trades.reduce((sum, trade) => {
-    const price = trade.price;
-    const quantity = trade.quantity;
-    return sum + (price * quantity);
-  }, 0);
-  
-  const totalPL = trades.reduce((sum, trade) => {
-    return sum + (trade.actualPL || 0);
-  }, 0);
-  
+  const metrics = calculateTradeMetrics(trades);
   const activeTrades = trades.filter(t => ['pending', 'partial_filled', 'filled'].includes(t.status)).length;
-  const closedTrades = trades.filter(t => ['closed', 'cancelled'].includes(t.status)).length;
-  
-  // Calculate closed positions profit
-  const closedPositionsProfit = trades
-    .filter(t => ['closed', 'cancelled'].includes(t.status))
-    .reduce((sum, trade) => sum + (trade.actualPL || 0), 0);
 
   console.log('Summary calculations with corrected P&L:', {
-    totalTrades,
-    filledTrades: filledTrades.length,
-    totalVolume: totalVolume.toFixed(2),
-    totalPL: totalPL.toFixed(2),
-    closedPositionsProfit: closedPositionsProfit.toFixed(2),
-    activeTrades,
-    closedTrades
+    ...metrics,
+    activeTrades
   });
 
   return (
@@ -341,133 +187,24 @@ const TradesReport = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Filters Section */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Quick Time Selection */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Quick Select</label>
-            <Select value={quickSelect} onValueChange={handleQuickSelect}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1d">Last 24 hours</SelectItem>
-                <SelectItem value="7d">Last 7 days</SelectItem>
-                <SelectItem value="30d">Last 30 days</SelectItem>
-                <SelectItem value="90d">Last 90 days</SelectItem>
-                <SelectItem value="1y">Last year</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <TradesReportFilters
+          timeRange={timeRange}
+          setTimeRange={setTimeRange}
+          quickSelect={quickSelect}
+          setQuickSelect={setQuickSelect}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+        />
 
-          {/* From Date */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">From Date</label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !timeRange.from && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {timeRange.from ? format(timeRange.from, "PPP") : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={timeRange.from}
-                  onSelect={(date) => date && setTimeRange(prev => ({ ...prev, from: date }))}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+        <TradesReportSummary
+          totalTrades={metrics.totalTrades}
+          activeTrades={activeTrades}
+          closedTrades={metrics.closedTrades}
+          totalVolume={metrics.totalVolume}
+          totalPL={metrics.totalProfit}
+          closedPositionsProfit={metrics.closedPositionsProfit}
+        />
 
-          {/* To Date */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">To Date</label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !timeRange.to && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {timeRange.to ? format(timeRange.to, "PPP") : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={timeRange.to}
-                  onSelect={(date) => date && setTimeRange(prev => ({ ...prev, to: date }))}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* Status Filter */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Status Filter</label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="filled">Filled</SelectItem>
-                <SelectItem value="partial_filled">Partial Filled</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Summary Statistics */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-          <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Total Trades</div>
-            <div className="text-2xl font-bold">{totalTrades}</div>
-          </div>
-          <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Active</div>
-            <div className="text-2xl font-bold text-blue-600">{activeTrades}</div>
-          </div>
-          <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Closed</div>
-            <div className="text-2xl font-bold text-gray-600">{closedTrades}</div>
-          </div>
-          <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Total Volume</div>
-            <div className="text-2xl font-bold">{formatCurrency(totalVolume)}</div>
-          </div>
-          <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Total P&L</div>
-            <div className={`text-2xl font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(totalPL)}
-            </div>
-            <div className="text-xs text-muted-foreground">Live + stored</div>
-          </div>
-          <div className="bg-muted/50 p-3 rounded-lg">
-            <div className="text-sm text-muted-foreground">Closed P&L</div>
-            <div className={`text-2xl font-bold ${closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(closedPositionsProfit)}
-            </div>
-            <div className="text-xs text-muted-foreground">Stored values</div>
-          </div>
-        </div>
-
-        {/* Trades Table */}
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -477,67 +214,7 @@ const TradesReport = () => {
             No trades found for the selected time range and filters.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Side</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Order Price</TableHead>
-                  <TableHead>Fill Price</TableHead>
-                  <TableHead>Volume</TableHead>
-                  <TableHead>Actual P&L</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {trades.map((trade) => {
-                  const quantity = trade.quantity;
-                  const price = trade.price;
-                  const fillPrice = trade.buy_fill_price;
-                  const effectivePrice = fillPrice || price;
-                  const volume = quantity * effectivePrice;
-                  const actualPL = trade.actualPL || 0;
-
-                  return (
-                    <TableRow key={trade.id}>
-                      <TableCell>
-                        {format(new Date(trade.created_at), 'MMM dd, yyyy HH:mm')}
-                      </TableCell>
-                      <TableCell className="font-medium">{trade.symbol}</TableCell>
-                      <TableCell>{getSideBadge(trade.side)}</TableCell>
-                      <TableCell className="capitalize">{trade.order_type}</TableCell>
-                      <TableCell>{quantity.toFixed(6)}</TableCell>
-                      <TableCell>${price.toFixed(2)}</TableCell>
-                      <TableCell>
-                        {fillPrice ? (
-                          <span className={fillPrice !== price ? 'text-blue-600 font-medium' : ''}>
-                            ${fillPrice.toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{formatCurrency(volume)}</TableCell>
-                      <TableCell>
-                        {actualPL !== 0 ? (
-                          <span className={actualPL >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {formatCurrency(actualPL)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(trade.status)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <TradesReportTable trades={trades} />
         )}
       </CardContent>
     </Card>
