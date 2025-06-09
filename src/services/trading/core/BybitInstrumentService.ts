@@ -2,7 +2,7 @@
 import { BybitInstrumentInfo, InstrumentInfoFetcher } from './InstrumentInfoFetcher';
 import { InstrumentCache } from './InstrumentCache';
 
-export { BybitInstrumentInfo } from './InstrumentInfoFetcher';
+export type { BybitInstrumentInfo } from './InstrumentInfoFetcher';
 
 export class BybitInstrumentService {
   /**
