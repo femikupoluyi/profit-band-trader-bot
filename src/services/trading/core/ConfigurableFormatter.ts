@@ -1,6 +1,7 @@
 
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitInstrumentService, BybitInstrumentInfo } from './BybitInstrumentService';
+import { InstrumentCache } from './InstrumentCache';
 
 export class ConfigurableFormatter {
   private static config: TradingConfigData | null = null;
@@ -174,10 +175,24 @@ export class ConfigurableFormatter {
   }
 
   /**
-   * Clear all caches
+   * Clear all caches including trading transaction cache
    */
   static clearCache(): void {
     this.instrumentCache.clear();
     BybitInstrumentService.clearCache();
+    InstrumentCache.clearAllTradingCache();
+    console.log('🧹 Cleared all ConfigurableFormatter and trading transaction caches');
+  }
+
+  /**
+   * Clear all trading transaction cache data (comprehensive clear)
+   */
+  static clearAllTradingCache(): void {
+    this.instrumentCache.clear();
+    this.config = null;
+    this.activePairs = [];
+    BybitInstrumentService.clearCache();
+    InstrumentCache.clearAllTradingCache();
+    console.log('🧹 Cleared ALL trading transaction cache data from ConfigurableFormatter');
   }
 }

@@ -81,6 +81,24 @@ export class InstrumentCache {
   }
 
   /**
+   * Clear all trading transaction cache data (comprehensive clear)
+   */
+  static clearAllTradingCache(): void {
+    try {
+      const size = this.cache.size;
+      this.cache.clear();
+      console.log(`🧹 Cleared ALL trading transaction cache data (${size} instrument entries)`);
+      
+      // Also clear any ConfigurableFormatter cache
+      if (typeof window !== 'undefined' && (window as any).tradingCacheCleared) {
+        (window as any).tradingCacheCleared();
+      }
+    } catch (error) {
+      console.error('Error clearing all trading cache data:', error);
+    }
+  }
+
+  /**
    * Get cache statistics
    */
   static getCacheStats(): { size: number; expired: number } {

@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
-import { RefreshCw, Trash2 } from 'lucide-react';
+import { RefreshCw, Trash2, Database } from 'lucide-react';
+import { InstrumentCache } from '@/services/trading/core/InstrumentCache';
+import { ConfigurableFormatter } from '@/services/trading/core/ConfigurableFormatter';
 
 interface TradingLog {
   id: string;
@@ -22,6 +24,7 @@ const TradingLogs = () => {
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -130,6 +133,34 @@ const TradingLogs = () => {
     }
   };
 
+  const clearTradingCache = async () => {
+    setClearingCache(true);
+    try {
+      console.log('🧹 Clearing all trading transaction cache data...');
+      
+      // Clear all trading caches
+      InstrumentCache.clearAllTradingCache();
+      ConfigurableFormatter.clearAllTradingCache();
+      
+      // Clear any browser storage cache
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('trading_cache');
+          sessionStorage.removeItem('trading_cache');
+          console.log('✅ Browser storage cache cleared');
+        } catch (error) {
+          console.warn('Could not clear browser storage:', error);
+        }
+      }
+      
+      console.log('✅ All trading transaction cache data cleared successfully');
+    } catch (error) {
+      console.error('❌ Error clearing cache data:', error);
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
   const getLogTypeBadge = (logType: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       signal_processed: "default",
@@ -174,6 +205,15 @@ const TradingLogs = () => {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearTradingCache}
+              disabled={clearingCache}
+            >
+              <Database className="h-4 w-4 mr-2" />
+              {clearingCache ? 'Clearing...' : 'Clear Cache'}
+            </Button>
             <Button
               variant="outline"
               size="sm"

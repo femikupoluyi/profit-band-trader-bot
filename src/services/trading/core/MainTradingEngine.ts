@@ -86,6 +86,10 @@ export class MainTradingEngine {
     try {
       console.log('\n🚀 ===== STARTING MAIN TRADING ENGINE =====');
       
+      // Clear all trading caches on startup
+      console.log('🧹 Clearing trading transaction cache on startup...');
+      ConfigurableFormatter.clearAllTradingCache();
+      
       const config = await this.configManager.refreshConfig();
       
       if (!config.is_active) {
