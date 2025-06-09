@@ -20,7 +20,8 @@ serve(async (req) => {
     console.log('Received Bybit API request:', { 
       endpoint: request.endpoint, 
       method: request.method,
-      isDemoTrading: request.isDemoTrading 
+      isDemoTrading: request.isDemoTrading,
+      hasApiUrl: !!request.apiUrl
     });
 
     let apiKey = Deno.env.get('BYBIT_API_KEY');

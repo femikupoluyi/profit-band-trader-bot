@@ -42,7 +42,8 @@ export class CredentialsManager {
       return new BybitService(
         typedCredentials.api_key,
         typedCredentials.api_secret,
-        isDemoTrading
+        isDemoTrading,
+        apiUrl
       );
 
     } catch (error) {

@@ -17,7 +17,7 @@ import { ActiveTrade } from '@/types/trading';
 import { formatCurrency } from '@/utils/formatters';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { BybitService } from '@/services/bybitService';
+import { CredentialsManager } from '@/services/trading/credentialsManager';
 import { ManualCloseService } from '@/services/trading/core/ManualCloseService';
 
 interface CloseTradeDialogProps {
@@ -46,8 +46,19 @@ const CloseTradeDialog = ({ trade, isClosing: externalClosing, onClose }: CloseT
     try {
       console.log(`🔄 Initiating manual close for trade ${trade.id} (${trade.symbol})`);
       
-      // Initialize Bybit service - using demo trading for safety
-      const bybitService = new BybitService('', '', true); // API keys will be loaded from user config
+      // Initialize credentials manager and get BybitService
+      const credentialsManager = new CredentialsManager(user.id);
+      const bybitService = await credentialsManager.fetchCredentials();
+      
+      if (!bybitService) {
+        toast({
+          title: "Error",
+          description: "Unable to load API credentials. Please configure your Bybit API credentials first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       const manualCloseService = new ManualCloseService(user.id, bybitService);
       
       // Execute the manual close

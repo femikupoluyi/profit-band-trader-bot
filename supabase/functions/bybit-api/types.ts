@@ -5,8 +5,9 @@ export interface BybitRequest {
   params?: Record<string, any>;
   body?: Record<string, any>;
   isDemoTrading?: boolean;
-  apiKey?: string;  // Added for user credentials
-  apiSecret?: string;  // Added for user credentials
+  apiKey?: string;
+  apiSecret?: string;
+  apiUrl?: string;
 }
 
 export interface BybitResponse {

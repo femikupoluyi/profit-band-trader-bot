@@ -9,11 +9,17 @@ export class BybitService {
   private logger: TradingLogger | null = null;
   private isDemoTrading: boolean;
 
-  constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true) {
+  constructor(apiKey: string, apiSecret: string, isDemoTrading: boolean = true, apiUrl?: string) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
     this.isDemoTrading = isDemoTrading;
-    this.baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
+    
+    // Use provided apiUrl or fallback to default based on demo trading flag
+    if (apiUrl) {
+      this.baseUrl = apiUrl;
+    } else {
+      this.baseUrl = isDemoTrading ? 'https://api-demo.bybit.com' : 'https://api.bybit.com';
+    }
     
     console.log(`🔧 BybitService initialized with ${isDemoTrading ? 'DEMO' : 'MAINNET'} trading URL: ${this.baseUrl}`);
     console.log(`🔑 API Key: ${apiKey ? apiKey.substring(0, 8) + '...' : 'NOT SET'}`);
@@ -225,7 +231,8 @@ export class BybitService {
           params: request.params,
           isDemoTrading: this.isDemoTrading,
           apiKey: this.apiKey,
-          apiSecret: this.apiSecret
+          apiSecret: this.apiSecret,
+          apiUrl: this.baseUrl
         }
       });
       
