@@ -28,7 +28,7 @@ const ApiCredentials = () => {
     exchange_name: 'bybit',
     api_key: '',
     api_secret: '',
-    api_url: 'https://api-testnet.bybit.com',
+    api_url: 'https://api-demo.bybit.com',
     testnet: true, // Default to DEMO trading
     is_active: true,
   });
@@ -62,7 +62,7 @@ const ApiCredentials = () => {
         console.log('Found existing credentials:', { ...data, api_secret: '[HIDDEN]' });
         setCredentials({
           ...data,
-          api_url: data.api_url || 'https://api-testnet.bybit.com'
+          api_url: (data as any).api_url || 'https://api-demo.bybit.com'
         });
         setHasExisting(true);
       } else {
@@ -72,7 +72,7 @@ const ApiCredentials = () => {
           ...prev,
           testnet: true, // DEMO trading by default
           is_active: true,
-          api_url: 'https://api-testnet.bybit.com'
+          api_url: 'https://api-demo.bybit.com'
         }));
       }
     } catch (error) {

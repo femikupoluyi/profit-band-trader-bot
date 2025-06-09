@@ -19,11 +19,13 @@ export const runApiCredentialsTest = async (userId: string): Promise<TestResult>
         status: 'error', 
         message: `❌ Error fetching credentials: ${credError.message}` 
       };
-    } else if (credentials && credentials.api_key && credentials.api_secret && credentials.api_url) {
+    } else if (credentials && credentials.api_key && credentials.api_secret) {
+      // Safely access api_url with fallback
+      const apiUrl = (credentials as any).api_url || 'https://api-demo.bybit.com';
       return { 
         test: TEST_NAMES.API_CREDENTIALS, 
         status: 'success', 
-        message: `✅ Bybit DEMO account API credentials found and active (URL: ${credentials.api_url})` 
+        message: `✅ Bybit DEMO account API credentials found and active (URL: ${apiUrl})` 
       };
     } else {
       return { 

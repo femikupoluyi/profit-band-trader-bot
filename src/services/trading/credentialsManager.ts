@@ -31,7 +31,10 @@ export class CredentialsManager {
       }
 
       console.log('✅ Credentials found, initializing BybitService...');
-      console.log('Using API URL:', credentials.api_url || 'https://api-testnet.bybit.com');
+      
+      // Safely access api_url with fallback to demo URL
+      const apiUrl = (credentials as any).api_url || 'https://api-demo.bybit.com';
+      console.log('Using API URL:', apiUrl);
       
       // Use testnet flag from credentials, default to true for safety
       const isDemoTrading = credentials.testnet !== false;
@@ -39,8 +42,7 @@ export class CredentialsManager {
       return new BybitService(
         credentials.api_key,
         credentials.api_secret,
-        isDemoTrading,
-        credentials.api_url || 'https://api-testnet.bybit.com'
+        isDemoTrading
       );
 
     } catch (error) {

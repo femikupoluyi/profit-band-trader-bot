@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './trading/core/TradingLogger';
 
@@ -222,7 +223,9 @@ export class BybitService {
           endpoint: request.endpoint,
           method: request.method,
           params: request.params,
-          isDemoTrading: this.isDemoTrading
+          isDemoTrading: this.isDemoTrading,
+          apiKey: this.apiKey,
+          apiSecret: this.apiSecret
         }
       });
       
