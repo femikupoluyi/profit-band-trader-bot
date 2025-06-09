@@ -9,6 +9,11 @@ import { ConfigurableFormatter } from './ConfigurableFormatter';
 import { TradingLogger } from './TradingLogger';
 import { TradingPairsService } from './TradingPairsService';
 
+interface SignalProcessingResult {
+  success: boolean;
+  reason?: string;
+}
+
 export class SignalExecutionService {
   private userId: string;
   private bybitService: BybitService;
@@ -139,7 +144,7 @@ export class SignalExecutionService {
     }
   }
 
-  private async processSingleSignal(signal: any, config: TradingConfigData): Promise<{ success: boolean; reason?: string }> {
+  private async processSingleSignal(signal: any, config: TradingConfigData): Promise<SignalProcessingResult> {
     try {
       console.log(`\n⚡ ===== PROCESSING SIGNAL ${signal.id} FOR ${signal.symbol} =====`);
       await this.logger.logSystemInfo(`Processing signal ${signal.id} for ${signal.symbol}`, {

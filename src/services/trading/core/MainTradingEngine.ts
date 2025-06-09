@@ -13,6 +13,7 @@ import { TradingLoopScheduler } from './TradingLoopScheduler';
 import { TradingCycleExecutor } from './TradingCycleExecutor';
 import { ConfigurableFormatter } from './ConfigurableFormatter';
 import { TransactionReconciliationService } from './TransactionReconciliationService';
+import { TradingEngineInitializer } from './TradingEngineInitializer';
 
 export class MainTradingEngine {
   private userId: string;
@@ -22,6 +23,7 @@ export class MainTradingEngine {
   private scheduler: TradingLoopScheduler;
   private cycleExecutor: TradingCycleExecutor;
   private reconciliationService: TransactionReconciliationService;
+  private initializer: TradingEngineInitializer;
   private cycleCounter: number = 0;
   
   // Core Services
@@ -38,8 +40,11 @@ export class MainTradingEngine {
     }
     this.userId = userId;
     this.bybitService = bybitService;
-    this.logger = new TradingLogger(userId);
-    this.configManager = TradingConfigManager.getInstance(userId);
+    
+    // Initialize core components
+    this.initializer = new TradingEngineInitializer(userId);
+    this.logger = this.initializer.getLogger();
+    this.configManager = this.initializer.getConfigManager();
     this.scheduler = new TradingLoopScheduler(userId);
     
     // Set logger on bybit service
@@ -68,48 +73,7 @@ export class MainTradingEngine {
   }
 
   async initialize(): Promise<void> {
-    try {
-      console.log('\n🔄 ===== MAIN TRADING ENGINE INITIALIZATION =====');
-      await this.logger.logEngineStatusChange('initializing');
-      
-      // Load initial configuration
-      await this.configManager.loadConfig();
-      const config = this.configManager.getConfig();
-      const configData = ConfigConverter.convertConfig(config);
-      
-      console.log('⚙️ Configuration loaded:', {
-        isActive: config.is_active,
-        tradingPairs: config.trading_pairs?.length || 0,
-        maxOrderAmount: config.maximum_order_amount_usd,
-        takeProfitPercent: config.take_profit_percentage,
-        mainLoopInterval: config.main_loop_interval_seconds
-      });
-
-      await this.logger.logConfigurationChange({
-        action: 'configuration_loaded',
-        details: {
-          isActive: config.is_active,
-          tradingPairsCount: config.trading_pairs?.length || 0,
-          maxOrderAmount: config.maximum_order_amount_usd,
-          takeProfitPercent: config.take_profit_percentage,
-          mainLoopInterval: config.main_loop_interval_seconds
-        }
-      });
-      
-      // Initialize ConfigurableFormatter with current config
-      ConfigurableFormatter.setConfig(configData);
-      
-      console.log('✅ Main Trading Engine initialized successfully');
-      await this.logger.logEngineStatusChange('initialized', {
-        configLoaded: true,
-        isActive: config.is_active,
-        tradingPairsCount: config.trading_pairs?.length || 0
-      });
-    } catch (error) {
-      console.error('❌ Failed to initialize Main Trading Engine:', error);
-      await this.logger.logError('Failed to initialize Main Trading Engine', error);
-      throw error;
-    }
+    await this.initializer.initialize();
   }
 
   async start(): Promise<void> {
