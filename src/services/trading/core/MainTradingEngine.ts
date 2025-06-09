@@ -84,6 +84,17 @@ export class MainTradingEngine {
         takeProfitPercent: config.take_profit_percent,
         mainLoopInterval: config.main_loop_interval_seconds
       });
+
+      await this.logger.logConfigurationChange({
+        action: 'configuration_loaded',
+        details: {
+          isActive: config.is_active,
+          tradingPairsCount: config.trading_pairs?.length || 0,
+          maxOrderAmount: config.max_order_amount_usd,
+          takeProfitPercent: config.take_profit_percent,
+          mainLoopInterval: config.main_loop_interval_seconds
+        }
+      });
       
       // Initialize ConfigurableFormatter with current config
       ConfigurableFormatter.setConfig(configData);
@@ -120,6 +131,16 @@ export class MainTradingEngine {
       }
 
       console.log('✅ Configuration is active, proceeding with startup...');
+
+      await this.logger.logConfigurationChange({
+        action: 'engine_startup_config_check',
+        details: {
+          isActive: config.is_active,
+          tradingPairsCount: config.trading_pairs?.length || 0,
+          maxOrderAmount: config.max_order_amount_usd,
+          mainLoopInterval: config.main_loop_interval_seconds
+        }
+      });
 
       // Perform startup reconciliation with Bybit
       console.log('🔄 Performing startup reconciliation...');

@@ -34,10 +34,18 @@ export class SignalExecutionService {
       const configuredPairs = await TradingPairsService.getConfiguredTradingPairs(this.userId);
       console.log(`📊 User has configured ${configuredPairs.length} trading pairs:`, configuredPairs);
       
+      await this.logger.logSystemInfo('Configured trading pairs loaded', {
+        configuredPairsCount: configuredPairs.length,
+        configuredPairs: configuredPairs
+      });
+      
       // Preload instrument info for configured trading pairs
       if (configuredPairs && configuredPairs.length > 0) {
         console.log(`🔄 Preloading instrument info for ${configuredPairs.length} configured trading pairs...`);
         await ConfigurableFormatter.preloadInstrumentInfo(configuredPairs);
+        await this.logger.logSystemInfo('Instrument info preloaded', {
+          pairsCount: configuredPairs.length
+        });
       }
       
       // Get unprocessed signals
@@ -87,15 +95,39 @@ export class SignalExecutionService {
 
       for (const signal of signals) {
         try {
+          console.log(`\n🔄 Processing signal ${signal.id} for ${signal.symbol}...`);
+          
+          await this.logger.logSystemInfo(`Starting signal processing`, {
+            signalId: signal.id,
+            symbol: signal.symbol,
+            signalType: signal.signal_type,
+            price: signal.price,
+            confidence: signal.confidence
+          });
+
           const result = await this.processSingleSignal(signal, config);
+          
           if (result.success) {
             executionResults.executed++;
+            console.log(`✅ Signal ${signal.id} executed successfully`);
+            await this.logger.logSignalProcessed(signal.symbol, signal.signal_type, {
+              signalId: signal.id,
+              executionResult: 'success'
+            });
           } else {
             executionResults.rejected++;
+            console.log(`❌ Signal ${signal.id} rejected: ${result.reason}`);
+            await this.logger.logSignalRejected(signal.symbol, result.reason || 'Unknown reason', {
+              signalId: signal.id
+            });
           }
         } catch (error) {
           executionResults.errors++;
           console.error(`❌ Error processing signal ${signal.id}:`, error);
+          await this.logger.logError(`Error processing signal ${signal.id}`, error, {
+            signalId: signal.id,
+            symbol: signal.symbol
+          });
         }
       }
       
@@ -156,6 +188,14 @@ export class SignalExecutionService {
         - Entry Price: $${entryPrice.toFixed(6)}
         - Raw Quantity: ${adjustedQuantity}
         - Formatted Quantity: ${finalQuantity}`);
+
+      await this.logger.logSystemInfo('Quantity calculation completed', {
+        symbol: signal.symbol,
+        maxOrderAmount: config.max_order_amount_usd,
+        entryPrice: entryPrice,
+        rawQuantity: adjustedQuantity,
+        formattedQuantity: finalQuantity
+      });
       
       // Step 4: Validate trade parameters with Bybit instrument requirements
       console.log(`🔧 Validating order parameters for ${signal.symbol}...`);
@@ -174,6 +214,14 @@ export class SignalExecutionService {
         - Entry Price: $${entryPrice.toFixed(6)}
         - Take Profit: $${takeProfitPrice.toFixed(6)} (+${config.take_profit_percent}%)
         - Quantity: ${finalQuantity}`);
+
+      await this.logger.logSystemInfo('Order parameters calculated', {
+        symbol: signal.symbol,
+        entryPrice: entryPrice,
+        takeProfitPrice: takeProfitPrice,
+        takeProfitPercent: config.take_profit_percent,
+        quantity: finalQuantity
+      });
 
       // Step 6: Place REAL limit buy order on Bybit
       console.log(`📝 Placing real Bybit order for ${signal.symbol}...`);
