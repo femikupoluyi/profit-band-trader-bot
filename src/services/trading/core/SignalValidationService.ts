@@ -1,4 +1,3 @@
-
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from './TradingLogger';
 import { supabase } from '@/integrations/supabase/client';
@@ -68,12 +67,12 @@ export class SignalValidationService {
         };
       }
 
-      // Validate order size
+      // Validate order size - FIXED: use correct property name
       const orderValue = calculatedData.quantity * calculatedData.entryPrice;
-      if (orderValue > (config.maximum_order_amount_usd || 100)) {
+      if (orderValue > (config.max_order_amount_usd || 100)) {
         return { 
           isValid: false, 
-          reason: `Order value $${orderValue.toFixed(2)} exceeds maximum allowed $${config.maximum_order_amount_usd || 100}` 
+          reason: `Order value $${orderValue.toFixed(2)} exceeds maximum allowed $${config.max_order_amount_usd || 100}` 
         };
       }
 
@@ -138,8 +137,8 @@ export class SignalValidationService {
       const takeProfitPercent = config.take_profit_percent || 2.0;
       const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
 
-      // Calculate quantity based on max order amount
-      const maxOrderAmount = config.maximum_order_amount_usd || 100;
+      // Calculate quantity based on max order amount - FIXED: use correct property name
+      const maxOrderAmount = config.max_order_amount_usd || 100;
       const quantity = maxOrderAmount / entryPrice;
 
       console.log(`📊 Calculated order parameters for ${signal.symbol}:`);
