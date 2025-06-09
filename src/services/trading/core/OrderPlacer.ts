@@ -1,8 +1,19 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { ConfigurableFormatter } from './ConfigurableFormatter';
 import { BybitInstrumentService } from './BybitInstrumentService';
+
+interface OrderResult {
+  success: boolean;
+  orderId?: string;
+  reason?: string;
+}
+
+interface CalculatedOrderData {
+  quantity: number;
+  entryPrice: number;
+  takeProfitPrice: number;
+}
 
 export class OrderPlacer {
   private userId: string;
@@ -11,6 +22,21 @@ export class OrderPlacer {
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
+  }
+
+  async placeOrder(symbol: string, calculatedData: CalculatedOrderData): Promise<OrderResult> {
+    try {
+      await this.placeRealBybitOrder(
+        { symbol }, // Mock signal object with symbol
+        calculatedData.quantity,
+        calculatedData.entryPrice,
+        calculatedData.takeProfitPrice
+      );
+      return { success: true };
+    } catch (error) {
+      console.error(`❌ Error placing order for ${symbol}:`, error);
+      return { success: false, reason: error.message };
+    }
   }
 
   async placeRealBybitOrder(signal: any, quantity: number, entryPrice: number, takeProfitPrice: number): Promise<void> {

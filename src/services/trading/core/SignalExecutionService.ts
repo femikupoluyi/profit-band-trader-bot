@@ -72,24 +72,25 @@ export class SignalExecutionService {
         return { success: false, reason: validationResult.reason };
       }
 
-      // Place the order
-      const orderResult = await this.orderPlacer.placeOrder(
-        signal.symbol,
-        validationResult.calculatedData!
-      );
+      // Calculate order parameters
+      const quantity = validationResult.calculatedData!.quantity;
+      const entryPrice = validationResult.calculatedData!.entryPrice;
+      const takeProfitPrice = validationResult.calculatedData!.takeProfitPrice;
+
+      // Place the order using the correct method name
+      await this.orderPlacer.placeRealBybitOrder(signal, quantity, entryPrice, takeProfitPrice);
 
       // Mark signal as processed
       await this.markSignalAsProcessed(signal.id);
       
-      if (orderResult.success) {
-        await this.logger.logSignalProcessed(signal.symbol, signal.signal_type, {
-          orderId: orderResult.orderId,
-          calculatedData: validationResult.calculatedData
-        });
-        return { success: true };
-      } else {
-        return { success: false, reason: orderResult.reason };
-      }
+      await this.logger.logSignalProcessed(signal.symbol, signal.signal_type, {
+        quantity,
+        entryPrice,
+        takeProfitPrice,
+        calculatedData: validationResult.calculatedData
+      });
+      
+      return { success: true };
 
     } catch (error) {
       console.error(`❌ Error processing signal for ${signal.symbol}:`, error);
