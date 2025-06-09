@@ -44,7 +44,7 @@ const TradingLogs = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('trading_logs')
         .select('*')
         .eq('user_id', user.id)
@@ -72,7 +72,7 @@ const TradingLogs = () => {
       console.log('🧹 Clearing all historical data and logs...');
       
       // Clear market data
-      const { error: marketError } = await supabase
+      const { error: marketError } = await (supabase as any)
         .from('market_data')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000');
@@ -84,7 +84,7 @@ const TradingLogs = () => {
       }
       
       // Clear trade data
-      const { error: tradesError } = await supabase
+      const { error: tradesError } = await (supabase as any)
         .from('trades')
         .delete()
         .eq('user_id', user.id);
@@ -96,7 +96,7 @@ const TradingLogs = () => {
       }
       
       // Clear trading logs
-      const { error: logsError } = await supabase
+      const { error: logsError } = await (supabase as any)
         .from('trading_logs')
         .delete()
         .eq('user_id', user.id);
@@ -108,7 +108,7 @@ const TradingLogs = () => {
       }
       
       // Clear trading signals
-      const { error: signalsError } = await supabase
+      const { error: signalsError } = await (supabase as any)
         .from('trading_signals')
         .delete()
         .eq('user_id', user.id);

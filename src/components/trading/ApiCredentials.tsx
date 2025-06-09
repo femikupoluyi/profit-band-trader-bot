@@ -44,7 +44,7 @@ const ApiCredentials = () => {
 
     try {
       console.log('Fetching API credentials for user:', user.id);
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('api_credentials')
         .select('*')
         .eq('user_id', user.id)
@@ -101,7 +101,7 @@ const ApiCredentials = () => {
       console.log('Saving credentials for DEMO trading:', { ...credentialData, api_secret: '[HIDDEN]' });
 
       if (hasExisting) {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('api_credentials')
           .update(credentialData)
           .eq('user_id', user.id)
@@ -113,7 +113,7 @@ const ApiCredentials = () => {
         }
         console.log('DEMO trading credentials updated successfully');
       } else {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('api_credentials')
           .insert(credentialData)
           .select()

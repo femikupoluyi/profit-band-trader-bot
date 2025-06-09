@@ -81,7 +81,7 @@ const TradesReport = () => {
         return 0;
       }
 
-      const { data: marketData } = await supabase
+      const { data: marketData } = await (supabase as any)
         .from('market_data')
         .select('price')
         .eq('symbol', trade.symbol)
@@ -145,7 +145,7 @@ const TradesReport = () => {
     try {
       console.log('Fetching trades for time range:', timeRange);
 
-      let query = supabase
+      let query = (supabase as any)
         .from('trades')
         .select('*')
         .eq('user_id', user.id)

@@ -44,7 +44,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
       // Get current market price for P&L calculation
-      const { data: marketData } = await supabase
+      const { data: marketData } = await (supabase as any)
         .from('market_data')
         .select('price')
         .eq('symbol', trade.symbol)
@@ -91,7 +91,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
     try {
       console.log('Fetching active trades for user:', user.id);
 
-      const { data: trades, error } = await supabase
+      const { data: trades, error } = await (supabase as any)
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
@@ -172,7 +172,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       const finalPL = trade.status === 'filled' ? (trade.unrealizedPL || 0) : 0;
 
       // Update trade status to closed with final P&L
-      const { error: updateError } = await supabase
+      const { error: updateError } = await (supabase as any)
         .from('trades')
         .update({
           status: 'closed',
@@ -192,7 +192,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       }
 
       // Log the manual close action
-      await supabase
+      await (supabase as any)
         .from('trading_logs')
         .insert({
           user_id: user?.id,
