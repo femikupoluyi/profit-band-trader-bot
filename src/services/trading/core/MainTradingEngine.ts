@@ -1,255 +1,168 @@
 
-import { TradingConfigManager } from '../config/TradingConfigManager';
-import { PositionMonitorService } from './PositionMonitorService';
-import { MarketDataScannerService } from './MarketDataScannerService';
-import { SignalAnalysisService } from './SignalAnalysisService';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { SignalExecutionService } from './SignalExecutionService';
-import { EndOfDayManagerService } from './EndOfDayManagerService';
-import { ManualCloseService } from './ManualCloseService';
+import { PositionMonitorService } from './PositionMonitorService';
+import { TransactionReconciliationService } from './TransactionReconciliationService';
+import { PositionSyncService } from './PositionSyncService';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { ConfigConverter } from './ConfigConverter';
-import { TradingLoopScheduler } from './TradingLoopScheduler';
-import { TradingCycleExecutor } from './TradingCycleExecutor';
+import { InstrumentCache } from './InstrumentCache';
 import { ConfigurableFormatter } from './ConfigurableFormatter';
-import { TransactionReconciliationService } from './TransactionReconciliationService';
-import { TradingEngineInitializer } from './TradingEngineInitializer';
 
 export class MainTradingEngine {
   private userId: string;
-  private configManager: TradingConfigManager;
+  private config: TradingConfigData;
   private bybitService: BybitService;
   private logger: TradingLogger;
-  private scheduler: TradingLoopScheduler;
-  private cycleExecutor: TradingCycleExecutor;
+  private signalExecutionService: SignalExecutionService;
+  private positionMonitorService: PositionMonitorService;
   private reconciliationService: TransactionReconciliationService;
-  private initializer: TradingEngineInitializer;
-  private cycleCounter: number = 0;
-  
-  // Core Services
-  private positionMonitor: PositionMonitorService;
-  private marketScanner: MarketDataScannerService;
-  private signalAnalysisService: SignalAnalysisService;
-  private signalExecutor: SignalExecutionService;
-  private eodManager: EndOfDayManagerService;
-  private manualCloseService: ManualCloseService;
+  private positionSyncService: PositionSyncService;
+  private mainLoopInterval: NodeJS.Timeout | null = null;
+  private isRunning = false;
 
-  constructor(userId: string, bybitService: BybitService) {
-    if (!userId) {
-      throw new Error('UserId is required for MainTradingEngine');
-    }
+  constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
-    this.bybitService = bybitService;
-    
-    // Initialize core components
-    this.initializer = new TradingEngineInitializer(userId);
-    this.logger = this.initializer.getLogger();
-    this.configManager = this.initializer.getConfigManager();
-    this.scheduler = new TradingLoopScheduler(userId);
-    
-    // Set logger on bybit service
-    this.bybitService.setLogger(this.logger);
+    this.config = config;
+    this.bybitService = new BybitService(userId, true); // Demo mode
+    this.logger = new TradingLogger(userId);
     
     // Initialize services
-    this.positionMonitor = new PositionMonitorService(userId, bybitService);
-    this.marketScanner = new MarketDataScannerService(userId, bybitService);
-    this.signalAnalysisService = new SignalAnalysisService(userId, bybitService);
-    this.signalExecutor = new SignalExecutionService(userId, bybitService);
-    this.eodManager = new EndOfDayManagerService(userId, bybitService);
-    this.manualCloseService = new ManualCloseService(userId, bybitService);
-
-    // Initialize cycle executor
-    this.cycleExecutor = new TradingCycleExecutor(
-      userId,
-      this.positionMonitor,
-      this.marketScanner,
-      this.signalAnalysisService,
-      this.signalExecutor,
-      this.eodManager
-    );
-
-    // Initialize reconciliation service
-    this.reconciliationService = new TransactionReconciliationService(userId, bybitService);
+    this.signalExecutionService = new SignalExecutionService(userId, this.bybitService);
+    this.positionMonitorService = new PositionMonitorService(userId, this.bybitService);
+    this.reconciliationService = new TransactionReconciliationService(userId, this.bybitService);
+    this.positionSyncService = new PositionSyncService(userId, this.bybitService);
   }
 
-  async initialize(): Promise<void> {
-    await this.initializer.initialize();
+  async initialize(): Promise<boolean> {
+    try {
+      console.log('🔧 Initializing MainTradingEngine...');
+      await this.logger.logSuccess('MainTradingEngine initialization started');
+
+      // Clear all trading caches on startup
+      console.log('🧹 Clearing trading caches on startup...');
+      InstrumentCache.clearAllTradingCache();
+      ConfigurableFormatter.clearAllTradingCache();
+
+      // Initialize Bybit service
+      const initialized = await this.bybitService.initialize();
+      if (!initialized) {
+        throw new Error('Failed to initialize Bybit service');
+      }
+
+      // Perform startup position sync to fix any discrepancies
+      console.log('🔄 Performing startup position synchronization...');
+      await this.positionSyncService.performStartupSync();
+
+      // Perform startup reconciliation
+      await this.reconciliationService.performStartupReconciliation();
+
+      console.log('✅ MainTradingEngine initialized successfully');
+      await this.logger.logSuccess('MainTradingEngine initialized successfully');
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to initialize MainTradingEngine:', error);
+      await this.logger.logError('MainTradingEngine initialization failed', error);
+      return false;
+    }
   }
 
   async start(): Promise<void> {
-    if (this.scheduler.isSchedulerRunning()) {
-      console.log('⚠️ Trading engine is already running');
-      await this.logger.logEngineStatusChange('already_running');
+    if (this.isRunning) {
+      console.log('⚠️ MainTradingEngine is already running');
       return;
     }
 
     try {
-      console.log('\n🚀 ===== STARTING MAIN TRADING ENGINE =====');
+      console.log('🚀 Starting MainTradingEngine...');
+      await this.logger.logSuccess('MainTradingEngine starting');
       
-      // Clear all trading caches on startup
-      console.log('🧹 Clearing trading transaction cache on startup...');
-      ConfigurableFormatter.clearAllTradingCache();
+      this.isRunning = true;
       
-      const config = await this.configManager.refreshConfig();
+      // Start the main trading loop
+      await this.startMainLoop();
       
-      if (!config.is_active) {
-        console.log('❌ Cannot start trading: configuration is not active');
-        await this.logger.logError('Cannot start trading: configuration is not active', new Error('Config not active'));
-        return;
-      }
-
-      console.log('✅ Configuration is active, proceeding with startup...');
-
-      await this.logger.logConfigurationChange({
-        action: 'engine_startup_config_check',
-        details: {
-          isActive: config.is_active,
-          tradingPairsCount: config.trading_pairs?.length || 0,
-          maxOrderAmount: config.maximum_order_amount_usd,
-          mainLoopInterval: config.main_loop_interval_seconds
-        }
-      });
-
-      // Perform startup reconciliation with Bybit
-      console.log('🔄 Performing startup reconciliation...');
-      await this.reconciliationService.performStartupReconciliation();
-
-      // Update ConfigurableFormatter with latest config
-      const configData = ConfigConverter.convertConfig(config);
-      ConfigurableFormatter.setConfig(configData);
-
-      console.log(`🚀 Starting Main Trading Loop with ${config.main_loop_interval_seconds}s interval`);
-      await this.logger.logEngineStatusChange('starting', {
-        intervalSeconds: config.main_loop_interval_seconds,
-        tradingPairsCount: config.trading_pairs?.length || 0,
-        maxOrderAmount: config.maximum_order_amount_usd
-      });
-
-      // Reset cycle counter
-      this.cycleCounter = 0;
-
-      // Start the main loop using scheduler
-      this.scheduler.start(config.main_loop_interval_seconds, async () => {
-        this.cycleCounter++;
-        console.log(`\n🔄 ===== TRADING CYCLE #${this.cycleCounter} START =====`);
-        
-        const currentConfig = await this.configManager.refreshConfig();
-        
-        if (!currentConfig.is_active) {
-          console.log('⏸️ Trading is not active, skipping cycle');
-          await this.logger.logSystemInfo(`Cycle #${this.cycleCounter} skipped - trading not active`);
-          return;
-        }
-
-        const configData = ConfigConverter.convertConfig(currentConfig);
-        await this.logger.logCycleStart(this.cycleCounter, configData);
-
-        try {
-          const cycleStartTime = Date.now();
-          await this.cycleExecutor.executeTradingCycle(configData);
-          const cycleEndTime = Date.now();
-          const cycleDuration = cycleEndTime - cycleStartTime;
-
-          console.log(`✅ ===== TRADING CYCLE #${this.cycleCounter} COMPLETED (${cycleDuration}ms) =====`);
-          await this.logger.logCycleComplete(this.cycleCounter, {
-            duration: cycleDuration,
-            success: true
-          });
-        } catch (error) {
-          console.error(`❌ Trading cycle #${this.cycleCounter} failed:`, error);
-          await this.logger.logError(`Trading cycle #${this.cycleCounter} failed`, error);
-        }
-      });
-
-      await this.logger.logEngineStatusChange('started');
-      console.log('✅ Main Trading Engine started successfully');
+      console.log('✅ MainTradingEngine started successfully');
+      await this.logger.logSuccess('MainTradingEngine started successfully');
       
     } catch (error) {
-      console.error('❌ Failed to start trading engine:', error);
-      await this.logger.logError('Failed to start trading engine', error);
+      console.error('❌ Error starting MainTradingEngine:', error);
+      await this.logger.logError('Failed to start MainTradingEngine', error);
+      this.isRunning = false;
       throw error;
     }
   }
 
   async stop(): Promise<void> {
-    if (!this.scheduler.isSchedulerRunning()) {
-      console.log('⚠️ Trading engine is not running');
-      await this.logger.logEngineStatusChange('already_stopped');
-      return;
-    }
-
-    console.log('🛑 Stopping Main Trading Engine...');
-    this.scheduler.stop();
-
-    await this.logger.logEngineStatusChange('stopped');
-    console.log('✅ Main Trading Engine stopped');
-  }
-
-  async manualClosePosition(tradeId: string): Promise<{ success: boolean; message: string; data?: any }> {
-    if (!tradeId || typeof tradeId !== 'string') {
-      throw new Error('Valid tradeId is required for manual close');
-    }
-    
-    console.log(`🔒 Manual close requested for trade: ${tradeId}`);
-    await this.logger.logSystemInfo(`Manual close requested for trade ${tradeId}`);
-    
-    return this.manualCloseService.closePosition(tradeId);
-  }
-
-  async simulateEndOfDay(): Promise<void> {
     try {
-      console.log('\n🌅 ===== MANUAL END-OF-DAY SIMULATION START =====');
-      await this.logger.logSuccess('Manual end-of-day simulation started');
+      console.log('🛑 Stopping MainTradingEngine...');
+      await this.logger.logSuccess('MainTradingEngine stopping');
       
-      // Get current config - load fresh config for EOD simulation
-      await this.configManager.loadConfig();
-      const config = this.configManager.getConfig();
-      const configData = ConfigConverter.convertConfig(config);
+      this.isRunning = false;
       
-      console.log('📋 EOD Config loaded:', {
-        autoCloseAtEOD: configData.auto_close_at_end_of_day,
-        eodCloseThreshold: configData.eod_close_premium_percent
-      });
+      if (this.mainLoopInterval) {
+        clearInterval(this.mainLoopInterval);
+        this.mainLoopInterval = null;
+      }
       
-      // Force EOD execution regardless of time by temporarily overriding the config
-      const eodConfigData = {
-        ...configData,
-        auto_close_at_end_of_day: true // Force enable for manual simulation
-      };
+      console.log('✅ MainTradingEngine stopped successfully');
+      await this.logger.logSuccess('MainTradingEngine stopped successfully');
       
-      // Execute end-of-day management with force simulation flag
-      await this.eodManager.manageEndOfDay(eodConfigData, true);
-      
-      console.log('✅ Manual End-of-Day Simulation Completed');
-      await this.logger.log('position_closed', 'Manual end-of-day simulation completed successfully');
     } catch (error) {
-      console.error('❌ Error in manual end-of-day simulation:', error);
-      await this.logger.logError('Manual end-of-day simulation failed', error);
+      console.error('❌ Error stopping MainTradingEngine:', error);
+      await this.logger.logError('Failed to stop MainTradingEngine', error);
       throw error;
     }
   }
 
-  async performTransactionReconciliation(): Promise<void> {
+  private async startMainLoop(): Promise<void> {
+    const intervalMs = (this.config.main_loop_interval_seconds || 30) * 1000;
+    console.log(`⏰ Starting main loop with ${intervalMs / 1000}s interval`);
+
+    // Run immediately
+    await this.executeMainLoop();
+
+    // Then run on interval
+    this.mainLoopInterval = setInterval(async () => {
+      if (this.isRunning) {
+        await this.executeMainLoop();
+      }
+    }, intervalMs);
+  }
+
+  private async executeMainLoop(): Promise<void> {
     try {
-      console.log('\n🔄 ===== MANUAL TRANSACTION RECONCILIATION START =====');
-      await this.logger.logSuccess('Manual transaction reconciliation started');
+      console.log('\n🔄 ===== MAIN LOOP EXECUTION START =====');
       
-      await this.reconciliationService.reconcileWithBybitHistory(24);
+      // 1. Sync positions with exchange first
+      await this.positionSyncService.syncAllPositionsWithExchange();
       
-      console.log('✅ Manual Transaction Reconciliation Completed');
-      await this.logger.logSuccess('Manual transaction reconciliation completed');
+      // 2. Execute signals
+      await this.signalExecutionService.executeSignal(this.config);
+      
+      // 3. Monitor and check order fills
+      await this.positionMonitorService.checkOrderFills(this.config);
+      
+      // 4. Reconcile transactions every few loops
+      if (Math.random() < 0.1) { // 10% chance each loop
+        await this.reconciliationService.reconcileWithBybitHistory(6); // 6 hours lookback
+      }
+      
+      console.log('✅ ===== MAIN LOOP EXECUTION COMPLETE =====\n');
+      
     } catch (error) {
-      console.error('❌ Error in manual transaction reconciliation:', error);
-      await this.logger.logError('Manual transaction reconciliation failed', error);
-      throw error;
+      console.error('❌ Error in main loop execution:', error);
+      await this.logger.logError('Main loop execution failed', error);
     }
   }
 
   isEngineRunning(): boolean {
-    return this.scheduler.isSchedulerRunning();
+    return this.isRunning;
   }
 
-  getCurrentCycleNumber(): number {
-    return this.cycleCounter;
+  updateConfig(newConfig: TradingConfigData): void {
+    this.config = newConfig;
+    console.log('📋 Trading configuration updated');
   }
 }
