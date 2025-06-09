@@ -7,12 +7,7 @@ import { Loader2, TestTube, CheckCircle, XCircle, AlertCircle } from 'lucide-rea
 import { runTradingFlowTest, validatePLCalculationLogic } from '@/utils/tradingFlowSimulation';
 import { ComprehensiveTestRunner } from './comprehensiveTestRunner';
 import { getRandomTestSymbol } from './testConstants';
-
-interface TestResult {
-  test: string;
-  status: 'success' | 'error' | 'warning';
-  message: string;
-}
+import { TestResult } from './types';
 
 const SystemValidationTest = () => {
   const { user } = useAuth();
@@ -53,9 +48,8 @@ const SystemValidationTest = () => {
       const comprehensiveRunner = new ComprehensiveTestRunner(user.id);
       const comprehensiveResults = await comprehensiveRunner.runAllValidationTests();
       
-      comprehensiveResults.forEach(result => {
-        setResults(prev => [...prev, result]);
-      });
+      // Add comprehensive results to the state
+      setResults(prev => [...prev, ...comprehensiveResults]);
 
       // Test 4: Database Schema Validation
       setResults(prev => [...prev, {

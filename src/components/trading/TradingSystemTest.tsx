@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2, TestTube } from 'lucide-react';
 import { useTradingSystemTests } from './test/useTradingSystemTests';
-import { TestResults } from './test/TestResults';
+import TestResults from './test/TestResults';
 import { TestInfo } from './test/TestInfo';
 import SystemValidationTest from './test/SystemValidationTest';
 
