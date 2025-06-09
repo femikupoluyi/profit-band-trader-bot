@@ -97,7 +97,7 @@ const TradesReportFilters = ({
             <Calendar
               mode="single"
               selected={timeRange.from}
-              onSelect={(date) => date && setTimeRange(prev => ({ ...prev, from: date }))}
+              onSelect={(date) => date && setTimeRange({ ...timeRange, from: date })}
               initialFocus
             />
           </PopoverContent>
@@ -124,7 +124,7 @@ const TradesReportFilters = ({
             <Calendar
               mode="single"
               selected={timeRange.to}
-              onSelect={(date) => date && setTimeRange(prev => ({ ...prev, to: date }))}
+              onSelect={(date) => date && setTimeRange({ ...timeRange, to: date })}
               initialFocus
             />
           </PopoverContent>

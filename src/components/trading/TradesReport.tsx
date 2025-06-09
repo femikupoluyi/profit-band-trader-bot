@@ -10,6 +10,7 @@ import { calculateActualPL, calculateTradeMetrics } from '@/utils/plCalculations
 import TradesReportFilters from './TradesReportFilters';
 import TradesReportSummary from './TradesReportSummary';
 import TradesReportTable from './TradesReportTable';
+import BybitSyncButton from './BybitSyncButton';
 
 interface Trade {
   id: string;
@@ -173,17 +174,20 @@ const TradesReport = () => {
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span>Trades Report</span>
-          <Button 
-            onClick={downloadCSV} 
-            disabled={trades.length === 0}
-            className="flex items-center gap-2"
-          >
-            <Download className="h-4 w-4" />
-            Download CSV
-          </Button>
+          <div className="flex items-center gap-2">
+            <BybitSyncButton onSyncComplete={fetchTrades} />
+            <Button 
+              onClick={downloadCSV} 
+              disabled={trades.length === 0}
+              className="flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Download CSV
+            </Button>
+          </div>
         </CardTitle>
         <CardDescription>
-          Generate detailed reports of your trading activity. P&L calculations use stored values for closed trades and live market prices for active trades.
+          Generate detailed reports of your trading activity. Use "Sync from Bybit" to import your latest trades. P&L calculations use stored values for closed trades and live market prices for active trades.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -211,7 +215,7 @@ const TradesReport = () => {
           </div>
         ) : trades.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            No trades found for the selected time range and filters.
+            No trades found for the selected time range and filters. Click "Sync from Bybit" to import your trades.
           </div>
         ) : (
           <TradesReportTable trades={trades} />

@@ -16,6 +16,7 @@ import { TrendingUp, Loader2 } from 'lucide-react';
 import { ActiveTrade } from '@/types/trading';
 import ActiveTradeRow from './ActiveTradeRow';
 import ActiveTradesSummary from './ActiveTradesSummary';
+import BybitSyncButton from '../trading/BybitSyncButton';
 import { useActiveTrades } from '@/hooks/useActiveTrades';
 
 interface ActivePairsTableProps {
@@ -105,12 +106,22 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
     }
   };
 
+  const handleSyncComplete = () => {
+    refetch();
+    if (onTradeUpdate) {
+      onTradeUpdate();
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          Active Trading Pairs
+        <CardTitle className="text-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Active Trading Pairs
+          </div>
+          <BybitSyncButton onSyncComplete={handleSyncComplete} />
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -121,7 +132,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
           </div>
         ) : activeTrades.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No active trades found
+            No active trades found. Click "Sync from Bybit" to import your latest trades.
           </div>
         ) : (
           <div className="overflow-x-auto">
