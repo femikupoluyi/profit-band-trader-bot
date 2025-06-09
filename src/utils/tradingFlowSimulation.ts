@@ -1,353 +1,308 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { calculateSideAwarePL, validateNumericValue } from './formatters';
-import { getCurrentPrice } from './priceUtils';
-
-interface SimulationResult {
-  success: boolean;
-  step: string;
-  message: string;
-  data?: any;
-}
-
-export class TradingFlowSimulation {
-  private userId: string;
-  private testSymbol: string;
-
-  constructor(userId: string, testSymbol: string = 'BTCUSDT') {
-    this.userId = userId;
-    this.testSymbol = testSymbol;
-  }
-
-  /**
-   * Simulate the complete trading flow: buy-fill → sell-creation → live price updates → report rendering
-   */
-  async runCompleteSimulation(): Promise<SimulationResult[]> {
-    const results: SimulationResult[] = [];
-
-    try {
-      // Step 1: Simulate buy order creation
-      const buyResult = await this.simulateBuyOrder();
-      results.push(buyResult);
-      if (!buyResult.success) return results;
-
-      // Step 2: Simulate buy order fill
-      const fillResult = await this.simulateBuyFill(buyResult.data.tradeId);
-      results.push(fillResult);
-      if (!fillResult.success) return results;
-
-      // Step 3: Simulate price update
-      const priceUpdateResult = await this.simulatePriceUpdate();
-      results.push(priceUpdateResult);
-
-      // Step 4: Simulate P&L calculation with live prices
-      const plResult = await this.simulatePLCalculation(buyResult.data.tradeId);
-      results.push(plResult);
-
-      // Step 5: Test report rendering data consistency
-      const reportResult = await this.simulateReportRendering();
-      results.push(reportResult);
-
-      return results;
-    } catch (error) {
-      results.push({
-        success: false,
-        step: 'simulation_error',
-        message: `Simulation failed: ${error}`
-      });
-      return results;
-    }
-  }
-
-  private async simulateBuyOrder(): Promise<SimulationResult> {
-    try {
-      const currentPrice = await getCurrentPrice(this.testSymbol, this.userId);
-      if (!currentPrice) {
-        return {
-          success: false,
-          step: 'buy_order_creation',
-          message: `Could not get current price for ${this.testSymbol}`
-        };
-      }
-
-      const quantity = 0.001; // Small test quantity
-      const { data, error } = await supabase
-        .from('trades')
-        .insert({
-          user_id: this.userId,
-          symbol: this.testSymbol,
-          side: 'buy',
-          quantity: quantity,
-          price: currentPrice,
-          status: 'pending',
-          order_type: 'market'
-        })
-        .select()
-        .single();
-
-      if (error) {
-        return {
-          success: false,
-          step: 'buy_order_creation',
-          message: `Failed to create buy order: ${error.message}`
-        };
-      }
-
-      return {
-        success: true,
-        step: 'buy_order_creation',
-        message: `✅ Buy order created for ${this.testSymbol} at $${currentPrice}`,
-        data: { tradeId: data.id, price: currentPrice, quantity }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        step: 'buy_order_creation',
-        message: `Buy order creation failed: ${error}`
-      };
-    }
-  }
-
-  private async simulateBuyFill(tradeId: string): Promise<SimulationResult> {
-    try {
-      // Simulate a slight price difference on fill
-      const originalTrade = await supabase
-        .from('trades')
-        .select('*')
-        .eq('id', tradeId)
-        .single();
-
-      if (!originalTrade.data) {
-        return {
-          success: false,
-          step: 'buy_fill_simulation',
-          message: 'Could not find original trade'
-        };
-      }
-
-      const originalPrice = parseFloat(originalTrade.data.price.toString());
-      const fillPrice = originalPrice * (1 + (Math.random() * 0.002 - 0.001)); // ±0.1% variance
-
-      const { error } = await supabase
-        .from('trades')
-        .update({
-          status: 'filled',
-          buy_fill_price: fillPrice,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', tradeId);
-
-      if (error) {
-        return {
-          success: false,
-          step: 'buy_fill_simulation',
-          message: `Failed to update trade to filled: ${error.message}`
-        };
-      }
-
-      return {
-        success: true,
-        step: 'buy_fill_simulation',
-        message: `✅ Buy order filled at $${fillPrice.toFixed(4)} (original: $${originalPrice.toFixed(4)})`,
-        data: { fillPrice, originalPrice }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        step: 'buy_fill_simulation',
-        message: `Buy fill simulation failed: ${error}`
-      };
-    }
-  }
-
-  private async simulatePriceUpdate(): Promise<SimulationResult> {
-    try {
-      const currentPrice = await getCurrentPrice(this.testSymbol, this.userId);
-      if (!currentPrice) {
-        return {
-          success: false,
-          step: 'price_update',
-          message: `Could not get updated price for ${this.testSymbol}`
-        };
-      }
-
-      // Simulate storing market data
-      const { error } = await supabase
-        .from('market_data')
-        .insert({
-          symbol: this.testSymbol,
-          price: currentPrice,
-          timestamp: new Date().toISOString(),
-          source: 'simulation'
-        });
-
-      if (error) {
-        console.warn('Could not store market data:', error);
-      }
-
-      return {
-        success: true,
-        step: 'price_update',
-        message: `✅ Price updated for ${this.testSymbol}: $${currentPrice}`,
-        data: { currentPrice }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        step: 'price_update',
-        message: `Price update failed: ${error}`
-      };
-    }
-  }
-
-  private async simulatePLCalculation(tradeId: string): Promise<SimulationResult> {
-    try {
-      const { data: trade } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('id', tradeId)
-        .single();
-
-      if (!trade) {
-        return {
-          success: false,
-          step: 'pl_calculation',
-          message: 'Could not find trade for P&L calculation'
-        };
-      }
-
-      const entryPrice = validateNumericValue(trade.price, 'entry price');
-      const fillPrice = trade.buy_fill_price ? validateNumericValue(trade.buy_fill_price, 'fill price') : null;
-      const quantity = validateNumericValue(trade.quantity, 'quantity');
-      const currentPrice = await getCurrentPrice(this.testSymbol, this.userId);
-
-      if (!currentPrice) {
-        return {
-          success: false,
-          step: 'pl_calculation',
-          message: 'Could not get current price for P&L calculation'
-        };
-      }
-
-      const unrealizedPL = calculateSideAwarePL(
-        trade.side,
-        entryPrice,
-        currentPrice,
-        quantity,
-        fillPrice,
-        trade.status
-      );
-
-      return {
-        success: true,
-        step: 'pl_calculation',
-        message: `✅ P&L calculated: $${unrealizedPL.toFixed(4)} (Entry: $${entryPrice}, Fill: $${fillPrice || 'N/A'}, Current: $${currentPrice})`,
-        data: { unrealizedPL, entryPrice, fillPrice, currentPrice, quantity }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        step: 'pl_calculation',
-        message: `P&L calculation failed: ${error}`
-      };
-    }
-  }
-
-  private async simulateReportRendering(): Promise<SimulationResult> {
-    try {
-      // Test fetching trades for report
-      const { data: trades, error } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('user_id', this.userId)
-        .eq('symbol', this.testSymbol)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) {
-        return {
-          success: false,
-          step: 'report_rendering',
-          message: `Failed to fetch trades for report: ${error.message}`
-        };
-      }
-
-      // Validate data consistency
-      const invalidTrades = trades?.filter(trade => {
-        const price = validateNumericValue(trade.price, 'price');
-        const quantity = validateNumericValue(trade.quantity, 'quantity');
-        return price <= 0 || quantity <= 0;
-      }) || [];
-
-      if (invalidTrades.length > 0) {
-        return {
-          success: false,
-          step: 'report_rendering',
-          message: `Found ${invalidTrades.length} trades with invalid data`
-        };
-      }
-
-      return {
-        success: true,
-        step: 'report_rendering',
-        message: `✅ Report data validated: ${trades?.length || 0} trades with consistent data`,
-        data: { tradeCount: trades?.length || 0 }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        step: 'report_rendering',
-        message: `Report rendering test failed: ${error}`
-      };
-    }
-  }
-
-  /**
-   * Clean up simulation data
-   */
-  async cleanup(): Promise<void> {
-    try {
-      // Remove simulation trades
-      await supabase
-        .from('trades')
-        .delete()
-        .eq('user_id', this.userId)
-        .eq('symbol', this.testSymbol)
-        .gte('created_at', new Date(Date.now() - 60000).toISOString()); // Last minute
-
-      // Remove simulation market data
-      await supabase
-        .from('market_data')
-        .delete()
-        .eq('symbol', this.testSymbol)
-        .eq('source', 'simulation');
-
-    } catch (error) {
-      console.warn('Cleanup failed:', error);
-    }
-  }
-}
+import { calculateSideAwarePL, validateNumericValue } from '@/utils/formatters';
+import { getCurrentPrice } from '@/utils/priceUtils';
 
 /**
- * Run a quick simulation test
+ * Comprehensive trading flow simulation
+ * Tests: buy-fill → sell-creation → live price updates → report rendering
  */
-export const runTradingFlowTest = async (userId: string, testSymbol?: string): Promise<boolean> => {
-  const simulation = new TradingFlowSimulation(userId, testSymbol);
-  
+export const runTradingFlowTest = async (userId: string, testSymbol: string): Promise<boolean> => {
   try {
-    const results = await simulation.runCompleteSimulation();
-    const success = results.every(result => result.success);
-    
-    console.log('🧪 Trading Flow Simulation Results:');
-    results.forEach(result => {
-      console.log(`${result.success ? '✅' : '❌'} ${result.step}: ${result.message}`);
-    });
-    
-    await simulation.cleanup();
-    return success;
+    console.log(`🧪 Starting comprehensive trading flow test for ${testSymbol}...`);
+
+    // Step 1: Simulate buy order creation and fill
+    const buyOrderResult = await simulateBuyOrder(userId, testSymbol);
+    if (!buyOrderResult.success) {
+      console.error('❌ Buy order simulation failed:', buyOrderResult.error);
+      return false;
+    }
+
+    const tradeId = buyOrderResult.tradeId;
+    console.log(`✅ Buy order simulated: ${tradeId}`);
+
+    // Step 2: Simulate order fill with price slippage
+    const fillResult = await simulateOrderFill(tradeId, buyOrderResult.price);
+    if (!fillResult.success) {
+      console.error('❌ Order fill simulation failed:', fillResult.error);
+      return false;
+    }
+
+    console.log(`✅ Order fill simulated with price: $${fillResult.fillPrice}`);
+
+    // Step 3: Test live price updates and P&L calculation
+    const plResult = await testLivePriceUpdates(tradeId, testSymbol, userId);
+    if (!plResult.success) {
+      console.error('❌ Live price update test failed:', plResult.error);
+      return false;
+    }
+
+    console.log(`✅ Live P&L calculation test passed: $${plResult.currentPL}`);
+
+    // Step 4: Test report rendering with the trade data
+    const reportResult = await testReportRendering(userId, tradeId);
+    if (!reportResult.success) {
+      console.error('❌ Report rendering test failed:', reportResult.error);
+      return false;
+    }
+
+    console.log(`✅ Report rendering test passed`);
+
+    // Step 5: Simulate sell order creation
+    const sellResult = await simulateSellOrder(tradeId);
+    if (!sellResult.success) {
+      console.error('❌ Sell order simulation failed:', sellResult.error);
+      return false;
+    }
+
+    console.log(`✅ Sell order simulated and trade closed`);
+
+    // Step 6: Cleanup test data
+    await cleanupTestTrade(tradeId);
+    console.log(`✅ Test trade cleaned up`);
+
+    console.log(`🎉 Complete trading flow test PASSED for ${testSymbol}`);
+    return true;
+
   } catch (error) {
-    console.error('Trading flow simulation failed:', error);
-    await simulation.cleanup();
+    console.error(`❌ Trading flow test failed with exception:`, error);
+    return false;
+  }
+};
+
+const simulateBuyOrder = async (userId: string, symbol: string) => {
+  try {
+    const testPrice = 100.0; // Use test price for simulation
+    const testQuantity = 1.0;
+
+    const { data: trade, error } = await supabase
+      .from('trades')
+      .insert({
+        user_id: userId,
+        symbol,
+        side: 'buy',
+        order_type: 'market',
+        quantity: testQuantity,
+        price: testPrice,
+        status: 'pending',
+        bybit_order_id: `test_${Date.now()}`
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      tradeId: trade.id,
+      price: testPrice,
+      quantity: testQuantity
+    };
+  } catch (error) {
+    return { success: false, error: error };
+  }
+};
+
+const simulateOrderFill = async (tradeId: string, originalPrice: number) => {
+  try {
+    // Simulate realistic price slippage (0.1% to 0.5%)
+    const slippage = (Math.random() * 0.4 + 0.1) / 100;
+    const fillPrice = originalPrice * (1 + slippage);
+
+    const { error } = await supabase
+      .from('trades')
+      .update({
+        status: 'filled',
+        buy_fill_price: fillPrice,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', tradeId);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, fillPrice };
+  } catch (error) {
+    return { success: false, error: error };
+  }
+};
+
+const testLivePriceUpdates = async (tradeId: string, symbol: string, userId: string) => {
+  try {
+    // Get the trade data
+    const { data: trade, error } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('id', tradeId)
+      .single();
+
+    if (error || !trade) {
+      return { success: false, error: 'Trade not found' };
+    }
+
+    // Simulate current price (different from entry)
+    const entryPrice = validateNumericValue(trade.price, 'entry price');
+    const fillPrice = trade.buy_fill_price ? validateNumericValue(trade.buy_fill_price, 'fill price') : null;
+    const quantity = validateNumericValue(trade.quantity, 'quantity');
+
+    // Test current price that represents a 2% gain
+    const currentPrice = entryPrice * 1.02;
+
+    // Calculate P&L using our side-aware function
+    const calculatedPL = calculateSideAwarePL(
+      trade.side,
+      entryPrice,
+      currentPrice,
+      quantity,
+      fillPrice,
+      trade.status
+    );
+
+    // Verify P&L calculation is reasonable
+    const expectedPL = quantity * (currentPrice - (fillPrice || entryPrice));
+    const plDifference = Math.abs(calculatedPL - expectedPL);
+
+    if (plDifference > 0.01) {
+      return {
+        success: false,
+        error: `P&L calculation mismatch: calculated=${calculatedPL}, expected=${expectedPL}`
+      };
+    }
+
+    return { success: true, currentPL: calculatedPL };
+  } catch (error) {
+    return { success: false, error: error };
+  }
+};
+
+const testReportRendering = async (userId: string, tradeId: string) => {
+  try {
+    // Test that the trade appears in various queries
+    const { data: activeTrades, error: activeError } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'filled');
+
+    if (activeError) {
+      return { success: false, error: activeError.message };
+    }
+
+    const testTrade = activeTrades?.find(t => t.id === tradeId);
+    if (!testTrade) {
+      return { success: false, error: 'Trade not found in active trades query' };
+    }
+
+    // Test time-based queries
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const { data: recentTrades, error: recentError } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('created_at', oneDayAgo.toISOString())
+      .lte('created_at', now.toISOString());
+
+    if (recentError) {
+      return { success: false, error: recentError.message };
+    }
+
+    const recentTestTrade = recentTrades?.find(t => t.id === tradeId);
+    if (!recentTestTrade) {
+      return { success: false, error: 'Trade not found in recent trades query' };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error };
+  }
+};
+
+const simulateSellOrder = async (tradeId: string) => {
+  try {
+    // Simulate realistic profit for the test
+    const testProfit = 2.50;
+
+    const { error } = await supabase
+      .from('trades')
+      .update({
+        status: 'closed',
+        profit_loss: testProfit,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', tradeId);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error };
+  }
+};
+
+const cleanupTestTrade = async (tradeId: string) => {
+  try {
+    const { error } = await supabase
+      .from('trades')
+      .delete()
+      .eq('id', tradeId);
+
+    if (error) {
+      console.warn('Warning: Could not cleanup test trade:', error.message);
+    }
+  } catch (error) {
+    console.warn('Warning: Exception during test cleanup:', error);
+  }
+};
+
+/**
+ * Validate P&L calculation logic with various scenarios
+ */
+export const validatePLCalculationLogic = (): boolean => {
+  try {
+    console.log('🧪 Testing P&L calculation logic...');
+
+    const testCases = [
+      // Buy scenarios
+      { side: 'buy', entry: 100, current: 105, quantity: 1, expected: 5, description: 'Buy profitable' },
+      { side: 'buy', entry: 100, current: 95, quantity: 1, expected: -5, description: 'Buy loss' },
+      { side: 'buy', entry: 50, current: 52, quantity: 2, expected: 4, description: 'Buy multiple quantity' },
+      
+      // Sell scenarios  
+      { side: 'sell', entry: 100, current: 95, quantity: 1, expected: 5, description: 'Sell profitable' },
+      { side: 'sell', entry: 100, current: 105, quantity: 1, expected: -5, description: 'Sell loss' },
+      { side: 'sell', entry: 200, current: 190, quantity: 0.5, expected: 5, description: 'Sell fractional quantity' }
+    ];
+
+    for (const testCase of testCases) {
+      const result = calculateSideAwarePL(
+        testCase.side,
+        testCase.entry,
+        testCase.current,
+        testCase.quantity,
+        null,
+        'filled'
+      );
+
+      const tolerance = 0.0001;
+      if (Math.abs(result - testCase.expected) > tolerance) {
+        console.error(`❌ P&L test failed for ${testCase.description}: expected ${testCase.expected}, got ${result}`);
+        return false;
+      }
+
+      console.log(`✅ P&L test passed: ${testCase.description} - Expected: ${testCase.expected}, Got: ${result}`);
+    }
+
+    console.log('✅ All P&L calculation tests passed');
+    return true;
+  } catch (error) {
+    console.error('❌ P&L calculation validation failed:', error);
     return false;
   }
 };

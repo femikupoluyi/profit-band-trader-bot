@@ -2,85 +2,81 @@
 import { BybitInstrumentInfo } from './InstrumentInfoFetcher';
 
 export class InstrumentCache {
-  private static instrumentCache: Map<string, BybitInstrumentInfo> = new Map();
-  private static cacheExpiry: Map<string, number> = new Map();
-  private static readonly CACHE_TTL_MS = 300000; // 5 minutes
-  private static cleanupInterval: number | null = null;
+  private static cache: Map<string, { info: BybitInstrumentInfo; timestamp: number }> = new Map();
+  private static readonly CACHE_TTL_MS = 3600000; // 1 hour
+  private static readonly MAX_CACHE_SIZE = 500; // Prevent memory leaks
 
-  static {
-    // Start cleanup interval when class is first loaded
-    this.startCleanupInterval();
-  }
-
+  /**
+   * Get cached instrument info if available and not expired
+   */
   static getCachedInstrument(symbol: string): BybitInstrumentInfo | null {
-    const cached = this.instrumentCache.get(symbol);
-    const expiry = this.cacheExpiry.get(symbol);
-    
-    if (cached && expiry && Date.now() < expiry) {
-      return cached;
+    try {
+      if (!symbol || typeof symbol !== 'string') {
+        return null;
+      }
+
+      const cached = this.cache.get(symbol);
+      if (!cached) {
+        return null;
+      }
+
+      const now = Date.now();
+      if (now - cached.timestamp > this.CACHE_TTL_MS) {
+        this.cache.delete(symbol);
+        return null;
+      }
+
+      return cached.info;
+    } catch (error) {
+      console.error(`Error retrieving cached instrument for ${symbol}:`, error);
+      return null;
     }
-    
-    // Remove expired cache
-    this.instrumentCache.delete(symbol);
-    this.cacheExpiry.delete(symbol);
-    return null;
   }
 
+  /**
+   * Cache instrument info with timestamp
+   */
   static cacheInstrument(symbol: string, info: BybitInstrumentInfo): void {
-    this.instrumentCache.set(symbol, info);
-    this.cacheExpiry.set(symbol, Date.now() + this.CACHE_TTL_MS);
+    try {
+      if (!symbol || !info || typeof symbol !== 'string') {
+        console.warn('Invalid parameters for cacheInstrument');
+        return;
+      }
+
+      // Implement LRU-like behavior to prevent memory leaks
+      if (this.cache.size >= this.MAX_CACHE_SIZE) {
+        // Remove oldest entries
+        const entries = Array.from(this.cache.entries());
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        
+        // Remove the oldest 10% of entries
+        const toRemove = Math.floor(this.MAX_CACHE_SIZE * 0.1);
+        for (let i = 0; i < toRemove; i++) {
+          this.cache.delete(entries[i][0]);
+        }
+      }
+
+      this.cache.set(symbol, {
+        info,
+        timestamp: Date.now()
+      });
+
+      console.log(`📋 Cached instrument info for ${symbol}`);
+    } catch (error) {
+      console.error(`Error caching instrument for ${symbol}:`, error);
+    }
   }
 
   /**
    * Clear all cached instrument data
    */
   static clearCache(): void {
-    this.instrumentCache.clear();
-    this.cacheExpiry.clear();
-    console.log('🗑️ Instrument cache cleared');
-  }
-
-  /**
-   * Start automatic cleanup of expired cache entries
-   */
-  private static startCleanupInterval(): void {
-    if (this.cleanupInterval !== null) return;
-    
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupExpiredEntries();
-    }, 60000) as unknown as number; // Cleanup every minute
-  }
-
-  /**
-   * Clean up expired cache entries
-   */
-  private static cleanupExpiredEntries(): void {
-    const now = Date.now();
-    const expiredSymbols: string[] = [];
-    
-    for (const [symbol, expiry] of this.cacheExpiry.entries()) {
-      if (now >= expiry) {
-        expiredSymbols.push(symbol);
-      }
-    }
-    
-    for (const symbol of expiredSymbols) {
-      this.instrumentCache.delete(symbol);
-      this.cacheExpiry.delete(symbol);
-    }
-    
-    if (expiredSymbols.length > 0) {
-      console.log(`🧹 Cleaned up ${expiredSymbols.length} expired cache entries`);
-    }
-  }
-
-  /**
-   * Stop cleanup interval (for cleanup/testing)
-   */
-  static stopCleanupInterval(): void {
-    if (this.cleanupInterval !== null) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
+    try {
+      const size = this.cache.size;
+      this.cache.clear();
+      console.log(`🧹 Cleared instrument cache (${size} entries)`);
+    } catch (error) {
+      console.error('Error clearing instrument cache:', error);
     }
   }
 
@@ -88,18 +84,47 @@ export class InstrumentCache {
    * Get cache statistics
    */
   static getCacheStats(): { size: number; expired: number } {
-    const now = Date.now();
-    let expired = 0;
-    
-    for (const expiry of this.cacheExpiry.values()) {
-      if (now >= expiry) {
-        expired++;
+    try {
+      const now = Date.now();
+      let expired = 0;
+
+      for (const [symbol, cached] of this.cache.entries()) {
+        if (now - cached.timestamp > this.CACHE_TTL_MS) {
+          expired++;
+        }
       }
+
+      return {
+        size: this.cache.size,
+        expired
+      };
+    } catch (error) {
+      console.error('Error getting cache stats:', error);
+      return { size: 0, expired: 0 };
     }
-    
-    return {
-      size: this.instrumentCache.size,
-      expired
-    };
+  }
+
+  /**
+   * Clean up expired entries
+   */
+  static cleanupExpired(): void {
+    try {
+      const now = Date.now();
+      const toDelete: string[] = [];
+
+      for (const [symbol, cached] of this.cache.entries()) {
+        if (now - cached.timestamp > this.CACHE_TTL_MS) {
+          toDelete.push(symbol);
+        }
+      }
+
+      toDelete.forEach(symbol => this.cache.delete(symbol));
+      
+      if (toDelete.length > 0) {
+        console.log(`🧹 Cleaned up ${toDelete.length} expired cache entries`);
+      }
+    } catch (error) {
+      console.error('Error cleaning up expired cache entries:', error);
+    }
   }
 }
