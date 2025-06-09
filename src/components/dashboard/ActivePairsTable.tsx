@@ -27,7 +27,8 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
-  // Enable auto-refresh for dashboard view
+  
+  // Enable auto-refresh for dashboard view ONLY
   const { activeTrades, isLoading, refetch } = useActiveTrades(true);
 
   const handleCloseTrade = async (trade: ActiveTrade) => {
@@ -108,7 +109,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   };
 
   const handleSyncComplete = () => {
-    console.log('🔄 Sync completed, refreshing data...');
+    console.log('🔄 Sync completed, refreshing active trades...');
     refetch();
     if (onTradeUpdate) {
       onTradeUpdate();
@@ -122,6 +123,10 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
             Active Trading Pairs
+            {/* Show auto-refresh indicator for dashboard */}
+            <span className="text-xs text-muted-foreground bg-green-100 px-2 py-1 rounded">
+              Auto-refresh: ON
+            </span>
           </div>
           <BybitSyncButton onSyncComplete={handleSyncComplete} />
         </CardTitle>
@@ -134,7 +139,8 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
           </div>
         ) : activeTrades.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No active trades found. Click "Sync from Bybit" to import your latest trades.
+            <p className="mb-4">No active trades found.</p>
+            <p className="text-sm">Click "Sync from Bybit" to import your latest trades.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

@@ -142,10 +142,14 @@ export const useActiveTrades = (enableAutoRefresh: boolean = false) => {
     if (user?.id) {
       fetchActiveTrades();
       
-      // Only set up auto-refresh if explicitly enabled (for dashboard)
+      // Only set up auto-refresh if explicitly enabled
       if (enableAutoRefresh) {
+        console.log('🔄 Setting up auto-refresh for active trades (30s interval)');
         const interval = setInterval(fetchActiveTrades, 30000);
-        return () => clearInterval(interval);
+        return () => {
+          console.log('🛑 Clearing auto-refresh for active trades');
+          clearInterval(interval);
+        };
       }
     }
   }, [user?.id, enableAutoRefresh]);
