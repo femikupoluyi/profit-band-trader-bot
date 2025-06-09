@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { calculateSideAwarePL } from '@/utils/formatters';
+import { CredentialsManager } from '@/services/trading/credentialsManager';
 
 interface TradingStats {
   totalTrades: number;
@@ -45,7 +46,44 @@ export const useTradingStats = (userId?: string) => {
   });
   const [isLoading, setIsLoading] = useState(true);
 
-  const calculateActualPL = async (trade: any) => {
+  const getCurrentPrice = async (symbol: string, userId: string) => {
+    try {
+      // First try to get from market_data table
+      const { data: marketData } = await supabase
+        .from('market_data')
+        .select('price')
+        .eq('symbol', symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (marketData && marketData.price) {
+        return parseFloat(marketData.price.toString());
+      }
+
+      // If no market data, try to get live price from Bybit
+      try {
+        const credentialsManager = new CredentialsManager(userId);
+        const bybitService = await credentialsManager.fetchCredentials();
+        
+        if (bybitService) {
+          const priceData = await bybitService.getMarketPrice(symbol);
+          if (priceData && priceData.price) {
+            return priceData.price;
+          }
+        }
+      } catch (error) {
+        console.warn(`Could not fetch live price for ${symbol}:`, error);
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error getting current price for ${symbol}:`, error);
+      return null;
+    }
+  };
+
+  const calculateActualPL = async (trade: any, userId: string) => {
     try {
       const entryPrice = parseFloat(trade.price.toString());
       const quantity = parseFloat(trade.quantity.toString());
@@ -53,48 +91,31 @@ export const useTradingStats = (userId?: string) => {
 
       // For closed trades, use the stored profit_loss if it exists and is reasonable
       if (['closed', 'cancelled'].includes(trade.status)) {
-        if (trade.profit_loss) {
+        if (trade.profit_loss !== null && trade.profit_loss !== undefined) {
           const storedPL = parseFloat(trade.profit_loss.toString());
-          const volume = entryPrice * quantity;
-          
-          // Validate stored P&L is reasonable (not more than 50% of volume)
-          if (Math.abs(storedPL) <= volume * 0.5) {
-            return storedPL;
-          }
-          
-          // If stored P&L is unrealistic, assume minimal loss for cancelled, zero for closed
-          console.warn(`Unrealistic stored P&L for ${trade.symbol}: $${storedPL}, using fallback`);
-          return trade.status === 'cancelled' ? -0.50 : 0;
+          console.log(`Using stored P&L for closed trade ${trade.symbol}: $${storedPL}`);
+          return storedPL;
         }
         return 0;
       }
 
-      // For active trades, calculate real-time P&L using current market price with side-aware calculation
-      // Only calculate P&L for filled orders
-      if (trade.status !== 'filled') {
-        return 0;
-      }
-
-      const { data: marketData } = await supabase
-        .from('market_data')
-        .select('price')
-        .eq('symbol', trade.symbol)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (marketData) {
-        const currentPrice = parseFloat(marketData.price.toString());
+      // For active filled trades, calculate real-time P&L
+      if (trade.status === 'filled') {
+        const currentPrice = await getCurrentPrice(trade.symbol, userId);
         
-        // Use side-aware P&L calculation with actual fill price
-        return calculateSideAwarePL(
-          trade.side, 
-          entryPrice, 
-          currentPrice, 
-          quantity,
-          fillPrice,
-          trade.status
-        );
+        if (currentPrice) {
+          const actualPL = calculateSideAwarePL(
+            trade.side, 
+            entryPrice, 
+            currentPrice, 
+            quantity,
+            fillPrice,
+            trade.status
+          );
+          
+          console.log(`Calculated P&L for ${trade.symbol}: Entry=$${entryPrice}, Current=$${currentPrice}, P&L=$${actualPL}`);
+          return actualPL;
+        }
       }
 
       return 0;
@@ -153,15 +174,15 @@ export const useTradingStats = (userId?: string) => {
       console.log('Fetched trades in range:', trades.length);
       console.log('Fetched all active trades:', activeTrades.length);
 
-      // Calculate actual P&L for all trades using fill price-aware calculation
+      // Calculate actual P&L for all trades
       const tradesWithActualPL = await Promise.all(
         trades.map(async (trade) => {
-          const actualPL = await calculateActualPL(trade);
+          const actualPL = await calculateActualPL(trade, userId);
           return { ...trade, actualPL };
         })
       );
 
-      // Calculate metrics with fill price-aware actual P&L
+      // Calculate metrics with actual P&L
       const totalTrades = tradesWithActualPL.length;
       const closedTrades = tradesWithActualPL.filter(t => ['closed', 'cancelled'].includes(t.status));
       const filledTrades = tradesWithActualPL.filter(t => t.status === 'filled');
@@ -216,7 +237,7 @@ export const useTradingStats = (userId?: string) => {
         profitPercentage: Math.round(profitPercentage * 100) / 100
       };
 
-      console.log('Calculated stats with fill price-aware P&L:', newStats);
+      console.log('Calculated stats with corrected P&L logic:', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Error fetching trading stats:', error);

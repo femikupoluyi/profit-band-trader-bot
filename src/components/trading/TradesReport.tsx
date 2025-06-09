@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { formatCurrency, calculateSideAwarePL } from '@/utils/formatters';
+import { CredentialsManager } from '@/services/trading/credentialsManager';
 
 interface Trade {
   id: string;
@@ -52,55 +53,78 @@ const TradesReport = () => {
     }
   }, [user, timeRange, statusFilter]);
 
+  const getCurrentPrice = async (symbol: string) => {
+    try {
+      // First try to get from market_data table
+      const { data: marketData } = await supabase
+        .from('market_data')
+        .select('price')
+        .eq('symbol', symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (marketData && marketData.price) {
+        return parseFloat(marketData.price.toString());
+      }
+
+      // If no market data, try to get live price from Bybit
+      if (user) {
+        try {
+          const credentialsManager = new CredentialsManager(user.id);
+          const bybitService = await credentialsManager.fetchCredentials();
+          
+          if (bybitService) {
+            const priceData = await bybitService.getMarketPrice(symbol);
+            if (priceData && priceData.price) {
+              return priceData.price;
+            }
+          }
+        } catch (error) {
+          console.warn(`Could not fetch live price for ${symbol}:`, error);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error getting current price for ${symbol}:`, error);
+      return null;
+    }
+  };
+
   const calculateActualPL = async (trade: any) => {
     try {
       const entryPrice = parseFloat(trade.price.toString());
       const quantity = parseFloat(trade.quantity.toString());
       const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
-      // For closed trades, use stored P&L if it exists and is reasonable
+      // For closed trades, use stored P&L if it exists
       if (['closed', 'cancelled'].includes(trade.status)) {
-        if (trade.profit_loss) {
+        if (trade.profit_loss !== null && trade.profit_loss !== undefined) {
           const storedPL = parseFloat(trade.profit_loss.toString());
-          const volume = entryPrice * quantity;
-          
-          // Validate stored P&L is reasonable (not more than 50% of volume)
-          if (Math.abs(storedPL) <= volume * 0.5) {
-            return storedPL;
-          }
-          
-          console.warn(`Unrealistic stored P&L for ${trade.symbol}: $${storedPL}, using fallback`);
-          return trade.status === 'cancelled' ? -0.50 : 0;
+          console.log(`Using stored P&L for closed trade ${trade.symbol}: $${storedPL}`);
+          return storedPL;
         }
         return 0;
       }
 
-      // For active trades, calculate real-time P&L using current market price with side-aware calculation
-      // Only calculate P&L for filled orders
-      if (trade.status !== 'filled') {
-        return 0;
-      }
-
-      const { data: marketData } = await (supabase as any)
-        .from('market_data')
-        .select('price')
-        .eq('symbol', trade.symbol)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (marketData) {
-        const currentPrice = parseFloat(marketData.price.toString());
+      // For active filled trades, calculate real-time P&L
+      if (trade.status === 'filled') {
+        const currentPrice = await getCurrentPrice(trade.symbol);
         
-        // Use side-aware P&L calculation with actual fill price
-        return calculateSideAwarePL(
-          trade.side, 
-          entryPrice, 
-          currentPrice, 
-          quantity,
-          fillPrice,
-          trade.status
-        );
+        if (currentPrice) {
+          const actualPL = calculateSideAwarePL(
+            trade.side, 
+            entryPrice, 
+            currentPrice, 
+            quantity,
+            fillPrice,
+            trade.status
+          );
+          
+          console.log(`Calculated P&L for ${trade.symbol}: Entry=$${entryPrice}, Current=$${currentPrice}, P&L=$${actualPL}`);
+          return actualPL;
+        }
       }
 
       return 0;
@@ -145,7 +169,7 @@ const TradesReport = () => {
     try {
       console.log('Fetching trades for time range:', timeRange);
 
-      let query = (supabase as any)
+      let query = supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
@@ -266,7 +290,7 @@ const TradesReport = () => {
     );
   };
 
-  // Calculate summary statistics with fill price-aware actual P&L
+  // Calculate summary statistics with corrected P&L logic
   const totalTrades = trades.length;
   const filledTrades = trades.filter(t => t.status === 'filled');
   
@@ -288,7 +312,7 @@ const TradesReport = () => {
     .filter(t => ['closed', 'cancelled'].includes(t.status))
     .reduce((sum, trade) => sum + (trade.actualPL || 0), 0);
 
-  console.log('Summary calculations with fill price-aware P&L:', {
+  console.log('Summary calculations with corrected P&L:', {
     totalTrades,
     filledTrades: filledTrades.length,
     totalVolume: totalVolume.toFixed(2),
@@ -313,7 +337,7 @@ const TradesReport = () => {
           </Button>
         </CardTitle>
         <CardDescription>
-          Generate detailed reports of your trading activity. P&L calculations use actual fill prices from Bybit for filled orders only.
+          Generate detailed reports of your trading activity. P&L calculations use stored values for closed trades and live market prices for active trades.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -432,14 +456,14 @@ const TradesReport = () => {
             <div className={`text-2xl font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(totalPL)}
             </div>
-            <div className="text-xs text-muted-foreground">Fill price based</div>
+            <div className="text-xs text-muted-foreground">Live + stored</div>
           </div>
           <div className="bg-muted/50 p-3 rounded-lg">
             <div className="text-sm text-muted-foreground">Closed P&L</div>
             <div className={`text-2xl font-bold ${closedPositionsProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatCurrency(closedPositionsProfit)}
             </div>
-            <div className="text-xs text-muted-foreground">Fill price based</div>
+            <div className="text-xs text-muted-foreground">Stored values</div>
           </div>
         </div>
 

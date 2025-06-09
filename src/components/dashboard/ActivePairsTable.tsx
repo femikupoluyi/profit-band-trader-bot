@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { ActiveTrade } from '@/types/trading';
 import { calculateSideAwarePL } from '@/utils/formatters';
+import { CredentialsManager } from '@/services/trading/credentialsManager';
 import ActiveTradeRow from './ActiveTradeRow';
 import ActiveTradesSummary from './ActiveTradesSummary';
 
@@ -28,6 +29,45 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
+
+  const getCurrentPrice = async (symbol: string) => {
+    try {
+      // First try to get from market_data table
+      const { data: marketData } = await supabase
+        .from('market_data')
+        .select('price')
+        .eq('symbol', symbol)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (marketData && marketData.price) {
+        return parseFloat(marketData.price.toString());
+      }
+
+      // If no market data, try to get live price from Bybit
+      if (user) {
+        try {
+          const credentialsManager = new CredentialsManager(user.id);
+          const bybitService = await credentialsManager.fetchCredentials();
+          
+          if (bybitService) {
+            const priceData = await bybitService.getMarketPrice(symbol);
+            if (priceData && priceData.price) {
+              return priceData.price;
+            }
+          }
+        } catch (error) {
+          console.warn(`Could not fetch live price for ${symbol}:`, error);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error getting current price for ${symbol}:`, error);
+      return null;
+    }
+  };
 
   const calculateActualPL = async (trade: any) => {
     try {
@@ -44,18 +84,10 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       const fillPrice = trade.buy_fill_price ? parseFloat(trade.buy_fill_price.toString()) : null;
 
       // Get current market price for P&L calculation
-      const { data: marketData } = await (supabase as any)
-        .from('market_data')
-        .select('price')
-        .eq('symbol', trade.symbol)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const currentPrice = await getCurrentPrice(trade.symbol);
 
-      if (marketData) {
-        const currentPrice = parseFloat(marketData.price.toString());
-        
-        // Calculate actual P&L using fill price if available, with side-aware calculation
+      if (currentPrice) {
+        // Calculate actual P&L using current market price with side-aware calculation
         const unrealizedPL = calculateSideAwarePL(
           trade.side,
           entryPrice,
@@ -91,7 +123,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
     try {
       console.log('Fetching active trades for user:', user.id);
 
-      const { data: trades, error } = await (supabase as any)
+      const { data: trades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
@@ -148,7 +180,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
         })
       );
 
-      console.log('Active trades with fill price-aware P&L:', tradesWithActualPL);
+      console.log('Active trades with corrected P&L:', tradesWithActualPL);
       setActiveTrades(tradesWithActualPL);
     } catch (error) {
       console.error('Error fetching active trades:', error);
@@ -172,7 +204,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       const finalPL = trade.status === 'filled' ? (trade.unrealizedPL || 0) : 0;
 
       // Update trade status to closed with final P&L
-      const { error: updateError } = await (supabase as any)
+      const { error: updateError } = await supabase
         .from('trades')
         .update({
           status: 'closed',
@@ -192,7 +224,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
       }
 
       // Log the manual close action
-      await (supabase as any)
+      await supabase
         .from('trading_logs')
         .insert({
           user_id: user?.id,
