@@ -2,7 +2,7 @@
 import React from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { ActiveTrade } from '@/types/trading';
-import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage } from '@/utils/formatters';
+import { formatCurrency, calculateSideAwarePL, calculateSideAwarePercentage, validateNumericValue } from '@/utils/formatters';
 import CloseTradeDialog from './CloseTradeDialog';
 
 interface ActiveTradeRowProps {
@@ -12,28 +12,35 @@ interface ActiveTradeRowProps {
 }
 
 const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
-  const currentPrice = trade.currentPrice || trade.price;
+  // Validate and sanitize trade data
+  const entryPrice = validateNumericValue(trade.price, 'entry price');
+  const quantity = validateNumericValue(trade.quantity, 'quantity');
+  const currentPrice = validateNumericValue(trade.currentPrice || trade.price, 'current price');
+  const fillPrice = trade.fillPrice ? validateNumericValue(trade.fillPrice, 'fill price') : null;
   
-  // Calculate side-aware P&L and percentage using actual fill price for filled orders only
+  // Calculate side-aware P&L and percentage using validated data
   const sideAwarePL = calculateSideAwarePL(
     trade.side, 
-    trade.price, 
+    entryPrice, 
     currentPrice, 
-    trade.quantity,
-    trade.fillPrice, // Use actual fill price if available
+    quantity,
+    fillPrice,
     trade.status
   );
   
   const sideAwarePercentage = calculateSideAwarePercentage(
     trade.side, 
-    trade.price, 
+    entryPrice, 
     currentPrice,
-    trade.fillPrice, // Use actual fill price if available
+    fillPrice,
     trade.status
   );
 
   // Display price used for calculations
-  const effectiveEntryPrice = trade.status === 'filled' && trade.fillPrice ? trade.fillPrice : trade.price;
+  const effectiveEntryPrice = trade.status === 'filled' && fillPrice && fillPrice > 0 ? fillPrice : entryPrice;
+  
+  // Calculate volume using effective price
+  const volume = validateNumericValue(trade.volume || (effectiveEntryPrice * quantity), 'volume');
 
   return (
     <TableRow>
@@ -47,17 +54,17 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
           {trade.side.toUpperCase()}
         </span>
       </TableCell>
-      <TableCell>{trade.quantity.toFixed(8)}</TableCell>
+      <TableCell>{quantity.toFixed(8)}</TableCell>
       <TableCell>
         {formatCurrency(effectiveEntryPrice)}
-        {trade.status === 'filled' && trade.fillPrice && trade.fillPrice !== trade.price && (
+        {trade.status === 'filled' && fillPrice && fillPrice > 0 && Math.abs(fillPrice - entryPrice) > 0.0001 && (
           <div className="text-xs text-muted-foreground">
-            Fill: {formatCurrency(trade.fillPrice)}
+            Original: {formatCurrency(entryPrice)}
           </div>
         )}
       </TableCell>
       <TableCell>{formatCurrency(currentPrice)}</TableCell>
-      <TableCell>{formatCurrency(trade.volume || 0)}</TableCell>
+      <TableCell>{formatCurrency(volume)}</TableCell>
       <TableCell>
         {trade.status === 'filled' ? (
           <span className={`font-medium ${

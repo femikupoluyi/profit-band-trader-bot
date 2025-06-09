@@ -1,6 +1,7 @@
 
 import { TRADING_ENVIRONMENT } from '@/services/trading/core/TypeDefinitions';
 
+// Test symbols - these are acceptable as hard-coded values for testing purposes
 export const TEST_SYMBOLS = {
   BTC: 'BTCUSDT',
   ETH: 'ETHUSDT',
@@ -37,3 +38,25 @@ export const TEST_MESSAGES = {
     CREDENTIALS_MISSING: '❌ No active API credentials found'
   }
 } as const;
+
+/**
+ * Get available test symbols dynamically
+ * This function can be extended to fetch symbols from configuration or API
+ */
+export const getTestSymbols = (): string[] => {
+  return Object.values(TEST_SYMBOLS);
+};
+
+/**
+ * Validate if a symbol is suitable for testing
+ * @param symbol - Symbol to validate
+ * @returns Whether the symbol is valid for testing
+ */
+export const isValidTestSymbol = (symbol: string): boolean => {
+  if (!symbol || typeof symbol !== 'string') {
+    return false;
+  }
+  
+  // Check if it's a USDT pair (common for testing)
+  return symbol.endsWith('USDT') && symbol.length > 4;
+};
