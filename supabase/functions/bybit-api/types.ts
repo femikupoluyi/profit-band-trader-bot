@@ -1,18 +1,17 @@
 
 export interface BybitRequest {
   endpoint: string;
-  method?: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   params?: Record<string, any>;
+  body?: Record<string, any>;
   isDemoTrading?: boolean;
-  timestamp?: number;
-  cacheBust?: string;
+  apiKey?: string;  // Added for user credentials
+  apiSecret?: string;  // Added for user credentials
 }
 
-export interface SignatureParams {
-  apiKey: string;
-  apiSecret: string;
-  timestamp: string;
-  recvWindow: string;
-  params: Record<string, any>;
-  requestBody?: string;
+export interface BybitResponse {
+  retCode: number;
+  retMsg: string;
+  result?: any;
+  time?: number;
 }

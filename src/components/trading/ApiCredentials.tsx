@@ -190,7 +190,9 @@ const ApiCredentials = () => {
             category: 'spot',
             symbol: 'BTCUSDT'
           },
-          isDemoTrading: true // DEMO trading
+          isDemoTrading: true,
+          apiKey: credentials.api_key,     // Pass user credentials
+          apiSecret: credentials.api_secret // Pass user credentials
         }
       });
 
