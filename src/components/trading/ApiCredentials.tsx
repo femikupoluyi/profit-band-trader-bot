@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,10 +51,12 @@ const ApiCredentials = () => {
       }
 
       if (data) {
-        console.log('Found existing credentials:', { ...data, api_secret: '[HIDDEN]' });
+        // Type assertion to handle missing api_url in generated types
+        const credData = data as any;
+        console.log('Found existing credentials:', { ...credData, api_secret: '[HIDDEN]' });
         setCredentials({
-          ...data,
-          api_url: data.api_url || 'https://api-demo.bybit.com'
+          ...credData,
+          api_url: credData.api_url || 'https://api-demo.bybit.com'
         });
         setHasExisting(true);
       } else {
