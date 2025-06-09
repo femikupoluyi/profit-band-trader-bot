@@ -1,9 +1,9 @@
-
 import React, { useState } from 'react';
 import { SidebarProvider, SidebarTrigger, AppSidebar } from './SidebarNavigation';
 import DashboardHeader from './DashboardHeader';
 import TradingStats from './TradingStats';
 import ActivePairsTable from './ActivePairsTable';
+import ActiveTrades from './ActiveTrades';
 import TradingStatus from '../trading/TradingStatus';
 import TradingConfig from '../trading/TradingConfig';
 import ApiCredentials from '../trading/ApiCredentials';
@@ -52,7 +52,14 @@ const DashboardWithSidebar = () => {
               timeRange={timeRange}
               onTimeRangeChange={setTimeRange}
             />
-            <TradingStatus />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <TradingStatus />
+              </div>
+              <div>
+                <ActiveTrades onTradeUpdate={handleDataRefresh} />
+              </div>
+            </div>
             <ActivePairsTable onTradeUpdate={handleDataRefresh} />
           </div>
         );
@@ -75,7 +82,14 @@ const DashboardWithSidebar = () => {
               timeRange={timeRange}
               onTimeRangeChange={setTimeRange}
             />
-            <TradingStatus />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <TradingStatus />
+              </div>
+              <div>
+                <ActiveTrades onTradeUpdate={handleDataRefresh} />
+              </div>
+            </div>
             <ActivePairsTable onTradeUpdate={handleDataRefresh} />
           </div>
         );
