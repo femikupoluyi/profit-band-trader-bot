@@ -27,8 +27,8 @@ export class SignalExecutionService {
 
   async executeSignal(config: TradingConfigData): Promise<void> {
     try {
-      console.log('\n⚡ Executing signals...');
-      await this.logger.logSuccess('Starting signal execution');
+      console.log('\n⚡ ===== SIGNAL EXECUTION START =====');
+      await this.logger.logSuccess('Starting signal execution phase');
       
       // Load configured trading pairs from user config
       const configuredPairs = await TradingPairsService.getConfiguredTradingPairs(this.userId);
@@ -41,6 +41,7 @@ export class SignalExecutionService {
       }
       
       // Get unprocessed signals
+      console.log('🔍 Fetching unprocessed signals...');
       const { data: signals, error } = await supabase
         .from('trading_signals')
         .select('*')
@@ -57,94 +58,163 @@ export class SignalExecutionService {
 
       if (!signals || signals.length === 0) {
         console.log('📭 No unprocessed signals found');
+        await this.logger.logSystemInfo('No unprocessed signals found');
         return;
       }
 
-      console.log(`📊 Found ${signals.length} unprocessed signals`);
-      await this.logger.logSuccess(`Found ${signals.length} unprocessed signals`);
+      console.log(`📊 Found ${signals.length} unprocessed signals:`);
+      signals.forEach((signal, index) => {
+        console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${signal.price} (ID: ${signal.id}, Created: ${new Date(signal.created_at).toLocaleString()})`);
+      });
+
+      await this.logger.logSuccess(`Found ${signals.length} unprocessed signals`, {
+        signalCount: signals.length,
+        signals: signals.map(s => ({
+          id: s.id,
+          symbol: s.symbol,
+          type: s.signal_type,
+          price: s.price,
+          created: s.created_at
+        }))
+      });
+
+      let executionResults = {
+        total: signals.length,
+        executed: 0,
+        rejected: 0,
+        errors: 0
+      };
 
       for (const signal of signals) {
-        // Check if the signal's symbol is configured for trading
-        const isPairConfigured = await TradingPairsService.isPairConfiguredForTrading(signal.symbol, this.userId);
-        
-        if (!isPairConfigured) {
-          console.log(`⚠️ Signal for ${signal.symbol} rejected: not configured for trading`);
-          await this.markSignalRejected(signal.id, `Symbol ${signal.symbol} not configured for trading`);
-          continue;
+        try {
+          const result = await this.processSingleSignal(signal, config);
+          if (result.success) {
+            executionResults.executed++;
+          } else {
+            executionResults.rejected++;
+          }
+        } catch (error) {
+          executionResults.errors++;
+          console.error(`❌ Error processing signal ${signal.id}:`, error);
         }
-        
-        await this.processSingleSignal(signal, config);
       }
       
-      await this.logger.logSuccess('Signal execution completed');
+      console.log('📊 ===== SIGNAL EXECUTION SUMMARY =====', executionResults);
+      await this.logger.logSuccess('Signal execution completed', executionResults);
     } catch (error) {
       console.error(`❌ Error executing signals:`, error);
       await this.logger.logError('Error executing signals', error);
     }
   }
 
-  private async processSingleSignal(signal: any, config: TradingConfigData): Promise<void> {
+  private async processSingleSignal(signal: any, config: TradingConfigData): Promise<{ success: boolean; reason?: string }> {
     try {
-      console.log(`\n⚡ Processing signal for ${signal.symbol}:`);
+      console.log(`\n⚡ ===== PROCESSING SIGNAL ${signal.id} FOR ${signal.symbol} =====`);
+      await this.logger.logSystemInfo(`Processing signal ${signal.id} for ${signal.symbol}`, {
+        signalId: signal.id,
+        symbol: signal.symbol,
+        type: signal.signal_type,
+        price: signal.price,
+        confidence: signal.confidence
+      });
       
-      // Check position limits BEFORE executing signal
+      // Step 1: Check if symbol is configured for trading
+      console.log(`🔍 Checking if ${signal.symbol} is configured for trading...`);
+      const isPairConfigured = await TradingPairsService.isPairConfiguredForTrading(signal.symbol, this.userId);
+      
+      if (!isPairConfigured) {
+        console.log(`❌ Signal for ${signal.symbol} rejected: not configured for trading`);
+        await this.markSignalRejected(signal.id, `Symbol ${signal.symbol} not configured for trading`);
+        return { success: false, reason: 'Not configured for trading' };
+      }
+      
+      console.log(`✅ ${signal.symbol} is configured for trading`);
+
+      // Step 2: Check position limits BEFORE executing signal
+      console.log(`🔍 Validating position limits for ${signal.symbol}...`);
       const canExecute = await this.positionValidator.validatePositionLimits(signal.symbol, config);
       if (!canExecute) {
         console.log(`❌ Position limits exceeded for ${signal.symbol}, rejecting signal`);
         await this.markSignalRejected(signal.id, 'Position limits exceeded');
-        return;
+        return { success: false, reason: 'Position limits exceeded' };
       }
+      
+      console.log(`✅ Position limits validation passed for ${signal.symbol}`);
       
       const entryPrice = parseFloat(signal.price.toString());
       
-      // Calculate quantity with proper formatting - will now use Bybit instrument info
+      // Step 3: Calculate quantity with proper formatting
+      console.log(`🔢 Calculating quantity for ${signal.symbol}...`);
       const adjustedQuantity = TradeValidator.calculateQuantity(signal.symbol, config.max_order_amount_usd, entryPrice, config);
       
       // Use async formatting for precise Bybit compliance
       const formattedQuantityStr = await ConfigurableFormatter.formatQuantity(signal.symbol, adjustedQuantity);
       const finalQuantity = parseFloat(formattedQuantityStr);
       
-      console.log(`  Calculated Quantity: ${adjustedQuantity}`);
-      console.log(`  Final Formatted Quantity: ${finalQuantity}`);
+      console.log(`📊 ${signal.symbol} quantity calculation:
+        - Max Order Amount: $${config.max_order_amount_usd}
+        - Entry Price: $${entryPrice.toFixed(6)}
+        - Raw Quantity: ${adjustedQuantity}
+        - Formatted Quantity: ${finalQuantity}`);
       
-      // Validate trade parameters with Bybit instrument requirements
+      // Step 4: Validate trade parameters with Bybit instrument requirements
+      console.log(`🔧 Validating order parameters for ${signal.symbol}...`);
       const isValidOrder = await ConfigurableFormatter.validateOrder(signal.symbol, entryPrice, finalQuantity);
       if (!isValidOrder) {
         await this.markSignalRejected(signal.id, 'Order validation failed (Bybit requirements)');
-        return;
+        return { success: false, reason: 'Order validation failed' };
       }
 
-      // Calculate take-profit price
+      console.log(`✅ Order validation passed for ${signal.symbol}`);
+
+      // Step 5: Calculate take-profit price
       const takeProfitPrice = entryPrice * (1 + config.take_profit_percent / 100);
       
-      console.log(`  Entry Price: $${entryPrice.toFixed(4)}`);
-      console.log(`  Take Profit: $${takeProfitPrice.toFixed(4)} (+${config.take_profit_percent}%)`);
+      console.log(`🎯 ${signal.symbol} order details:
+        - Entry Price: $${entryPrice.toFixed(6)}
+        - Take Profit: $${takeProfitPrice.toFixed(6)} (+${config.take_profit_percent}%)
+        - Quantity: ${finalQuantity}`);
 
-      // Place REAL limit buy order on Bybit with dynamic formatting
-      await this.orderPlacer.placeRealBybitOrder(signal, finalQuantity, entryPrice, takeProfitPrice);
+      // Step 6: Place REAL limit buy order on Bybit
+      console.log(`📝 Placing real Bybit order for ${signal.symbol}...`);
+      const orderResult = await this.orderPlacer.placeRealBybitOrder(signal, finalQuantity, entryPrice, takeProfitPrice);
       
-      // Mark signal as processed
+      if (!orderResult.success) {
+        console.log(`❌ Failed to place order for ${signal.symbol}: ${orderResult.reason}`);
+        await this.markSignalRejected(signal.id, orderResult.reason || 'Order placement failed');
+        return { success: false, reason: orderResult.reason };
+      }
+
+      // Step 7: Mark signal as processed
+      console.log(`✅ Order placed successfully for ${signal.symbol}, marking signal as processed...`);
       await supabase
         .from('trading_signals')
         .update({ processed: true })
         .eq('id', signal.id);
       
-      await this.logger.logSuccess(`Signal executed for ${signal.symbol}`, {
+      await this.logger.logSuccess(`Signal executed successfully for ${signal.symbol}`, {
         symbol: signal.symbol,
         signalId: signal.id,
         entryPrice,
         quantity: finalQuantity,
+        takeProfitPrice,
         formattingMethod: 'bybit_instrument_info'
       });
+
+      console.log(`✅ ===== SIGNAL ${signal.id} FOR ${signal.symbol} COMPLETED SUCCESSFULLY =====`);
+      return { success: true };
       
     } catch (error) {
       console.error(`❌ Error executing signal ${signal.id}:`, error);
       await this.markSignalRejected(signal.id, error.message);
+      return { success: false, reason: error.message };
     }
   }
 
   private async markSignalRejected(signalId: string, reason: string): Promise<void> {
     try {
+      console.log(`❌ Marking signal ${signalId} as rejected: ${reason}`);
+      
       await supabase
         .from('trading_signals')
         .update({ processed: true })
@@ -152,7 +222,8 @@ export class SignalExecutionService {
 
       await this.logger.log('signal_rejected', `Signal rejected: ${reason}`, {
         signalId,
-        reason
+        reason,
+        timestamp: new Date().toISOString()
       });
     } catch (error) {
       console.error('Error marking signal as rejected:', error);

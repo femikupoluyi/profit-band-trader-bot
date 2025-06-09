@@ -24,24 +24,40 @@ export class MarketDataScannerService {
 
   async scanMarkets(config: TradingConfigData): Promise<void> {
     try {
+      console.log('\n📊 ===== MARKET DATA SCAN START =====');
       console.log(`📊 Scanning ${config.trading_pairs.length} markets using edge function...`);
-      await this.logger.logSuccess(`Starting market scan for ${config.trading_pairs.length} pairs`);
+      await this.logger.logSuccess(`Starting market scan for ${config.trading_pairs.length} pairs`, {
+        tradingPairs: config.trading_pairs,
+        scanMethod: 'edge_function'
+      });
 
       // Clear old market data
+      console.log('🧹 Clearing old market data...');
       await this.clearOldMarketData();
 
-      // Process symbols with controlled concurrency - reduced for edge function
-      const results = await this.processSymbolsBatch(config.trading_pairs, 2); // Max 2 concurrent requests
+      // Process symbols with controlled concurrency
+      console.log(`🔄 Processing symbols in batches of 2...`);
+      const results = await this.processSymbolsBatch(config.trading_pairs, 2);
 
       const successCount = results.filter(r => r.success).length;
       const failureCount = results.length - successCount;
 
-      console.log(`📊 Market scan completed: ${successCount} successful, ${failureCount} failed`);
-      await this.logger.logSuccess(`Market scan completed: ${successCount}/${results.length} successful`);
+      console.log(`📊 ===== MARKET SCAN SUMMARY =====
+        - Total symbols: ${results.length}
+        - Successful: ${successCount}
+        - Failed: ${failureCount}`);
+
+      await this.logger.logSuccess(`Market scan completed: ${successCount}/${results.length} successful`, {
+        totalSymbols: results.length,
+        successful: successCount,
+        failed: failureCount,
+        results: results
+      });
 
       // Log connection health status
       const connectionStatus = this.connectionManager.getConnectionStatus();
       console.log('🔗 Connection Health Status:', connectionStatus);
+      await this.logger.logSystemInfo('Connection health status', connectionStatus);
 
     } catch (error) {
       console.error('❌ Error in market scan:', error);
@@ -50,8 +66,8 @@ export class MarketDataScannerService {
     }
   }
 
-  private async processSymbolsBatch(symbols: string[], batchSize: number): Promise<Array<{symbol: string, success: boolean}>> {
-    const results: Array<{symbol: string, success: boolean}> = [];
+  private async processSymbolsBatch(symbols: string[], batchSize: number): Promise<Array<{symbol: string, success: boolean, reason?: string}>> {
+    const results: Array<{symbol: string, success: boolean, reason?: string}> = [];
     
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
@@ -63,10 +79,10 @@ export class MarketDataScannerService {
       
       batchResults.forEach((result, index) => {
         const symbol = batch[index];
-        const success = result.status === 'fulfilled' && result.value;
-        results.push({ symbol, success });
-        
-        if (!success && result.status === 'rejected') {
+        if (result.status === 'fulfilled') {
+          results.push({ symbol, success: result.value.success, reason: result.value.reason });
+        } else {
+          results.push({ symbol, success: false, reason: result.reason?.toString() || 'Unknown error' });
           console.error(`❌ Final failure for ${symbol}:`, result.reason);
         }
       });
@@ -74,20 +90,20 @@ export class MarketDataScannerService {
       // Add delay between batches
       if (i + batchSize < symbols.length) {
         console.log('⏳ Waiting between batches...');
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Increased delay for edge function
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
     
     return results;
   }
 
-  private async scanSymbolWithRetry(symbol: string, maxRetries: number = 2): Promise<boolean> {
+  private async scanSymbolWithRetry(symbol: string, maxRetries: number = 2): Promise<{ success: boolean; reason?: string }> {
     const endpoint = 'bybit-edge-function';
     
     // Check circuit breaker
     if (!this.connectionManager.isConnectionHealthy(endpoint)) {
       console.log(`🚫 Skipping ${symbol} - circuit breaker is open`);
-      return false;
+      return { success: false, reason: 'Circuit breaker open' };
     }
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -97,8 +113,12 @@ export class MarketDataScannerService {
         
         console.log(`📈 Attempt ${attempt}/${maxRetries}: Fetching price for ${symbol} via edge function...`);
         
+        const startTime = Date.now();
         const marketPrice = await this.bybitService.getMarketPrice(symbol);
+        const endTime = Date.now();
         const currentPrice = marketPrice.price;
+
+        console.log(`⏱️ ${symbol}: Price fetch took ${endTime - startTime}ms`);
 
         // Validate price
         if (!currentPrice || currentPrice <= 0 || !isFinite(currentPrice)) {
@@ -114,9 +134,11 @@ export class MarketDataScannerService {
         
         // Record success
         this.connectionManager.recordSuccess(endpoint);
-        console.log(`✅ ${symbol}: $${currentPrice.toFixed(6)} (attempt ${attempt})`);
+        console.log(`✅ ${symbol}: $${currentPrice.toFixed(6)} (attempt ${attempt}, took ${endTime - startTime}ms)`);
         
-        return true;
+        await this.logger.logMarketDataUpdate(symbol, currentPrice, 'bybit_edge_function');
+        
+        return { success: true };
 
       } catch (error) {
         console.error(`❌ Attempt ${attempt}/${maxRetries} failed for ${symbol}:`, error);
@@ -136,14 +158,15 @@ export class MarketDataScannerService {
         await this.logger.logError(`Failed to scan ${symbol} after ${maxRetries} attempts`, error, { 
           symbol, 
           attempts: attempt,
-          finalAttempt: true 
+          finalAttempt: true,
+          errorMessage: error.message
         });
         
-        return false;
+        return { success: false, reason: error.message };
       }
     }
     
-    return false;
+    return { success: false, reason: 'Max retries exceeded' };
   }
 
   private async validatePriceChange(symbol: string, currentPrice: number): Promise<void> {

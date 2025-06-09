@@ -22,15 +22,40 @@ export class SignalAnalysisService {
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
     try {
-      console.log('📈 Starting signal analysis...');
-      await this.logger.logSuccess('Starting signal analysis');
+      console.log('\n📈 ===== SIGNAL ANALYSIS START =====');
+      await this.logger.logSuccess('Starting comprehensive signal analysis', {
+        tradingPairsCount: config.trading_pairs.length,
+        tradingPairs: config.trading_pairs,
+        maxOrderAmount: config.max_order_amount_usd,
+        takeProfitPercent: config.take_profit_percent
+      });
+
+      let analysisResults = {
+        totalPairs: config.trading_pairs.length,
+        analyzedPairs: 0,
+        signalsGenerated: 0,
+        signalsRejected: 0,
+        errors: 0
+      };
 
       for (const symbol of config.trading_pairs) {
-        await this.analyzeSymbol(symbol, config);
+        try {
+          analysisResults.analyzedPairs++;
+          const result = await this.analyzeSymbol(symbol, config);
+          if (result.signalGenerated) {
+            analysisResults.signalsGenerated++;
+          } else {
+            analysisResults.signalsRejected++;
+          }
+        } catch (error) {
+          analysisResults.errors++;
+          console.error(`❌ Error analyzing ${symbol}:`, error);
+          await this.logger.logError(`Failed to analyze ${symbol}`, error, { symbol });
+        }
       }
 
-      console.log('✅ Signal analysis completed');
-      await this.logger.logSuccess('Signal analysis completed');
+      console.log('📊 ===== SIGNAL ANALYSIS SUMMARY =====', analysisResults);
+      await this.logger.logSuccess('Signal analysis completed', analysisResults);
     } catch (error) {
       console.error('❌ Error in signal analysis:', error);
       await this.logger.logError('Error in signal analysis', error);
@@ -38,11 +63,12 @@ export class SignalAnalysisService {
     }
   }
 
-  private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
+  private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<{ signalGenerated: boolean; reason?: string }> {
     try {
-      console.log(`\n🔍 Analyzing ${symbol}...`);
+      console.log(`\n🔍 ===== ANALYZING ${symbol} =====`);
+      await this.logger.logSystemInfo(`Starting analysis for ${symbol}`);
 
-      // Check if we already have enough active signals for this symbol
+      // Step 1: Check existing signals
       const { data: existingSignals, error: signalsError } = await supabase
         .from('trading_signals')
         .select('id')
@@ -52,21 +78,29 @@ export class SignalAnalysisService {
 
       if (signalsError) {
         console.error(`❌ Error checking existing signals for ${symbol}:`, signalsError);
-        return;
+        await this.logger.logError(`Error checking existing signals for ${symbol}`, signalsError, { symbol });
+        return { signalGenerated: false, reason: 'Database error checking existing signals' };
       }
 
       if (existingSignals && existingSignals.length >= config.max_positions_per_pair) {
-        console.log(`  ⚠️ Already have ${existingSignals.length} unprocessed signals for ${symbol}, skipping`);
-        return;
+        console.log(`⚠️ ${symbol}: Already has ${existingSignals.length} unprocessed signals (max: ${config.max_positions_per_pair})`);
+        await this.logger.logSignalRejected(symbol, 'Max unprocessed signals reached', {
+          existingSignals: existingSignals.length,
+          maxAllowed: config.max_positions_per_pair
+        });
+        return { signalGenerated: false, reason: 'Max unprocessed signals reached' };
       }
 
-      // Get current market price
+      // Step 2: Get current market price
+      console.log(`📊 Getting market price for ${symbol}...`);
       const marketData = await this.bybitService.getMarketPrice(symbol);
       const currentPrice = marketData.price;
       
-      console.log(`  Current Price: $${currentPrice.toFixed(4)}`);
+      console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(6)}`);
+      await this.logger.logMarketDataUpdate(symbol, currentPrice, 'bybit');
 
-      // Get recent market data for support analysis
+      // Step 3: Get recent market data for support analysis
+      console.log(`📈 Fetching historical market data for ${symbol}...`);
       const { data: recentData, error } = await supabase
         .from('market_data')
         .select('*')
@@ -77,15 +111,22 @@ export class SignalAnalysisService {
       if (error) {
         console.error(`❌ Error fetching market data for ${symbol}:`, error);
         await this.logger.logError(`Error fetching market data for ${symbol}`, error, { symbol });
-        return;
+        return { signalGenerated: false, reason: 'Error fetching market data' };
       }
 
       if (!recentData || recentData.length < 10) {
-        console.log(`  ⚠️ Insufficient market data for ${symbol} (${recentData?.length || 0} records)`);
-        return;
+        console.log(`⚠️ ${symbol}: Insufficient market data (${recentData?.length || 0} records, need at least 10)`);
+        await this.logger.logSignalRejected(symbol, 'Insufficient market data', {
+          dataRecords: recentData?.length || 0,
+          minimumRequired: 10
+        });
+        return { signalGenerated: false, reason: 'Insufficient market data' };
       }
 
-      // Analyze support levels
+      console.log(`📊 ${symbol}: Found ${recentData.length} market data records`);
+
+      // Step 4: Analyze support levels
+      console.log(`🔍 Analyzing support levels for ${symbol}...`);
       const priceHistory = recentData.map(d => parseFloat(d.price.toString()));
       const supportLevel = this.supportLevelAnalyzer.identifySupportLevel(
         priceHistory.map((price, index) => ({
@@ -98,50 +139,88 @@ export class SignalAnalysisService {
         }))
       );
 
-      if (supportLevel && supportLevel.strength > 0.3) {
-        console.log(`  📊 Support found at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
-        
-        // Check if current price is near support level for potential buy signal
-        const priceAboveSupport = ((currentPrice - supportLevel.price) / supportLevel.price) * 100;
-        
-        // Validate price is within acceptable bounds
-        if (priceAboveSupport >= 0 && 
-            priceAboveSupport <= config.support_upper_bound_percent &&
-            priceAboveSupport >= -config.support_lower_bound_percent) {
-          
-          // Calculate entry price with offset
-          const entryPrice = supportLevel.price * (1 + config.entry_offset_percent / 100);
-          
-          // Additional validation: ensure entry price makes sense
-          if (entryPrice > currentPrice * 0.95 && entryPrice < currentPrice * 1.05) {
-            console.log(`  🎯 Buy signal conditions met for ${symbol}`);
-            await this.createBuySignal(symbol, entryPrice, supportLevel, config);
-          } else {
-            console.log(`  📭 Entry price ${entryPrice.toFixed(4)} too far from current price for ${symbol}`);
-          }
-        } else {
-          console.log(`  📭 Price not in buy zone for ${symbol} (${priceAboveSupport.toFixed(2)}% from support, bounds: -${config.support_lower_bound_percent}% to +${config.support_upper_bound_percent}%)`);
-        }
-      } else {
-        console.log(`  📭 No valid support level found for ${symbol} (strength: ${supportLevel?.strength || 'N/A'})`);
+      if (!supportLevel || supportLevel.strength <= 0.3) {
+        console.log(`❌ ${symbol}: No valid support level found (strength: ${supportLevel?.strength || 'N/A'})`);
+        await this.logger.logSignalRejected(symbol, 'No valid support level', {
+          supportLevel: supportLevel?.price || null,
+          strength: supportLevel?.strength || 0,
+          minimumStrength: 0.3
+        });
+        return { signalGenerated: false, reason: 'No valid support level' };
       }
+
+      console.log(`📊 ${symbol}: Support found at $${supportLevel.price.toFixed(6)} (strength: ${supportLevel.strength.toFixed(3)})`);
+      
+      // Step 5: Check if price is in buy zone
+      const priceAboveSupport = ((currentPrice - supportLevel.price) / supportLevel.price) * 100;
+      
+      console.log(`📐 ${symbol}: Price analysis:
+        - Current: $${currentPrice.toFixed(6)}
+        - Support: $${supportLevel.price.toFixed(6)}
+        - Distance: ${priceAboveSupport.toFixed(2)}%
+        - Bounds: -${config.support_lower_bound_percent}% to +${config.support_upper_bound_percent}%`);
+
+      if (priceAboveSupport < -config.support_lower_bound_percent || priceAboveSupport > config.support_upper_bound_percent) {
+        console.log(`❌ ${symbol}: Price not in buy zone (${priceAboveSupport.toFixed(2)}% from support)`);
+        await this.logger.logSignalRejected(symbol, 'Price not in buy zone', {
+          currentPrice,
+          supportPrice: supportLevel.price,
+          distancePercent: priceAboveSupport,
+          lowerBound: -config.support_lower_bound_percent,
+          upperBound: config.support_upper_bound_percent
+        });
+        return { signalGenerated: false, reason: 'Price not in buy zone' };
+      }
+
+      // Step 6: Calculate entry price
+      const entryPrice = supportLevel.price * (1 + config.entry_offset_percent / 100);
+      console.log(`🎯 ${symbol}: Calculated entry price: $${entryPrice.toFixed(6)} (+${config.entry_offset_percent}% offset)`);
+      
+      // Step 7: Validate entry price makes sense
+      const entryPriceDistance = Math.abs((entryPrice - currentPrice) / currentPrice) * 100;
+      if (entryPriceDistance > 5) {
+        console.log(`❌ ${symbol}: Entry price too far from current price (${entryPriceDistance.toFixed(2)}% away)`);
+        await this.logger.logSignalRejected(symbol, 'Entry price too far from current price', {
+          entryPrice,
+          currentPrice,
+          distancePercent: entryPriceDistance
+        });
+        return { signalGenerated: false, reason: 'Entry price too far from current price' };
+      }
+
+      // Step 8: Validate trade parameters
+      console.log(`🔧 ${symbol}: Validating trade parameters...`);
+      const testQuantity = TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
+      
+      if (!TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config)) {
+        console.log(`❌ ${symbol}: Trade parameter validation failed`);
+        await this.logger.logSignalRejected(symbol, 'Trade parameter validation failed', {
+          entryPrice,
+          testQuantity,
+          maxOrderAmount: config.max_order_amount_usd
+        });
+        return { signalGenerated: false, reason: 'Trade parameter validation failed' };
+      }
+
+      // Step 9: Create buy signal
+      console.log(`✅ ${symbol}: All checks passed, creating buy signal...`);
+      const signalResult = await this.createBuySignal(symbol, entryPrice, supportLevel, config);
+      
+      return { signalGenerated: signalResult, reason: signalResult ? 'Signal created successfully' : 'Failed to create signal' };
 
     } catch (error) {
       console.error(`❌ Error analyzing ${symbol}:`, error);
       await this.logger.logError(`Failed to analyze ${symbol}`, error, { symbol });
+      return { signalGenerated: false, reason: 'Analysis error' };
     }
   }
 
-  private async createBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData): Promise<void> {
+  private async createBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData): Promise<boolean> {
     try {
-      // Validate signal parameters before creating
-      const testQuantity = TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
+      console.log(`📝 Creating buy signal for ${symbol}...`);
       
-      if (!TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config)) {
-        console.log(`  ❌ Signal validation failed for ${symbol}`);
-        await this.logger.logError(`Signal validation failed for ${symbol}`, new Error('Trade parameters invalid'), { symbol, entryPrice, testQuantity });
-        return;
-      }
+      const confidence = Math.min(0.95, supportLevel.strength);
+      const reasoning = `Buy signal: Price near support level at $${supportLevel.price.toFixed(6)} with ${supportLevel.strength.toFixed(3)} strength. Entry offset: ${config.entry_offset_percent}%`;
 
       const { data: signal, error } = await supabase
         .from('trading_signals')
@@ -150,8 +229,8 @@ export class SignalAnalysisService {
           symbol: symbol,
           signal_type: 'buy',
           price: entryPrice,
-          confidence: Math.min(0.95, supportLevel.strength), // Cap confidence at 95%
-          reasoning: `Buy signal: Price near support level at $${supportLevel.price.toFixed(4)} with ${supportLevel.strength.toFixed(2)} strength. Entry offset: ${config.entry_offset_percent}%`,
+          confidence: confidence,
+          reasoning: reasoning,
           processed: false
         })
         .select()
@@ -160,21 +239,29 @@ export class SignalAnalysisService {
       if (error) {
         console.error(`❌ Error creating signal for ${symbol}:`, error);
         await this.logger.logError(`Error creating signal for ${symbol}`, error, { symbol });
-        return;
+        return false;
       }
 
-      console.log(`✅ Buy signal created for ${symbol} at $${entryPrice.toFixed(4)} (ID: ${signal.id})`);
+      console.log(`✅ Buy signal created for ${symbol}:
+        - Signal ID: ${signal.id}
+        - Entry Price: $${entryPrice.toFixed(6)}
+        - Confidence: ${confidence.toFixed(3)}
+        - Support Level: $${supportLevel.price.toFixed(6)}`);
+      
       await this.logger.logSignalProcessed(symbol, 'buy', {
         signalId: signal.id,
         entryPrice,
         supportLevel: supportLevel.price,
-        confidence: supportLevel.strength,
-        reasoning: signal.reasoning
+        confidence: confidence,
+        reasoning: reasoning
       });
+
+      return true;
 
     } catch (error) {
       console.error(`❌ Error creating buy signal for ${symbol}:`, error);
       await this.logger.logError(`Failed to create buy signal for ${symbol}`, error, { symbol });
+      return false;
     }
   }
 }
