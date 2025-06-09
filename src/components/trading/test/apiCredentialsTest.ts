@@ -2,6 +2,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { TestResult } from './types';
 import { TEST_NAMES } from './testConstants';
+import { ApiCredential } from '@/types/apiCredentials';
 
 export const runApiCredentialsTest = async (userId: string): Promise<TestResult> => {
   try {
@@ -20,8 +21,8 @@ export const runApiCredentialsTest = async (userId: string): Promise<TestResult>
         message: `❌ Error fetching credentials: ${credError.message}` 
       };
     } else if (credentials && credentials.api_key && credentials.api_secret) {
-      // Safely access api_url with fallback
-      const apiUrl = (credentials as any).api_url || 'https://api-demo.bybit.com';
+      const typedCredentials = credentials as ApiCredential;
+      const apiUrl = typedCredentials.api_url || 'https://api-demo.bybit.com';
       return { 
         test: TEST_NAMES.API_CREDENTIALS, 
         status: 'success', 

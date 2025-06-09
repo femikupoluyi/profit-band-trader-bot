@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,27 +8,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Key, Save, CheckCircle, AlertTriangle } from 'lucide-react';
-
-interface ApiCredential {
-  id: string;
-  exchange_name: string;
-  api_key: string;
-  api_secret: string;
-  api_url: string;
-  testnet: boolean;
-  is_active: boolean;
-}
+import { ApiCredential } from '@/types/apiCredentials';
 
 const ApiCredentials = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [credentials, setCredentials] = useState<ApiCredential>({
     id: '',
+    user_id: '',
     exchange_name: 'bybit',
     api_key: '',
     api_secret: '',
     api_url: 'https://api-demo.bybit.com',
-    testnet: true, // Default to DEMO trading
+    testnet: true,
     is_active: true,
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -46,7 +37,7 @@ const ApiCredentials = () => {
 
     try {
       console.log('Fetching API credentials for user:', user.id);
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('api_credentials')
         .select('*')
         .eq('user_id', user.id)
@@ -62,15 +53,15 @@ const ApiCredentials = () => {
         console.log('Found existing credentials:', { ...data, api_secret: '[HIDDEN]' });
         setCredentials({
           ...data,
-          api_url: (data as any).api_url || 'https://api-demo.bybit.com'
+          api_url: data.api_url || 'https://api-demo.bybit.com'
         });
         setHasExisting(true);
       } else {
         console.log('No existing credentials found');
-        // Set default values for new credentials - DEMO trading
         setCredentials(prev => ({
           ...prev,
-          testnet: true, // DEMO trading by default
+          user_id: user.id,
+          testnet: true,
           is_active: true,
           api_url: 'https://api-demo.bybit.com'
         }));
@@ -109,19 +100,18 @@ const ApiCredentials = () => {
         api_key: credentials.api_key,
         api_secret: credentials.api_secret,
         api_url: credentials.api_url,
-        testnet: true, // Force DEMO trading
+        testnet: true,
         is_active: credentials.is_active,
         updated_at: new Date().toISOString(),
       };
 
       console.log('Saving credentials for DEMO trading:', { 
         ...credentialData, 
-        api_secret: '[HIDDEN]',
-        api_url: credentialData.api_url
+        api_secret: '[HIDDEN]'
       });
 
       if (hasExisting) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('api_credentials')
           .update(credentialData)
           .eq('user_id', user.id)
@@ -133,7 +123,7 @@ const ApiCredentials = () => {
         }
         console.log('DEMO trading credentials updated successfully');
       } else {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from('api_credentials')
           .insert(credentialData)
           .select()
@@ -154,7 +144,6 @@ const ApiCredentials = () => {
         description: "Bybit DEMO trading API credentials saved successfully.",
       });
 
-      // Force a re-fetch to confirm the save
       await fetchCredentials();
     } catch (error) {
       console.error('Error saving credentials:', error);
@@ -191,8 +180,8 @@ const ApiCredentials = () => {
             symbol: 'BTCUSDT'
           },
           isDemoTrading: true,
-          apiKey: credentials.api_key,     // Pass user credentials
-          apiSecret: credentials.api_secret // Pass user credentials
+          apiKey: credentials.api_key,
+          apiSecret: credentials.api_secret
         }
       });
 
@@ -265,10 +254,10 @@ const ApiCredentials = () => {
             type="url"
             value={credentials.api_url}
             onChange={(e) => setCredentials(prev => ({ ...prev, api_url: e.target.value }))}
-            placeholder="https://api-testnet.bybit.com"
+            placeholder="https://api-demo.bybit.com"
           />
           <p className="text-sm text-gray-600">
-            Use https://api-testnet.bybit.com for demo trading or https://api.bybit.com for live trading
+            Use https://api-demo.bybit.com for demo trading or https://api.bybit.com for live trading
           </p>
         </div>
 
@@ -298,7 +287,7 @@ const ApiCredentials = () => {
           <Switch
             checked={credentials.testnet}
             onCheckedChange={(checked) => setCredentials(prev => ({ ...prev, testnet: checked }))}
-            disabled={true} // Lock to demo trading
+            disabled={true}
           />
           <Label>Use DEMO Trading (Virtual Funds)</Label>
         </div>

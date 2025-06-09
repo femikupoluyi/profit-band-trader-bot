@@ -1,6 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
+import { ApiCredential } from '@/types/apiCredentials';
 
 export class CredentialsManager {
   private userId: string;
@@ -32,16 +33,15 @@ export class CredentialsManager {
 
       console.log('✅ Credentials found, initializing BybitService...');
       
-      // Safely access api_url with fallback to demo URL
-      const apiUrl = (credentials as any).api_url || 'https://api-demo.bybit.com';
+      const typedCredentials = credentials as ApiCredential;
+      const apiUrl = typedCredentials.api_url || 'https://api-demo.bybit.com';
       console.log('Using API URL:', apiUrl);
       
-      // Use testnet flag from credentials, default to true for safety
-      const isDemoTrading = credentials.testnet !== false;
+      const isDemoTrading = typedCredentials.testnet !== false;
       
       return new BybitService(
-        credentials.api_key,
-        credentials.api_secret,
+        typedCredentials.api_key,
+        typedCredentials.api_secret,
         isDemoTrading
       );
 
@@ -58,7 +58,6 @@ export class CredentialsManager {
         return false;
       }
 
-      // Test the credentials by getting account balance
       const balance = await bybitService.getAccountBalance();
       return balance && balance.retCode === 0;
     } catch (error) {
