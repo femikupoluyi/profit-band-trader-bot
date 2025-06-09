@@ -19,6 +19,11 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
   const syncBybitData = async () => {
     if (!user) {
       console.error('❌ No user found for sync');
+      toast({
+        title: "Error",
+        description: "Please log in to sync data from Bybit.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -26,9 +31,21 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
     console.log('🔄 Starting Bybit data sync for user:', user.id);
     
     try {
-      // Get user's credentials
+      // Get user's credentials with proper error handling
       const credentialsManager = new CredentialsManager(user.id);
-      const bybitService = await credentialsManager.fetchCredentials();
+      let bybitService;
+      
+      try {
+        bybitService = await credentialsManager.fetchCredentials();
+      } catch (credError) {
+        console.error('❌ Failed to fetch credentials:', credError);
+        toast({
+          title: "Credentials Error",
+          description: "Failed to load your API credentials. Please check your settings.",
+          variant: "destructive",
+        });
+        return;
+      }
       
       if (!bybitService) {
         console.error('❌ No Bybit credentials found');
@@ -42,25 +59,42 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
 
       console.log('✅ Bybit service initialized, fetching order history...');
 
-      // Fetch order history from Bybit with error handling
+      // Fetch order history from Bybit with proper error handling
       let orderHistoryResponse;
       try {
         orderHistoryResponse = await bybitService.getOrderHistory(100);
         console.log('📥 Raw Bybit response:', orderHistoryResponse);
       } catch (apiError) {
         console.error('❌ Bybit API call failed:', apiError);
+        const errorMessage = apiError instanceof Error ? apiError.message : 'Unknown API error';
         toast({
           title: "API Error",
-          description: `Failed to connect to Bybit API: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`,
+          description: `Failed to connect to Bybit API: ${errorMessage}`,
           variant: "destructive",
         });
         return;
       }
       
-      if (!orderHistoryResponse || orderHistoryResponse.retCode !== 0) {
-        const errorMsg = orderHistoryResponse?.retMsg || 'Unknown API error';
+      // Validate API response structure
+      if (!orderHistoryResponse) {
+        console.error('❌ Empty response from Bybit API');
+        toast({
+          title: "API Error",
+          description: "Received empty response from Bybit API.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (orderHistoryResponse.retCode !== 0) {
+        const errorMsg = orderHistoryResponse.retMsg || 'Unknown API error';
         console.error('❌ Bybit API error:', errorMsg);
-        throw new Error(`Bybit API error: ${errorMsg}`);
+        toast({
+          title: "API Error",
+          description: `Bybit API error: ${errorMsg}`,
+          variant: "destructive",
+        });
+        return;
       }
 
       const orders = orderHistoryResponse.result?.list || [];
@@ -81,6 +115,13 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
 
       for (const order of orders) {
         try {
+          // Validate required order fields
+          if (!order.orderId || !order.symbol || !order.side) {
+            console.warn('⚠️ Invalid order data, missing required fields:', order.orderId);
+            errorCount++;
+            continue;
+          }
+
           console.log('🔍 Processing order:', {
             orderId: order.orderId,
             symbol: order.symbol,
@@ -92,12 +133,18 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
           });
 
           // Check if order already exists
-          const { data: existingTrade } = await supabase
+          const { data: existingTrade, error: checkError } = await supabase
             .from('trades')
             .select('id')
             .eq('bybit_order_id', order.orderId)
             .eq('user_id', user.id)
             .maybeSingle();
+
+          if (checkError) {
+            console.error('❌ Error checking existing trade:', checkError);
+            errorCount++;
+            continue;
+          }
 
           if (existingTrade) {
             console.log('⏭️ Skipping existing trade:', order.orderId);
@@ -105,35 +152,57 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
             continue;
           }
 
-          // Parse numeric values safely
+          // Parse and validate numeric values
           const quantity = parseFloat(order.qty || '0');
           const price = parseFloat(order.price || '0');
           const avgPrice = order.avgPrice ? parseFloat(order.avgPrice) : null;
           const cumExecFee = parseFloat(order.cumExecFee || '0');
 
+          // Validate parsed numeric values
+          if (isNaN(quantity) || quantity <= 0) {
+            console.warn('⚠️ Invalid quantity for order:', order.orderId, quantity);
+            errorCount++;
+            continue;
+          }
+
+          if (isNaN(price) || price <= 0) {
+            console.warn('⚠️ Invalid price for order:', order.orderId, price);
+            errorCount++;
+            continue;
+          }
+
           // Calculate profit/loss for filled orders
           let profitLoss = 0;
-          if (order.orderStatus === 'Filled' && avgPrice) {
+          if (order.orderStatus === 'Filled' && avgPrice && !isNaN(avgPrice)) {
             // For filled orders, store the fee as negative P&L for now
             // This will be updated by the P&L calculation system later
             profitLoss = -Math.abs(cumExecFee);
           }
 
-          // Validate required fields
-          if (!order.symbol || !order.side || quantity <= 0 || price <= 0) {
-            console.warn('⚠️ Invalid order data, skipping:', order.orderId);
-            errorCount++;
-            continue;
+          // Map Bybit order status to our system status
+          let mappedStatus = 'pending';
+          switch (order.orderStatus?.toLowerCase()) {
+            case 'filled':
+              mappedStatus = 'filled';
+              break;
+            case 'partiallyfilled':
+              mappedStatus = 'partial_filled';
+              break;
+            case 'cancelled':
+              mappedStatus = 'cancelled';
+              break;
+            default:
+              mappedStatus = 'pending';
           }
 
-          // Insert new trade record with proper validation
+          // Prepare trade data for insertion
           const tradeData = {
             user_id: user.id,
             symbol: order.symbol,
             side: order.side.toLowerCase(),
             quantity: quantity,
             price: price,
-            status: order.orderStatus.toLowerCase().replace(' ', '_'),
+            status: mappedStatus,
             order_type: (order.orderType || 'market').toLowerCase(),
             bybit_order_id: order.orderId,
             buy_fill_price: avgPrice,
@@ -142,7 +211,7 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
             updated_at: order.updatedTime ? new Date(parseInt(order.updatedTime)).toISOString() : new Date().toISOString(),
           };
 
-          console.log('💾 Inserting trade:', tradeData);
+          console.log('💾 Inserting trade:', { ...tradeData, user_id: '[HIDDEN]' });
 
           const { error: insertError } = await supabase
             .from('trades')
@@ -160,6 +229,21 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
           errorCount++;
         }
       }
+
+      // Log sync results
+      await supabase
+        .from('trading_logs')
+        .insert({
+          user_id: user.id,
+          log_type: 'data_sync',
+          message: `Bybit sync completed: ${syncedCount} new, ${skippedCount} skipped, ${errorCount} errors`,
+          data: {
+            syncedCount,
+            skippedCount,
+            errorCount,
+            totalProcessed: orders.length
+          },
+        });
 
       const message = `Synced ${syncedCount} new trades from Bybit. Skipped ${skippedCount} existing trades.${errorCount > 0 ? ` ${errorCount} errors occurred.` : ''}`;
       

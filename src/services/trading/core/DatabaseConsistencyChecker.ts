@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './TradingLogger';
 
@@ -25,7 +26,7 @@ export class DatabaseConsistencyChecker {
         .from('trading_configs')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (configError && configError.code !== 'PGRST116') {
         await this.logger.logError('Failed to check trading config', configError);
@@ -100,7 +101,7 @@ export class DatabaseConsistencyChecker {
       }
 
       // Check for signals without valid data
-      const { data: invalidSignals, error: signalsError } = await (supabase as any)
+      const { data: invalidSignals, error: signalsError } = await supabase
         .from('trading_signals')
         .select('id, symbol, signal_type')
         .eq('user_id', userId)
@@ -158,7 +159,7 @@ export class DatabaseConsistencyChecker {
         .from('trading_configs')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (configError && configError.code !== 'PGRST116') {
         throw new Error(`Failed to validate config: ${configError.message}`);
@@ -167,10 +168,10 @@ export class DatabaseConsistencyChecker {
       if (config) {
         const issues = [];
         
-        // Safely convert database values to numbers
-        const maxOrderAmount = config.max_order_amount_usd ? Number(config.max_order_amount_usd) : null;
-        const takeProfitPercent = config.take_profit_percent ? Number(config.take_profit_percent) : null;
-        const maxActivePairs = config.max_active_pairs ? Number(config.max_active_pairs) : null;
+        // Safely convert database values to numbers with proper null handling
+        const maxOrderAmount = config.max_order_amount_usd !== null ? Number(config.max_order_amount_usd) : null;
+        const takeProfitPercent = config.take_profit_percent !== null ? Number(config.take_profit_percent) : null;
+        const maxActivePairs = config.max_active_pairs !== null ? Number(config.max_active_pairs) : null;
         
         if (maxOrderAmount !== null && (isNaN(maxOrderAmount) || maxOrderAmount <= 0)) {
           issues.push('max_order_amount_usd must be a positive number');
@@ -236,7 +237,7 @@ export class DatabaseConsistencyChecker {
     try {
       // Clean up old processed signals (older than 7 days)
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { error: signalsError } = await (supabase as any)
+      const { error: signalsError } = await supabase
         .from('trading_signals')
         .delete()
         .eq('user_id', userId)
@@ -277,22 +278,22 @@ export class DatabaseConsistencyChecker {
       return { isValid: false, errors };
     }
 
-    // Validate common trading config inputs
-    if (data.max_order_amount_usd !== undefined) {
+    // Validate common trading config inputs with proper null checks
+    if (data.max_order_amount_usd !== undefined && data.max_order_amount_usd !== null) {
       const amount = Number(data.max_order_amount_usd);
       if (isNaN(amount) || amount <= 0 || amount > 100000) {
         errors.push('Max order amount must be between 0 and 100,000 USD');
       }
     }
 
-    if (data.take_profit_percent !== undefined) {
+    if (data.take_profit_percent !== undefined && data.take_profit_percent !== null) {
       const percent = Number(data.take_profit_percent);
       if (isNaN(percent) || percent <= 0 || percent > 100) {
         errors.push('Take profit percent must be between 0 and 100');
       }
     }
 
-    if (data.max_active_pairs !== undefined) {
+    if (data.max_active_pairs !== undefined && data.max_active_pairs !== null) {
       const pairs = Number(data.max_active_pairs);
       if (isNaN(pairs) || !Number.isInteger(pairs) || pairs <= 0 || pairs > 50) {
         errors.push('Max active pairs must be an integer between 1 and 50');
@@ -300,5 +301,42 @@ export class DatabaseConsistencyChecker {
     }
 
     return { isValid: errors.length === 0, errors };
+  }
+
+  async validateApiCredentials(userId: string): Promise<boolean> {
+    try {
+      const { data: credentials, error } = await supabase
+        .from('api_credentials')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error) {
+        await this.logger.logError('Failed to validate API credentials', error);
+        return false;
+      }
+
+      if (!credentials) {
+        await this.logger.logSystemInfo('No active API credentials found', { userId });
+        return false;
+      }
+
+      // Validate required fields
+      if (!credentials.api_key || !credentials.api_secret || !credentials.api_url) {
+        await this.logger.logSystemInfo('API credentials missing required fields', { 
+          userId,
+          hasApiKey: !!credentials.api_key,
+          hasApiSecret: !!credentials.api_secret,
+          hasApiUrl: !!credentials.api_url
+        });
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      await this.logger.logError('Error validating API credentials', error);
+      return false;
+    }
   }
 }

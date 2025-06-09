@@ -13,6 +13,7 @@ export type Database = {
         Row: {
           api_key: string
           api_secret: string
+          api_url: string | null
           created_at: string | null
           exchange_name: string
           id: string
@@ -24,6 +25,7 @@ export type Database = {
         Insert: {
           api_key: string
           api_secret: string
+          api_url?: string | null
           created_at?: string | null
           exchange_name: string
           id?: string
@@ -35,6 +37,7 @@ export type Database = {
         Update: {
           api_key?: string
           api_secret?: string
+          api_url?: string | null
           created_at?: string | null
           exchange_name?: string
           id?: string
@@ -103,6 +106,7 @@ export type Database = {
         Row: {
           buy_fill_price: number | null
           bybit_order_id: string | null
+          bybit_trade_id: string | null
           created_at: string | null
           id: string
           order_type: string
@@ -118,6 +122,7 @@ export type Database = {
         Insert: {
           buy_fill_price?: number | null
           bybit_order_id?: string | null
+          bybit_trade_id?: string | null
           created_at?: string | null
           id?: string
           order_type?: string
@@ -133,6 +138,7 @@ export type Database = {
         Update: {
           buy_fill_price?: number | null
           bybit_order_id?: string | null
+          bybit_trade_id?: string | null
           created_at?: string | null
           id?: string
           order_type?: string

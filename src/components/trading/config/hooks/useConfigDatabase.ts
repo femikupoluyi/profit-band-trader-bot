@@ -15,6 +15,8 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
     if (!user) return null;
 
     try {
+      console.log('🔍 Fetching trading config for user:', user.id);
+      
       const { data, error } = await supabase
         .from('trading_configs')
         .select('*')
@@ -22,19 +24,21 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
         .maybeSingle();
 
       if (error) {
-        console.error('Error fetching config:', error);
+        console.error('❌ Error fetching config:', error);
         throw error;
       }
 
       if (data) {
+        console.log('✅ Found existing config:', data.id);
         setHasExistingConfig(true);
         return data;
       } else {
+        console.log('ℹ️ No existing config found');
         setHasExistingConfig(false);
         return null;
       }
     } catch (error) {
-      console.error('Error fetching config:', error);
+      console.error('❌ Error fetching config:', error);
       toast({
         title: "Error",
         description: "Failed to load trading configuration.",
@@ -45,10 +49,15 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
   };
 
   const saveConfig = async (configData: TradingConfigData) => {
-    if (!user) return false;
+    if (!user) {
+      console.error('❌ No user found for config save');
+      return false;
+    }
 
     setIsLoading(true);
     try {
+      console.log('💾 Saving trading config for user:', user.id);
+
       // Always check if config exists first
       const { data: existingConfig } = await supabase
         .from('trading_configs')
@@ -85,15 +94,20 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
       };
 
       if (existingConfig) {
+        console.log('🔄 Updating existing config:', existingConfig.id);
         // Update existing config
         const { error } = await supabase
           .from('trading_configs')
           .update(dbData)
           .eq('user_id', user.id);
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Error updating config:', error);
+          throw error;
+        }
         setHasExistingConfig(true);
       } else {
+        console.log('➕ Creating new config');
         // Insert new config
         const { error } = await supabase
           .from('trading_configs')
@@ -102,10 +116,14 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
             ...dbData,
           });
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Error creating config:', error);
+          throw error;
+        }
         setHasExistingConfig(true);
       }
 
+      console.log('✅ Trading config saved successfully');
       toast({
         title: "Success",
         description: "Trading configuration saved successfully.",
@@ -117,7 +135,7 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
       
       return true;
     } catch (error) {
-      console.error('Error saving config:', error);
+      console.error('❌ Error saving config:', error);
       toast({
         title: "Error",
         description: "Failed to save trading configuration.",
