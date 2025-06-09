@@ -4,6 +4,13 @@ import { TradingLogger } from './TradingLogger';
 import { TradeRecorder } from './TradeRecorder';
 import { OrderExecutor } from './OrderExecutor';
 
+export interface OrderPlacementResult {
+  success: boolean;
+  buyOrderId?: string;
+  sellOrderId?: string;
+  error?: string;
+}
+
 export class OrderPlacer {
   private userId: string;
   private bybitService: BybitService;
@@ -11,6 +18,10 @@ export class OrderPlacer {
   private orderExecutor: OrderExecutor;
 
   constructor(userId: string, bybitService: BybitService) {
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('Valid userId is required for OrderPlacer');
+    }
+    
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
@@ -23,6 +34,19 @@ export class OrderPlacer {
     entryPrice: number,
     takeProfitPrice: number
   ): Promise<void> {
+    // Validate inputs
+    if (!signal || !signal.symbol || !signal.signal_type) {
+      throw new Error('Invalid signal: missing required properties (symbol, signal_type)');
+    }
+    
+    if (quantity <= 0 || entryPrice <= 0 || takeProfitPrice <= 0) {
+      throw new Error('Invalid order parameters: quantity, entryPrice, and takeProfitPrice must be positive');
+    }
+
+    if (takeProfitPrice <= entryPrice) {
+      throw new Error('Invalid order parameters: takeProfitPrice must be greater than entryPrice');
+    }
+
     try {
       console.log(`\n🎯 ===== PLACING REAL BYBIT ORDERS =====`);
       console.log(`📊 Signal: ${signal.symbol} ${signal.signal_type}`);
@@ -112,5 +136,61 @@ export class OrderPlacer {
       });
       throw error;
     }
+  }
+
+  /**
+   * Legacy method for backwards compatibility
+   */
+  async placeOrder(
+    signal: any,
+    quantity: number,
+    entryPrice: number,
+    takeProfitPrice: number
+  ): Promise<OrderPlacementResult> {
+    try {
+      await this.placeRealBybitOrder(signal, quantity, entryPrice, takeProfitPrice);
+      return { success: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Validate order parameters before placement
+   */
+  private validateOrderParameters(
+    signal: any,
+    quantity: number,
+    entryPrice: number,
+    takeProfitPrice: number
+  ): { isValid: boolean; error?: string } {
+    if (!signal?.symbol) {
+      return { isValid: false, error: 'Signal must have a valid symbol' };
+    }
+
+    if (!signal?.signal_type) {
+      return { isValid: false, error: 'Signal must have a valid signal_type' };
+    }
+
+    if (quantity <= 0) {
+      return { isValid: false, error: 'Quantity must be positive' };
+    }
+
+    if (entryPrice <= 0) {
+      return { isValid: false, error: 'Entry price must be positive' };
+    }
+
+    if (takeProfitPrice <= 0) {
+      return { isValid: false, error: 'Take profit price must be positive' };
+    }
+
+    if (takeProfitPrice <= entryPrice) {
+      return { isValid: false, error: 'Take profit price must be higher than entry price' };
+    }
+
+    return { isValid: true };
   }
 }

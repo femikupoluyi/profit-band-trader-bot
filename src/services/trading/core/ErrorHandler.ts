@@ -1,107 +1,110 @@
 
-import { TradingLogger } from './TradingLogger';
+export class TradingError extends Error {
+  public readonly code: string;
+  public readonly context?: any;
 
-export interface ErrorContext {
-  userId?: string;
-  symbol?: string;
-  operation?: string;
-  attempt?: number;
-  error?: string;
-  data?: any;
+  constructor(message: string, code: string, context?: any) {
+    super(message);
+    this.name = 'TradingError';
+    this.code = code;
+    this.context = context;
+  }
 }
 
 export class ErrorHandler {
-  private logger: TradingLogger;
-
-  constructor(userId: string) {
-    this.logger = new TradingLogger(userId);
-  }
-
-  async handleError(error: any, context: ErrorContext = {}): Promise<void> {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
-
-    console.error(`❌ [ErrorHandler] ${context.operation || 'Operation'} failed:`, {
-      message: errorMessage,
-      context,
-      stack: errorStack
-    });
-
-    // Log to database
-    await this.logger.logError(
-      `${context.operation || 'Operation'} failed`,
-      error,
-      context
+  static handleOrderError(error: any, symbol: string, operation: string): TradingError {
+    const context = { symbol, operation };
+    
+    if (error instanceof TradingError) {
+      return error;
+    }
+    
+    if (error?.message?.includes('insufficient balance')) {
+      return new TradingError(
+        `Insufficient balance for ${operation} order on ${symbol}`,
+        'INSUFFICIENT_BALANCE',
+        context
+      );
+    }
+    
+    if (error?.message?.includes('minimum order')) {
+      return new TradingError(
+        `Order does not meet minimum requirements for ${symbol}`,
+        'MIN_ORDER_NOT_MET',
+        context
+      );
+    }
+    
+    if (error?.message?.includes('network') || error?.message?.includes('timeout')) {
+      return new TradingError(
+        `Network error during ${operation} for ${symbol}`,
+        'NETWORK_ERROR',
+        context
+      );
+    }
+    
+    return new TradingError(
+      `Unknown error during ${operation} for ${symbol}: ${error?.message || 'Unknown error'}`,
+      'UNKNOWN_ERROR',
+      { ...context, originalError: error }
     );
   }
 
-  async handleWarning(message: string, context: ErrorContext = {}): Promise<void> {
-    console.warn(`⚠️ [ErrorHandler] ${message}:`, context);
-
-    await this.logger.logSuccess(`Warning: ${message}`, context);
+  static handleValidationError(error: any, field: string, value: any): TradingError {
+    return new TradingError(
+      `Validation failed for ${field}: ${error?.message || 'Invalid value'}`,
+      'VALIDATION_ERROR',
+      { field, value, originalError: error }
+    );
   }
 
-  createError(message: string, context: ErrorContext = {}): Error {
-    const error = new Error(message);
+  static handleDatabaseError(error: any, operation: string, table?: string): TradingError {
+    const context = { operation, table };
     
-    // Add context to error object for debugging
-    (error as any).context = context;
+    if (error?.code === 'PGRST116') {
+      return new TradingError(
+        `No data found for ${operation}${table ? ` in ${table}` : ''}`,
+        'NOT_FOUND',
+        context
+      );
+    }
     
-    return error;
+    if (error?.code?.startsWith('23')) {
+      return new TradingError(
+        `Database constraint violation during ${operation}`,
+        'CONSTRAINT_VIOLATION',
+        context
+      );
+    }
+    
+    return new TradingError(
+      `Database error during ${operation}: ${error?.message || 'Unknown database error'}`,
+      'DATABASE_ERROR',
+      { ...context, originalError: error }
+    );
   }
 
-  isRetryableError(error: any): boolean {
-    if (error instanceof Error) {
-      const message = error.message.toLowerCase();
-      
-      // Network errors that can be retried
-      if (message.includes('timeout') || 
-          message.includes('network') || 
-          message.includes('connection') ||
-          message.includes('econnreset') ||
-          message.includes('enotfound')) {
-        return true;
-      }
-
-      // API rate limiting
-      if (message.includes('rate limit') || 
-          message.includes('too many requests')) {
-        return true;
-      }
-    }
-
-    return false;
+  static isRetryableError(error: TradingError): boolean {
+    const retryableCodes = ['NETWORK_ERROR', 'TIMEOUT', 'RATE_LIMIT'];
+    return retryableCodes.includes(error.code);
   }
 
-  async retryOperation<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = 3,
-    delay: number = 1000,
-    context: ErrorContext = {}
-  ): Promise<T> {
-    let lastError: any;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        
-        if (!this.isRetryableError(error) || attempt === maxRetries) {
-          await this.handleError(error, { ...context, attempt });
-          throw error;
-        }
-
-        await this.handleWarning(
-          `Attempt ${attempt} failed, retrying in ${delay}ms`,
-          { ...context, attempt, error: error.message }
-        );
-
-        // Wait before retry with exponential backoff
-        await new Promise(resolve => setTimeout(resolve, delay * attempt));
-      }
+  static getErrorSeverity(error: TradingError): 'low' | 'medium' | 'high' | 'critical' {
+    switch (error.code) {
+      case 'VALIDATION_ERROR':
+      case 'MIN_ORDER_NOT_MET':
+        return 'low';
+      case 'NETWORK_ERROR':
+      case 'NOT_FOUND':
+        return 'medium';
+      case 'INSUFFICIENT_BALANCE':
+      case 'CONSTRAINT_VIOLATION':
+        return 'high';
+      case 'DATABASE_ERROR':
+      case 'UNKNOWN_ERROR':
+        return 'critical';
+      default:
+        return 'medium';
     }
-
-    throw lastError;
   }
 }

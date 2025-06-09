@@ -1,14 +1,28 @@
 
-import { BybitInstrumentInfo, InstrumentInfoFetcher } from './InstrumentInfoFetcher';
+import { InstrumentInfoFetcher } from './InstrumentInfoFetcher';
 import { InstrumentCache } from './InstrumentCache';
 
-export type { BybitInstrumentInfo } from './InstrumentInfoFetcher';
+// Re-export the type for convenience
+export type BybitInstrumentInfo = {
+  symbol: string;
+  priceDecimals: number;
+  quantityDecimals: number;
+  minOrderQty: string;
+  minOrderAmt: string;
+  tickSize: string;
+  basePrecision: string;
+};
 
 export class BybitInstrumentService {
   /**
    * Get instrument information for a symbol from Bybit (with caching)
    */
   static async getInstrumentInfo(symbol: string): Promise<BybitInstrumentInfo | null> {
+    if (!symbol || typeof symbol !== 'string') {
+      console.warn('Invalid symbol provided to getInstrumentInfo');
+      return null;
+    }
+
     // Check cache first
     const cached = InstrumentCache.getCachedInstrument(symbol);
     if (cached) {
@@ -31,6 +45,11 @@ export class BybitInstrumentService {
    */
   static formatPrice(symbol: string, price: number, instrumentInfo?: BybitInstrumentInfo): string {
     try {
+      if (!symbol || price < 0) {
+        console.warn('Invalid parameters for formatPrice');
+        return price.toFixed(4);
+      }
+
       if (!instrumentInfo) {
         console.warn(`No instrument info provided for ${symbol}, using 4 decimals`);
         return price.toFixed(4);
@@ -50,6 +69,11 @@ export class BybitInstrumentService {
    */
   static formatQuantity(symbol: string, quantity: number, instrumentInfo?: BybitInstrumentInfo): string {
     try {
+      if (!symbol || quantity < 0) {
+        console.warn('Invalid parameters for formatQuantity');
+        return quantity.toFixed(4);
+      }
+
       if (!instrumentInfo) {
         console.warn(`No instrument info provided for ${symbol}, using 4 decimals`);
         return quantity.toFixed(4);
@@ -69,9 +93,19 @@ export class BybitInstrumentService {
    */
   static validateOrder(symbol: string, price: number, quantity: number, instrumentInfo: BybitInstrumentInfo): boolean {
     try {
+      if (!symbol || !instrumentInfo || price <= 0 || quantity <= 0) {
+        console.warn('Invalid parameters for validateOrder');
+        return false;
+      }
+
       const orderValue = price * quantity;
       const minOrderAmt = parseFloat(instrumentInfo.minOrderAmt);
       const minOrderQty = parseFloat(instrumentInfo.minOrderQty);
+
+      if (isNaN(minOrderAmt) || isNaN(minOrderQty)) {
+        console.warn(`Invalid minimum order values for ${symbol}`);
+        return false;
+      }
 
       if (quantity < minOrderQty) {
         console.warn(`❌ Quantity ${quantity} below minimum ${minOrderQty} for ${symbol}`);
@@ -97,10 +131,17 @@ export class BybitInstrumentService {
   static async getMultipleInstrumentInfo(symbols: string[]): Promise<Map<string, BybitInstrumentInfo>> {
     const results = new Map<string, BybitInstrumentInfo>();
     
+    if (!Array.isArray(symbols)) {
+      console.warn('Invalid symbols array provided to getMultipleInstrumentInfo');
+      return results;
+    }
+    
     for (const symbol of symbols) {
-      const info = await this.getInstrumentInfo(symbol);
-      if (info) {
-        results.set(symbol, info);
+      if (symbol && typeof symbol === 'string') {
+        const info = await this.getInstrumentInfo(symbol);
+        if (info) {
+          results.set(symbol, info);
+        }
       }
     }
     
@@ -112,5 +153,12 @@ export class BybitInstrumentService {
    */
   static clearCache(): void {
     InstrumentCache.clearCache();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  static getCacheStats(): { size: number; expired: number } {
+    return InstrumentCache.getCacheStats();
   }
 }
