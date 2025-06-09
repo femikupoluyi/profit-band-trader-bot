@@ -36,9 +36,14 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
         description: "Synchronizing with Bybit exchange...",
       });
 
-      // Initialize services
-      const bybitService = new BybitService(user.id, true);
-      await bybitService.initialize();
+      // Get credentials from CredentialsManager
+      const { CredentialsManager } = await import('@/services/trading/credentialsManager');
+      const credentialsManager = new CredentialsManager(user.id);
+      const bybitService = await credentialsManager.fetchCredentials();
+
+      if (!bybitService) {
+        throw new Error('Failed to get Bybit credentials');
+      }
 
       const positionSyncService = new PositionSyncService(user.id, bybitService);
       const tradeSyncService = new TradeSyncService(user.id, bybitService);

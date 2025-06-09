@@ -24,7 +24,7 @@ export class MainTradingEngine {
   constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
     this.config = config;
-    this.bybitService = new BybitService(userId, true); // Demo mode
+    this.bybitService = new BybitService('', '', true); // Will be initialized with proper credentials
     this.logger = new TradingLogger(userId);
     
     // Initialize services
@@ -44,11 +44,22 @@ export class MainTradingEngine {
       InstrumentCache.clearAllTradingCache();
       ConfigurableFormatter.clearAllTradingCache();
 
-      // Initialize Bybit service
-      const initialized = await this.bybitService.initialize();
-      if (!initialized) {
-        throw new Error('Failed to initialize Bybit service');
+      // Get proper credentials and reinitialize BybitService
+      const { CredentialsManager } = await import('../credentialsManager');
+      const credentialsManager = new CredentialsManager(this.userId);
+      const bybitServiceWithCredentials = await credentialsManager.fetchCredentials();
+      
+      if (!bybitServiceWithCredentials) {
+        throw new Error('Failed to get Bybit credentials');
       }
+      
+      this.bybitService = bybitServiceWithCredentials;
+      
+      // Reinitialize services with proper credentials
+      this.signalExecutionService = new SignalExecutionService(this.userId, this.bybitService);
+      this.positionMonitorService = new PositionMonitorService(this.userId, this.bybitService);
+      this.reconciliationService = new TransactionReconciliationService(this.userId, this.bybitService);
+      this.positionSyncService = new PositionSyncService(this.userId, this.bybitService);
 
       // Perform startup position sync to fix any discrepancies
       console.log('🔄 Performing startup position synchronization...');

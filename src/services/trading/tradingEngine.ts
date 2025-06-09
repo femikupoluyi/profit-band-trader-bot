@@ -25,7 +25,7 @@ export class TradingEngine {
       
       if (bybitService) {
         console.log('✅ BybitService initialized, creating Main Trading Engine...');
-        this.mainEngine = new MainTradingEngine(this.userId, bybitService);
+        this.mainEngine = new MainTradingEngine(this.userId, this.config);
         await this.mainEngine.initialize();
         this.isInitialized = true;
         await this.logActivity('system_info', 'Trading Engine initialized successfully');
