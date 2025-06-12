@@ -45,7 +45,13 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
           quantity_decimals_per_symbol: validateJsonObject(data.quantity_decimals_per_symbol, {}),
           max_concurrent_trades: validateInteger(data.max_active_pairs, 20),
           max_drawdown_percent: validateNumber(data.max_drawdown_percent, 10.0),
-          notes: data.notes || ''
+          notes: data.notes || '',
+          // New trading logic fields with defaults
+          trading_logic_type: data.trading_logic_type || 'logic1_base',
+          swing_analysis_bars: validateInteger(data.swing_analysis_bars, 20),
+          volume_lookback_periods: validateInteger(data.volume_lookback_periods, 50),
+          fibonacci_sensitivity: validateNumber(data.fibonacci_sensitivity, 0.618),
+          atr_multiplier: validateNumber(data.atr_multiplier, 1.0)
         };
         
         console.log('Loaded config from database with validation:', loadedConfig);

@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingPairsService } from './core/TradingPairsService';
@@ -66,7 +67,13 @@ export class UserConfigManager {
         quantity_decimals_per_symbol: {},
         max_concurrent_trades: this.validatePositiveInteger(config.max_active_pairs, 20),
         max_drawdown_percent: this.validatePositiveNumber(config.max_drawdown_percent, 10.0),
-        notes: config.notes || ''
+        notes: config.notes || '',
+        // New trading logic fields with defaults
+        trading_logic_type: config.trading_logic_type || 'logic1_base',
+        swing_analysis_bars: this.validatePositiveInteger(config.swing_analysis_bars, 20),
+        volume_lookback_periods: this.validatePositiveInteger(config.volume_lookback_periods, 50),
+        fibonacci_sensitivity: this.validatePositiveNumber(config.fibonacci_sensitivity, 0.618),
+        atr_multiplier: this.validatePositiveNumber(config.atr_multiplier, 1.0)
       };
 
       console.log(`✅ Loaded trading config for user ${userId} with ${tradingConfig.trading_pairs.length} trading pairs`);

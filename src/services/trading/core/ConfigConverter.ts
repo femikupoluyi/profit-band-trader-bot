@@ -1,3 +1,4 @@
+
 import { TradingConfig } from '../config/TradingConfigManager';
 import { TradingConfigData } from '@/components/trading/config/types/configTypes';
 
@@ -36,7 +37,13 @@ export class ConfigConverter {
       quantity_decimals_per_symbol: {},
       max_concurrent_trades: config.maximum_active_pairs || 20,
       max_drawdown_percent: 10.0,
-      notes: ''
+      notes: '',
+      // New trading logic defaults
+      trading_logic_type: 'logic1_base',
+      swing_analysis_bars: 20,
+      volume_lookback_periods: 50,
+      fibonacci_sensitivity: 0.618,
+      atr_multiplier: 1.0
     };
   }
 }
