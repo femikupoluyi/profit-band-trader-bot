@@ -2,7 +2,7 @@
 import { SupportLevel } from './TypeDefinitions';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
-export interface CandleData {
+interface CandleData {
   open: number;
   high: number;
   low: number;
@@ -12,221 +12,192 @@ export interface CandleData {
 }
 
 export class DataDrivenSupportAnalyzer {
-  /**
-   * Analyze historical data using multiple methods to identify support levels
-   */
   analyzeSupport(candles: CandleData[], config: TradingConfigData): SupportLevel[] {
-    console.log(`🔍 Starting data-driven support analysis with ${candles.length} candles`);
+    if (!candles || candles.length < config.swing_analysis_bars) {
+      console.warn('Insufficient candle data for DataDriven analysis');
+      return [];
+    }
+
+    console.log(`🧠 DataDriven Analysis: Using ${config.swing_analysis_bars} bars for swing analysis`);
     
-    const supportLevels: SupportLevel[] = [];
+    // Analyze swing lows for support levels
+    const swingLows = this.findSwingLows(candles, config.swing_analysis_bars);
     
-    // Method 1: Swing Lows Analysis
-    const swingSupports = this.identifySwingLows(candles, config.swing_analysis_bars);
-    supportLevels.push(...swingSupports);
-    console.log(`📊 Found ${swingSupports.length} swing low support levels`);
-    
-    // Method 2: Volume Profile Analysis
-    const volumeSupports = this.analyzeVolumeProfile(candles, config.volume_lookback_periods);
-    supportLevels.push(...volumeSupports);
-    console.log(`📊 Found ${volumeSupports.length} volume-based support levels`);
-    
-    // Method 3: Fibonacci Retracement
-    const fibSupports = this.calculateFibonacciSupports(candles, config.fibonacci_sensitivity);
-    supportLevels.push(...fibSupports);
-    console.log(`📊 Found ${fibSupports.length} Fibonacci support levels`);
-    
-    // Rank and filter support levels
-    const rankedSupports = this.rankSupportLevels(supportLevels, candles);
-    console.log(`🎯 Final ranked support levels: ${rankedSupports.length}`);
-    
-    return rankedSupports;
+    // Convert swing lows to support levels
+    const supportLevels = swingLows.map((swingLow, index) => {
+      const strength = this.calculateSupportStrength(swingLow, candles, config);
+      const touches = this.countTouches(swingLow.price, candles, 0.001); // 0.1% tolerance
+      
+      return {
+        price: swingLow.price,
+        strength: strength,
+        timestamp: swingLow.timestamp,
+        touches: touches
+      } as SupportLevel;
+    });
+
+    // Sort by strength (highest first)
+    return supportLevels
+      .filter(level => level.strength > 0.3) // Minimum strength threshold
+      .sort((a, b) => b.strength - a.strength)
+      .slice(0, 3); // Return top 3 support levels
   }
 
-  /**
-   * Identify swing lows as potential support levels
-   */
-  private identifySwingLows(candles: CandleData[], lookbackBars: number): SupportLevel[] {
-    const supports: SupportLevel[] = [];
+  calculateDynamicBounds(candles: CandleData[], atrMultiplier: number): { lowerBound: number; upperBound: number } {
+    if (!candles || candles.length < 14) {
+      return { lowerBound: 5.0, upperBound: 2.0 }; // Fallback to static bounds
+    }
+
+    // Calculate ATR (Average True Range) for the last 14 periods
+    const atr = this.calculateATR(candles.slice(-14));
+    const currentPrice = candles[candles.length - 1]?.close || 0;
     
-    for (let i = lookbackBars; i < candles.length - lookbackBars; i++) {
+    if (currentPrice === 0) {
+      return { lowerBound: 5.0, upperBound: 2.0 };
+    }
+
+    // Calculate dynamic bounds based on ATR
+    const atrPercent = (atr / currentPrice) * 100;
+    const dynamicLowerBound = Math.max(1.0, atrPercent * atrMultiplier * 2); // ATR * multiplier * 2 for lower bound
+    const dynamicUpperBound = Math.max(0.5, atrPercent * atrMultiplier); // ATR * multiplier for upper bound
+
+    console.log(`📊 Dynamic ATR Bounds: ATR=${atr.toFixed(6)}, ATR%=${atrPercent.toFixed(2)}%, Lower=${dynamicLowerBound.toFixed(2)}%, Upper=${dynamicUpperBound.toFixed(2)}%`);
+
+    return {
+      lowerBound: Math.min(dynamicLowerBound, 10.0), // Cap at 10%
+      upperBound: Math.min(dynamicUpperBound, 5.0)   // Cap at 5%
+    };
+  }
+
+  private findSwingLows(candles: CandleData[], lookbackPeriods: number): Array<{ price: number; timestamp: number; index: number }> {
+    const swingLows: Array<{ price: number; timestamp: number; index: number }> = [];
+    const halfPeriod = Math.floor(lookbackPeriods / 2);
+
+    for (let i = halfPeriod; i < candles.length - halfPeriod; i++) {
       const currentLow = candles[i].low;
       let isSwingLow = true;
-      
-      // Check if current low is lower than surrounding lows
-      for (let j = i - lookbackBars; j <= i + lookbackBars; j++) {
+
+      // Check if current low is lower than surrounding candles
+      for (let j = i - halfPeriod; j <= i + halfPeriod; j++) {
         if (j !== i && candles[j].low <= currentLow) {
           isSwingLow = false;
           break;
         }
       }
-      
+
       if (isSwingLow) {
-        // Count how many times price bounced from this level
-        const touches = this.countTouches(candles, currentLow, 0.002); // 0.2% tolerance
-        
-        supports.push({
+        swingLows.push({
           price: currentLow,
-          strength: Math.min(0.9, touches * 0.15), // Higher strength for more touches
           timestamp: candles[i].timestamp,
-          touches: touches
+          index: i
         });
       }
     }
-    
-    return supports;
+
+    return swingLows;
   }
 
-  /**
-   * Analyze volume profile to identify high-volume price zones
-   */
-  private analyzeVolumeProfile(candles: CandleData[], lookbackPeriods: number): SupportLevel[] {
-    const supports: SupportLevel[] = [];
-    const recentCandles = candles.slice(-lookbackPeriods);
-    
-    // Group candles by price ranges
-    const priceRanges: { [key: string]: { volume: number; count: number; avgPrice: number } } = {};
-    
-    recentCandles.forEach(candle => {
-      // Use VWAP (Volume Weighted Average Price) as the key price
-      const vwap = (candle.high + candle.low + candle.close) / 3;
-      const priceKey = Math.round(vwap * 100) / 100; // Round to 2 decimals
-      
-      if (!priceRanges[priceKey]) {
-        priceRanges[priceKey] = { volume: 0, count: 0, avgPrice: 0 };
-      }
-      
-      priceRanges[priceKey].volume += candle.volume;
-      priceRanges[priceKey].count += 1;
-      priceRanges[priceKey].avgPrice = (priceRanges[priceKey].avgPrice + vwap) / 2;
-    });
-    
-    // Find high-volume zones
-    const totalVolume = Object.values(priceRanges).reduce((sum, range) => sum + range.volume, 0);
-    const avgVolume = totalVolume / Object.keys(priceRanges).length;
-    
-    Object.entries(priceRanges).forEach(([priceKey, range]) => {
-      if (range.volume > avgVolume * 1.5) { // 50% above average volume
-        supports.push({
-          price: range.avgPrice,
-          strength: Math.min(0.8, (range.volume / avgVolume) * 0.2),
-          timestamp: Date.now(),
-          touches: range.count
-        });
-      }
-    });
-    
-    return supports;
+  private calculateSupportStrength(swingLow: { price: number; timestamp: number; index: number }, candles: CandleData[], config: TradingConfigData): number {
+    let strength = 0.0;
+
+    // Factor 1: Volume analysis at swing low
+    const volumeStrength = this.analyzeVolumeAtLevel(swingLow, candles, config.volume_lookback_periods);
+    strength += volumeStrength * 0.4;
+
+    // Factor 2: Number of touches/tests of this level
+    const touches = this.countTouches(swingLow.price, candles, 0.002); // 0.2% tolerance
+    const touchStrength = Math.min(touches / 5, 1.0); // Normalize to max 1.0
+    strength += touchStrength * 0.3;
+
+    // Factor 3: Fibonacci retracement levels
+    const fibStrength = this.checkFibonacciLevel(swingLow, candles, config.fibonacci_sensitivity);
+    strength += fibStrength * 0.3;
+
+    return Math.min(strength, 1.0);
   }
 
-  /**
-   * Calculate Fibonacci retracement levels as dynamic supports
-   */
-  private calculateFibonacciSupports(candles: CandleData[], sensitivity: number): SupportLevel[] {
-    const supports: SupportLevel[] = [];
+  private analyzeVolumeAtLevel(swingLow: { price: number; timestamp: number; index: number }, candles: CandleData[], lookbackPeriods: number): number {
+    const startIndex = Math.max(0, swingLow.index - lookbackPeriods);
+    const endIndex = Math.min(candles.length - 1, swingLow.index + lookbackPeriods);
     
-    if (candles.length < 50) return supports;
-    
-    // Find significant moves (high to low) in recent data
-    const recentCandles = candles.slice(-100);
-    const highs = recentCandles.map(c => c.high);
-    const lows = recentCandles.map(c => c.low);
-    
-    const maxHigh = Math.max(...highs);
-    const minLow = Math.min(...lows);
-    const range = maxHigh - minLow;
-    
-    // Calculate Fibonacci retracement levels
-    const fibLevels = [0.236, 0.382, 0.5, 0.618, 0.786];
-    
-    fibLevels.forEach(level => {
-      const fibPrice = maxHigh - (range * level);
-      const touches = this.countTouches(candles, fibPrice, 0.005); // 0.5% tolerance
-      
-      if (touches >= 2) { // At least 2 touches to be considered valid
-        supports.push({
-          price: fibPrice,
-          strength: Math.min(0.7, level * sensitivity),
-          timestamp: Date.now(),
-          touches: touches
-        });
-      }
-    });
-    
-    return supports;
+    const volumes = candles.slice(startIndex, endIndex + 1).map(c => c.volume);
+    const avgVolume = volumes.reduce((sum, vol) => sum + vol, 0) / volumes.length;
+    const swingLowVolume = candles[swingLow.index]?.volume || 0;
+
+    // Higher volume at swing low indicates stronger support
+    return Math.min(swingLowVolume / avgVolume / 2, 1.0);
   }
 
-  /**
-   * Count how many times price touched a specific level
-   */
-  private countTouches(candles: CandleData[], targetPrice: number, tolerance: number): number {
+  private countTouches(price: number, candles: CandleData[], tolerance: number): number {
     let touches = 0;
-    const toleranceAmount = targetPrice * tolerance;
-    
-    candles.forEach(candle => {
-      if (candle.low <= targetPrice + toleranceAmount && candle.low >= targetPrice - toleranceAmount) {
+    const toleranceRange = price * tolerance;
+
+    for (const candle of candles) {
+      if (Math.abs(candle.low - price) <= toleranceRange) {
         touches++;
       }
-    });
-    
+    }
+
     return touches;
   }
 
-  /**
-   * Rank support levels by strength and relevance
-   */
-  private rankSupportLevels(supports: SupportLevel[], candles: CandleData[]): SupportLevel[] {
-    if (candles.length === 0) return [];
-    
-    const currentPrice = candles[candles.length - 1].close;
-    
-    // Filter supports that are below current price (actual support levels)
-    const validSupports = supports.filter(support => support.price < currentPrice);
-    
-    // Sort by strength and recency
-    return validSupports
-      .sort((a, b) => {
-        const strengthDiff = b.strength - a.strength;
-        if (Math.abs(strengthDiff) > 0.1) return strengthDiff;
-        
-        // If strength is similar, prefer more recent supports
-        return b.timestamp - a.timestamp;
-      })
-      .slice(0, 5); // Return top 5 support levels
+  private checkFibonacciLevel(swingLow: { price: number; timestamp: number; index: number }, candles: CandleData[], sensitivity: number): number {
+    // Find recent swing high to calculate Fibonacci levels
+    const recentHigh = this.findRecentSwingHigh(candles, swingLow.index);
+    if (!recentHigh) return 0.0;
+
+    const range = recentHigh.price - swingLow.price;
+    const fibLevels = [0.236, 0.382, 0.5, 0.618, 0.786].map(ratio => 
+      swingLow.price + (range * ratio)
+    );
+
+    // Check if swing low aligns with major Fibonacci levels
+    for (const fibLevel of fibLevels) {
+      const tolerance = range * 0.02; // 2% tolerance
+      if (Math.abs(swingLow.price - fibLevel) <= tolerance) {
+        return sensitivity; // Return sensitivity as strength multiplier
+      }
+    }
+
+    return 0.0;
   }
 
-  /**
-   * Calculate dynamic ATR-based support bounds
-   */
-  calculateDynamicBounds(candles: CandleData[], atrMultiplier: number): { lowerBound: number; upperBound: number } {
-    if (candles.length < 14) {
-      return { lowerBound: 5.0, upperBound: 2.0 }; // Fallback to defaults
+  private findRecentSwingHigh(candles: CandleData[], fromIndex: number): { price: number; timestamp: number } | null {
+    let maxHigh = 0;
+    let maxTimestamp = 0;
+
+    // Look for highest high in the 50 candles before the swing low
+    const startIndex = Math.max(0, fromIndex - 50);
+    
+    for (let i = startIndex; i < fromIndex; i++) {
+      if (candles[i].high > maxHigh) {
+        maxHigh = candles[i].high;
+        maxTimestamp = candles[i].timestamp;
+      }
     }
-    
-    // Calculate ATR (Average True Range) for the last 14 periods
-    const atrPeriod = 14;
-    const recentCandles = candles.slice(-atrPeriod);
-    
-    let atrSum = 0;
-    for (let i = 1; i < recentCandles.length; i++) {
-      const current = recentCandles[i];
-      const previous = recentCandles[i - 1];
-      
-      const tr = Math.max(
-        current.high - current.low,
-        Math.abs(current.high - previous.close),
-        Math.abs(current.low - previous.close)
-      );
-      
-      atrSum += tr;
+
+    return maxHigh > 0 ? { price: maxHigh, timestamp: maxTimestamp } : null;
+  }
+
+  private calculateATR(candles: CandleData[]): number {
+    if (candles.length < 2) return 0;
+
+    const trueRanges: number[] = [];
+
+    for (let i = 1; i < candles.length; i++) {
+      const current = candles[i];
+      const previous = candles[i - 1];
+
+      const tr1 = current.high - current.low;
+      const tr2 = Math.abs(current.high - previous.close);
+      const tr3 = Math.abs(current.low - previous.close);
+
+      const trueRange = Math.max(tr1, tr2, tr3);
+      trueRanges.push(trueRange);
     }
-    
-    const atr = atrSum / (recentCandles.length - 1);
-    const currentPrice = recentCandles[recentCandles.length - 1].close;
-    const atrPercent = (atr / currentPrice) * 100;
-    
-    return {
-      lowerBound: atrPercent * atrMultiplier * 2, // 2x ATR for lower bound
-      upperBound: atrPercent * atrMultiplier // 1x ATR for upper bound
-    };
+
+    // Calculate simple moving average of true ranges
+    const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
+    return atr;
   }
 }

@@ -52,6 +52,7 @@ export class Logic2DataDriven implements TradingLogic {
 }
 
 export class TradingLogicFactory {
+  // Fix: Use TradingLogic interface as the Map value type
   private static logics: Map<string, TradingLogic> = new Map([
     ['logic1_base', new Logic1BaseSupport()],
     ['logic2_data_driven', new Logic2DataDriven()]

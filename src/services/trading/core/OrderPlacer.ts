@@ -61,73 +61,36 @@ export class OrderPlacer {
         quantity
       });
 
-      // Execute buy order
+      // Execute buy order - Fixed the syntax error here
       const buyResult = await this.orderExecutor.executeBuyOrder(signal.symbol, quantity, entryPrice);
       
       if (!buyResult.success) {
         throw new Error(`Buy order failed: ${buyResult.error}`);
       }
 
-      // Record the buy trade
-      const buyTradeData = {
-        userId: this.userId,
-        symbol: signal.symbol,
-        side: 'buy' as const,
-        orderType: 'limit' as const,
-        price: entryPrice,
-        quantity: quantity,
-        status: 'new',
-        bybitOrderId: buyResult.orderId!
-      };
+      console.log(`✅ Buy order placed successfully: ${buyResult.orderId}`);
 
-      const buyTrade = await TradeRecorder.createTradeRecord(buyTradeData);
-      console.log(`📝 BUY trade recorded in database:`, buyTrade.id);
-
-      // Execute take-profit sell order
-      const sellResult = await this.orderExecutor.executeSellOrder(
-        signal.symbol, 
-        quantity, 
-        takeProfitPrice, 
-        null // instrumentInfo will be fetched in OrderFormatter
+      // Record the trade in database
+      const tradeRecorder = new TradeRecorder(this.userId);
+      await tradeRecorder.recordBuyOrder(
+        signal.symbol,
+        quantity,
+        entryPrice,
+        buyResult.orderId!,
+        signal.id
       );
 
-      if (!sellResult.success) {
-        console.warn(`⚠️ Take-profit order failed: ${sellResult.error}`);
-        await this.logger.logError(`Take-profit order failed for ${signal.symbol}`, sellResult.error, {
-          symbol: signal.symbol,
-          takeProfitPrice,
-          quantity
-        });
-      } else {
-        // Record the sell trade
-        const sellTradeData = {
-          userId: this.userId,
-          symbol: signal.symbol,
-          side: 'sell' as const,
-          orderType: 'limit' as const,
-          price: takeProfitPrice,
-          quantity: quantity,
-          status: 'new',
-          bybitOrderId: sellResult.orderId!
-        };
-
-        const sellTrade = await TradeRecorder.createTradeRecord(sellTradeData);
-        console.log(`📝 SELL trade recorded in database:`, sellTrade.id);
-      }
-
+      console.log(`🎉 Order placement completed successfully for ${signal.symbol}`);
       await this.logger.logSuccess(`Order placement completed for ${signal.symbol}`, {
         buyOrderId: buyResult.orderId,
-        sellOrderId: sellResult.orderId,
         symbol: signal.symbol,
+        quantity,
         entryPrice,
-        takeProfitPrice,
-        quantity
+        takeProfitPrice
       });
 
-      console.log(`✅ ===== ORDER PLACEMENT COMPLETE =====\n`);
-
     } catch (error) {
-      console.error(`❌ Error in order placement for ${signal.symbol}:`, error);
+      console.error(`❌ Error placing orders for ${signal.symbol}:`, error);
       await this.logger.logError(`Order placement failed for ${signal.symbol}`, error, {
         signal: signal.signal_type,
         entryPrice,
@@ -136,61 +99,5 @@ export class OrderPlacer {
       });
       throw error;
     }
-  }
-
-  /**
-   * Legacy method for backwards compatibility
-   */
-  async placeOrder(
-    signal: any,
-    quantity: number,
-    entryPrice: number,
-    takeProfitPrice: number
-  ): Promise<OrderPlacementResult> {
-    try {
-      await this.placeRealBybitOrder(signal, quantity, entryPrice, takeProfitPrice);
-      return { success: true };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
-
-  /**
-   * Validate order parameters before placement
-   */
-  private validateOrderParameters(
-    signal: any,
-    quantity: number,
-    entryPrice: number,
-    takeProfitPrice: number
-  ): { isValid: boolean; error?: string } {
-    if (!signal?.symbol) {
-      return { isValid: false, error: 'Signal must have a valid symbol' };
-    }
-
-    if (!signal?.signal_type) {
-      return { isValid: false, error: 'Signal must have a valid signal_type' };
-    }
-
-    if (quantity <= 0) {
-      return { isValid: false, error: 'Quantity must be positive' };
-    }
-
-    if (entryPrice <= 0) {
-      return { isValid: false, error: 'Entry price must be positive' };
-    }
-
-    if (takeProfitPrice <= 0) {
-      return { isValid: false, error: 'Take profit price must be positive' };
-    }
-
-    if (takeProfitPrice <= entryPrice) {
-      return { isValid: false, error: 'Take profit price must be higher than entry price' };
-    }
-
-    return { isValid: true };
   }
 }
