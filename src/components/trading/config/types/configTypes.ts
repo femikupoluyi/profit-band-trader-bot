@@ -25,6 +25,12 @@ export interface TradingConfigData {
   max_concurrent_trades: number;
   max_drawdown_percent: number;
   notes: string;
+  // New trading logic configuration
+  trading_logic_type: 'logic1_base' | 'logic2_data_driven';
+  swing_analysis_bars: number;
+  volume_lookback_periods: number;
+  fibonacci_sensitivity: number;
+  atr_multiplier: number;
 }
 
 export const getDefaultConfig = (): TradingConfigData => ({
@@ -52,5 +58,11 @@ export const getDefaultConfig = (): TradingConfigData => ({
   quantity_decimals_per_symbol: {},
   max_concurrent_trades: 20,
   max_drawdown_percent: 10.0,
-  notes: ''
+  notes: '',
+  // New trading logic defaults
+  trading_logic_type: 'logic1_base',
+  swing_analysis_bars: 20,
+  volume_lookback_periods: 50,
+  fibonacci_sensitivity: 0.618,
+  atr_multiplier: 1.0
 });

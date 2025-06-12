@@ -2,28 +2,27 @@
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { SupportLevelAnalyzer } from '../supportLevelAnalyzer';
 import { TradingLogger } from './TradingLogger';
 import { TradeValidator } from './TradeValidator';
+import { TradingLogicFactory } from './TradingLogicFactory';
 
 export class SignalAnalysisService {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
-  private supportLevelAnalyzer: SupportLevelAnalyzer;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
     this.bybitService.setLogger(this.logger);
-    this.supportLevelAnalyzer = new SupportLevelAnalyzer();
   }
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
     try {
       console.log('\n📈 ===== SIGNAL ANALYSIS START =====');
       console.log('🔧 Configuration Details:', {
+        tradingLogicType: config.trading_logic_type,
         tradingPairs: config.trading_pairs,
         maxOrderAmount: config.max_order_amount_usd,
         takeProfitPercent: config.take_profit_percent,
@@ -33,8 +32,15 @@ export class SignalAnalysisService {
         maxPositionsPerPair: config.max_positions_per_pair,
         supportCandleCount: config.support_candle_count
       });
+
+      // Get the selected trading logic
+      const tradingLogic = TradingLogicFactory.getLogic(config.trading_logic_type);
+      console.log(`🧠 Using Trading Logic: ${tradingLogic.name}`);
+      console.log(`📋 Logic Description: ${tradingLogic.description}`);
       
       await this.logger.logSuccess('Starting comprehensive signal analysis', {
+        tradingLogicType: config.trading_logic_type,
+        tradingLogicName: tradingLogic.name,
         tradingPairsCount: config.trading_pairs.length,
         tradingPairs: config.trading_pairs,
         maxOrderAmount: config.max_order_amount_usd,
@@ -62,7 +68,7 @@ export class SignalAnalysisService {
         try {
           console.log(`\n🎯 ===== STARTING ANALYSIS FOR ${symbol} =====`);
           analysisResults.analyzedPairs++;
-          const result = await this.analyzeSymbol(symbol, config);
+          const result = await this.analyzeSymbol(symbol, config, tradingLogic);
           if (result.signalGenerated) {
             analysisResults.signalsGenerated++;
             console.log(`✅ ${symbol}: Signal generated successfully`);
@@ -96,7 +102,7 @@ export class SignalAnalysisService {
     }
   }
 
-  private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<{ signalGenerated: boolean; reason?: string }> {
+  private async analyzeSymbol(symbol: string, config: TradingConfigData, tradingLogic: any): Promise<{ signalGenerated: boolean; reason?: string }> {
     try {
       console.log(`\n🔍 ===== DETAILED ANALYSIS FOR ${symbol} =====`);
       await this.logger.logSystemInfo(`Starting detailed analysis for ${symbol}`);
@@ -194,75 +200,87 @@ export class SignalAnalysisService {
 
       console.log(`📊 ${symbol}: Found ${recentData.length} market data records for analysis`);
 
-      // Step 5: Analyze support levels
-      console.log(`🔍 Step 5: Analyzing support levels for ${symbol}...`);
-      const priceHistory = recentData.map(d => parseFloat(d.price.toString()));
-      console.log(`📈 ${symbol}: Price range in data: $${Math.min(...priceHistory).toFixed(6)} - $${Math.max(...priceHistory).toFixed(6)}`);
-      
-      const supportLevel = this.supportLevelAnalyzer.identifySupportLevel(
-        priceHistory.map((price, index) => ({
-          low: price,
-          high: price,
-          open: price,
-          close: price,
-          volume: 0,
-          timestamp: Date.now() - (index * 1000)
-        }))
-      );
+      // Step 5: Convert market data to candle format
+      console.log(`🔍 Step 5: Converting market data to candle format for ${symbol}...`);
+      const candleData = recentData.map(d => ({
+        open: parseFloat(d.price.toString()),
+        high: parseFloat(d.price.toString()) * 1.001, // Simulate slight variation
+        low: parseFloat(d.price.toString()) * 0.999,
+        close: parseFloat(d.price.toString()),
+        volume: parseFloat(d.volume?.toString() || '0'),
+        timestamp: new Date(d.timestamp).getTime()
+      }));
 
-      if (!supportLevel || supportLevel.strength <= 0.3) {
-        const rejectionReason = `No valid support level found (strength: ${supportLevel?.strength || 'N/A'})`;
+      // Step 6: Analyze support levels using selected logic
+      console.log(`🧠 Step 6: Analyzing support levels using ${tradingLogic.name} for ${symbol}...`);
+      const supportLevels = tradingLogic.analyzeSupportLevels(candleData, config);
+
+      if (!supportLevels || supportLevels.length === 0) {
+        const rejectionReason = `No support levels found using ${tradingLogic.name}`;
         console.log(`❌ ${symbol}: ${rejectionReason}`);
         await this.logger.logSignalRejected(symbol, rejectionReason, {
-          supportLevel: supportLevel?.price || null,
-          strength: supportLevel?.strength || 0,
-          minimumStrength: 0.3,
-          priceRange: { min: Math.min(...priceHistory), max: Math.max(...priceHistory) }
+          tradingLogic: tradingLogic.name,
+          candleDataLength: candleData.length,
+          supportLevelsFound: 0
         });
         return { signalGenerated: false, reason: rejectionReason };
       }
 
-      console.log(`📊 ${symbol}: Support level analysis:
-        - Support Price: $${supportLevel.price.toFixed(6)}
-        - Strength: ${supportLevel.strength.toFixed(3)}
-        - Touches: ${supportLevel.touches}`);
+      console.log(`📊 ${symbol}: Found ${supportLevels.length} support levels:`);
+      supportLevels.forEach((level, index) => {
+        console.log(`  ${index + 1}. Price: $${level.price.toFixed(6)}, Strength: ${level.strength.toFixed(3)}, Touches: ${level.touches}`);
+      });
+
+      // Step 7: Select best support level and check if price is in buy zone
+      const bestSupport = supportLevels[0]; // Highest ranked support
+      console.log(`📐 Step 7: Checking if current price is in buy zone for ${symbol}...`);
       
-      // Step 6: Check if price is in buy zone
-      console.log(`📐 Step 6: Checking if current price is in buy zone for ${symbol}...`);
-      const priceAboveSupport = ((currentPrice - supportLevel.price) / supportLevel.price) * 100;
+      // Use dynamic bounds if Logic 2, otherwise use static bounds
+      let lowerBound = config.support_lower_bound_percent;
+      let upperBound = config.support_upper_bound_percent;
+      
+      if (config.trading_logic_type === 'logic2_data_driven' && tradingLogic.calculateDynamicBounds) {
+        const dynamicBounds = tradingLogic.calculateDynamicBounds(candleData, config);
+        lowerBound = dynamicBounds.lowerBound;
+        upperBound = dynamicBounds.upperBound;
+        console.log(`🎯 ${symbol}: Using dynamic ATR-based bounds - Lower: ${lowerBound.toFixed(2)}%, Upper: ${upperBound.toFixed(2)}%`);
+      }
+      
+      const priceAboveSupport = ((currentPrice - bestSupport.price) / bestSupport.price) * 100;
       
       console.log(`📐 ${symbol}: Price position analysis:
         - Current Price: $${currentPrice.toFixed(6)}
-        - Support Level: $${supportLevel.price.toFixed(6)}
+        - Best Support Level: $${bestSupport.price.toFixed(6)} (strength: ${bestSupport.strength.toFixed(3)})
         - Distance from Support: ${priceAboveSupport.toFixed(2)}%
-        - Allowed Range: -${config.support_lower_bound_percent}% to +${config.support_upper_bound_percent}%
-        - In Range: ${priceAboveSupport >= -config.support_lower_bound_percent && priceAboveSupport <= config.support_upper_bound_percent ? 'YES' : 'NO'}`);
+        - Allowed Range: -${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%
+        - In Range: ${priceAboveSupport >= -lowerBound && priceAboveSupport <= upperBound ? 'YES' : 'NO'}`);
 
-      if (priceAboveSupport < -config.support_lower_bound_percent || priceAboveSupport > config.support_upper_bound_percent) {
-        const rejectionReason = `Price not in buy zone (${priceAboveSupport.toFixed(2)}% from support, allowed: -${config.support_lower_bound_percent}% to +${config.support_upper_bound_percent}%)`;
+      if (priceAboveSupport < -lowerBound || priceAboveSupport > upperBound) {
+        const rejectionReason = `Price not in buy zone (${priceAboveSupport.toFixed(2)}% from support, allowed: -${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%)`;
         console.log(`❌ ${symbol}: ${rejectionReason}`);
         await this.logger.logSignalRejected(symbol, rejectionReason, {
           currentPrice,
-          supportPrice: supportLevel.price,
+          supportPrice: bestSupport.price,
           distancePercent: priceAboveSupport,
           allowedRange: {
-            lower: -config.support_lower_bound_percent,
-            upper: config.support_upper_bound_percent
-          }
+            lower: -lowerBound,
+            upper: upperBound
+          },
+          isDynamicBounds: config.trading_logic_type === 'logic2_data_driven'
         });
         return { signalGenerated: false, reason: rejectionReason };
       }
 
-      // Step 7: Calculate entry price
-      console.log(`🎯 Step 7: Calculating entry price for ${symbol}...`);
-      const entryPrice = supportLevel.price * (1 + config.entry_offset_percent / 100);
+      // Step 8: Calculate entry price
+      console.log(`🎯 Step 8: Calculating entry price for ${symbol}...`);
+      const entryPrice = bestSupport.price * (1 + config.entry_offset_percent / 100);
       console.log(`🎯 ${symbol}: Entry price calculation:
-        - Support Price: $${supportLevel.price.toFixed(6)}
+        - Support Price: $${bestSupport.price.toFixed(6)}
         - Entry Offset: ${config.entry_offset_percent}%
         - Calculated Entry: $${entryPrice.toFixed(6)}`);
       
-      // Step 8: Validate entry price makes sense
-      console.log(`🔧 Step 8: Validating entry price reasonableness for ${symbol}...`);
+      // Step 9: Validate entry price makes sense
+      console.log(`🔧 Step 9: Validating entry price reasonableness for ${symbol}...`);
       const entryPriceDistance = Math.abs((entryPrice - currentPrice) / currentPrice) * 100;
       console.log(`🔧 ${symbol}: Entry price validation:
         - Entry Price: $${entryPrice.toFixed(6)}
@@ -282,8 +300,8 @@ export class SignalAnalysisService {
         return { signalGenerated: false, reason: rejectionReason };
       }
 
-      // Step 9: Validate trade parameters
-      console.log(`🔧 Step 9: Validating trade parameters for ${symbol}...`);
+      // Step 10: Validate trade parameters
+      console.log(`🔧 Step 10: Validating trade parameters for ${symbol}...`);
       const testQuantity = TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
       const orderValue = testQuantity * entryPrice;
       
@@ -305,12 +323,12 @@ export class SignalAnalysisService {
         return { signalGenerated: false, reason: rejectionReason };
       }
 
-      // Step 10: Create buy signal
-      console.log(`✅ Step 10: All validations passed, creating buy signal for ${symbol}...`);
-      const signalResult = await this.createBuySignal(symbol, entryPrice, supportLevel, config);
+      // Step 11: Create buy signal with limit order
+      console.log(`✅ Step 11: All validations passed, creating LIMIT buy signal for ${symbol}...`);
+      const signalResult = await this.createLimitBuySignal(symbol, entryPrice, bestSupport, config);
       
       if (signalResult) {
-        console.log(`🎉 ${symbol}: Buy signal created successfully!`);
+        console.log(`🎉 ${symbol}: LIMIT buy signal created successfully!`);
       } else {
         console.log(`❌ ${symbol}: Failed to create buy signal in database`);
       }
@@ -324,15 +342,17 @@ export class SignalAnalysisService {
     }
   }
 
-  private async createBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData): Promise<boolean> {
+  private async createLimitBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData): Promise<boolean> {
     try {
-      console.log(`📝 Creating buy signal for ${symbol}...`);
+      console.log(`📝 Creating LIMIT buy signal for ${symbol}...`);
       
       const confidence = Math.min(0.95, supportLevel.strength);
-      const reasoning = `Buy signal: Price near support level at $${supportLevel.price.toFixed(6)} with ${supportLevel.strength.toFixed(3)} strength. Entry offset: ${config.entry_offset_percent}%`;
+      const reasoning = `LIMIT Buy signal: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% above support $${supportLevel.price.toFixed(6)}). Support strength: ${supportLevel.strength.toFixed(3)} with ${supportLevel.touches} touches. Take profit: ${config.take_profit_percent}%`;
 
-      console.log(`📝 ${symbol}: Signal details:
+      console.log(`📝 ${symbol}: LIMIT signal details:
+        - Order Type: LIMIT
         - Entry Price: $${entryPrice.toFixed(6)}
+        - Take Profit: ${config.take_profit_percent}%
         - Confidence: ${confidence.toFixed(3)}
         - Reasoning: ${reasoning}`);
 
@@ -356,15 +376,19 @@ export class SignalAnalysisService {
         return false;
       }
 
-      console.log(`✅ Buy signal created successfully for ${symbol}:
+      console.log(`✅ LIMIT buy signal created successfully for ${symbol}:
         - Signal ID: ${signal.id}
+        - Order Type: LIMIT
         - Entry Price: $${entryPrice.toFixed(6)}
+        - Take Profit: ${config.take_profit_percent}%
         - Confidence: ${confidence.toFixed(3)}
         - Support Level: $${supportLevel.price.toFixed(6)}`);
       
       await this.logger.logSignalProcessed(symbol, 'buy', {
         signalId: signal.id,
+        orderType: 'LIMIT',
         entryPrice,
+        takeProfitPercent: config.take_profit_percent,
         supportLevel: supportLevel.price,
         confidence: confidence,
         reasoning: reasoning,
@@ -374,8 +398,8 @@ export class SignalAnalysisService {
       return true;
 
     } catch (error) {
-      console.error(`❌ Error creating buy signal for ${symbol}:`, error);
-      await this.logger.logError(`Failed to create buy signal for ${symbol}`, error, { symbol });
+      console.error(`❌ Error creating LIMIT buy signal for ${symbol}:`, error);
+      await this.logger.logError(`Failed to create LIMIT buy signal for ${symbol}`, error, { symbol });
       return false;
     }
   }

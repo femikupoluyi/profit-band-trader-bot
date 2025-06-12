@@ -8,6 +8,7 @@ import TradingPairsSelection from './components/TradingPairsSelection';
 import EndOfDayManagement from './components/EndOfDayManagement';
 import SystemConfiguration from './components/SystemConfiguration';
 import NotesSection from './components/NotesSection';
+import TradingLogicSelection from './components/TradingLogicSelection';
 
 interface TradingConfigFormProps {
   config: TradingConfigData;
@@ -24,6 +25,14 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
 }) => {
   return (
     <div className="space-y-6">
+      {/* Trading Logic Selection - New Section */}
+      <TradingLogicSelection
+        config={config}
+        onInputChange={onInputChange}
+        onNumberInput={onNumberInput}
+        onIntegerInput={onIntegerInput}
+      />
+
       {/* Basic Trading Parameters */}
       <BasicTradingParameters
         config={config}
