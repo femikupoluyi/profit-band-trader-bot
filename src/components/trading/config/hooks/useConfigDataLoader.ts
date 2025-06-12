@@ -46,12 +46,12 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
           max_concurrent_trades: validateInteger(data.max_active_pairs, 20),
           max_drawdown_percent: validateNumber(data.max_drawdown_percent, 10.0),
           notes: data.notes || '',
-          // New trading logic fields with defaults
-          trading_logic_type: data.trading_logic_type || 'logic1_base',
-          swing_analysis_bars: validateInteger(data.swing_analysis_bars, 20),
-          volume_lookback_periods: validateInteger(data.volume_lookback_periods, 50),
-          fibonacci_sensitivity: validateNumber(data.fibonacci_sensitivity, 0.618),
-          atr_multiplier: validateNumber(data.atr_multiplier, 1.0)
+          // New trading logic fields with safe property access
+          trading_logic_type: (data as any).trading_logic_type || 'logic1_base',
+          swing_analysis_bars: validateInteger((data as any).swing_analysis_bars, 20),
+          volume_lookback_periods: validateInteger((data as any).volume_lookback_periods, 50),
+          fibonacci_sensitivity: validateNumber((data as any).fibonacci_sensitivity, 0.618),
+          atr_multiplier: validateNumber((data as any).atr_multiplier, 1.0)
         };
         
         console.log('Loaded config from database with validation:', loadedConfig);

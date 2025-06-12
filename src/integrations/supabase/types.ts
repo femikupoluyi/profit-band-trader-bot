@@ -155,12 +155,14 @@ export type Database = {
       }
       trading_configs: {
         Row: {
+          atr_multiplier: number | null
           auto_close_at_end_of_day: boolean | null
           chart_timeframe: string | null
           created_at: string | null
           daily_reset_time: string | null
           entry_offset_percent: number | null
           eod_close_premium_percent: number | null
+          fibonacci_sensitivity: number | null
           id: string
           is_active: boolean | null
           main_loop_interval_seconds: number | null
@@ -179,18 +181,23 @@ export type Database = {
           support_candle_count: number | null
           support_lower_bound_percent: number | null
           support_upper_bound_percent: number | null
+          swing_analysis_bars: number | null
           take_profit_percent: number | null
+          trading_logic_type: string | null
           trading_pairs: string[] | null
           updated_at: string | null
           user_id: string
+          volume_lookback_periods: number | null
         }
         Insert: {
+          atr_multiplier?: number | null
           auto_close_at_end_of_day?: boolean | null
           chart_timeframe?: string | null
           created_at?: string | null
           daily_reset_time?: string | null
           entry_offset_percent?: number | null
           eod_close_premium_percent?: number | null
+          fibonacci_sensitivity?: number | null
           id?: string
           is_active?: boolean | null
           main_loop_interval_seconds?: number | null
@@ -209,18 +216,23 @@ export type Database = {
           support_candle_count?: number | null
           support_lower_bound_percent?: number | null
           support_upper_bound_percent?: number | null
+          swing_analysis_bars?: number | null
           take_profit_percent?: number | null
+          trading_logic_type?: string | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id: string
+          volume_lookback_periods?: number | null
         }
         Update: {
+          atr_multiplier?: number | null
           auto_close_at_end_of_day?: boolean | null
           chart_timeframe?: string | null
           created_at?: string | null
           daily_reset_time?: string | null
           entry_offset_percent?: number | null
           eod_close_premium_percent?: number | null
+          fibonacci_sensitivity?: number | null
           id?: string
           is_active?: boolean | null
           main_loop_interval_seconds?: number | null
@@ -239,10 +251,13 @@ export type Database = {
           support_candle_count?: number | null
           support_lower_bound_percent?: number | null
           support_upper_bound_percent?: number | null
+          swing_analysis_bars?: number | null
           take_profit_percent?: number | null
+          trading_logic_type?: string | null
           trading_pairs?: string[] | null
           updated_at?: string | null
           user_id?: string
+          volume_lookback_periods?: number | null
         }
         Relationships: []
       }

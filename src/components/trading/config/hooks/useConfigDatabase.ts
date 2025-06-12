@@ -90,6 +90,12 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
         quantity_decimals_per_symbol: configData.quantity_decimals_per_symbol,
         max_drawdown_percent: configData.max_drawdown_percent,
         notes: configData.notes,
+        // New trading logic fields
+        trading_logic_type: configData.trading_logic_type,
+        swing_analysis_bars: configData.swing_analysis_bars,
+        volume_lookback_periods: configData.volume_lookback_periods,
+        fibonacci_sensitivity: configData.fibonacci_sensitivity,
+        atr_multiplier: configData.atr_multiplier,
         updated_at: new Date().toISOString(),
       };
 
