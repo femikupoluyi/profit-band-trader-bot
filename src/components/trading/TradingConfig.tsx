@@ -8,6 +8,7 @@ import TradingConfigForm from './config/TradingConfigForm';
 import { useTradingConfig } from './config/useTradingConfig';
 import { ConfigValidator } from '@/services/trading/core/ConfigValidator';
 import TradingSystemTest from './TradingSystemTest';
+import TestOrderPlacer from './TestOrderPlacer';
 
 interface TradingConfigProps {
   onConfigUpdate?: () => void;
@@ -123,6 +124,7 @@ const TradingConfig: React.FC<TradingConfigProps> = ({ onConfigUpdate }) => {
         </CardContent>
       </Card>
 
+      <TestOrderPlacer />
       <TradingSystemTest />
     </div>
   );
