@@ -25,54 +25,34 @@ export class MarketDataSeeder {
     console.log('✅ MARKET DATA SEEDING COMPLETED');
   }
 
-  private async seedSymbolData(symbol: string, targetRecords: number): Promise<void> {
+  async seedSymbolData(symbol: string, targetRecords: number): Promise<void> {
     try {
-      console.log(`\n🌱 Seeding data for ${symbol}...`);
+      console.log(`\n🌱 SEEDING DATA FOR ${symbol}...`);
+      console.log(`🎯 Target: ${targetRecords} records`);
 
-      // Check existing data with proper count
-      const { count: existingCount, error: countError } = await supabase
-        .from('market_data')
-        .select('*', { count: 'exact', head: true })
-        .eq('symbol', symbol);
-
-      if (countError) {
-        console.error(`❌ Error checking existing data for ${symbol}:`, countError);
-        throw countError;
-      }
-
-      const currentCount = existingCount || 0;
-      console.log(`📊 ${symbol}: Found ${currentCount} existing records`);
-
-      if (currentCount >= targetRecords) {
-        console.log(`✅ ${symbol}: Already has sufficient data (${currentCount}/${targetRecords})`);
-        return;
-      }
-
-      // Get current market price as base
+      // Get current market price as base for historical data
       const currentMarketData = await this.bybitService.getMarketPrice(symbol);
       const basePrice = currentMarketData.price;
-      console.log(`💰 ${symbol}: Base price: $${basePrice.toFixed(6)}`);
+      console.log(`💰 ${symbol}: Base price for seeding: $${basePrice.toFixed(6)}`);
 
       // Generate historical data points
-      const recordsToGenerate = targetRecords - currentCount;
-      console.log(`🔢 ${symbol}: Generating ${recordsToGenerate} historical records...`);
-
       const seedData = [];
       const now = Date.now();
       
-      // Generate data going backwards in time to simulate history
-      for (let i = 0; i < recordsToGenerate; i++) {
-        // Generate timestamps going backwards (5-minute intervals)
-        const minutesBack = (recordsToGenerate - i) * 5;
+      // Generate data going backwards in time (5-minute intervals)
+      for (let i = 0; i < targetRecords; i++) {
+        const minutesBack = (targetRecords - i) * 5;
         const timestamp = new Date(now - (minutesBack * 60 * 1000));
         
-        // Generate realistic price variations using random walk
-        const volatility = 0.02; // 2% max variation per step
-        const priceChange = (Math.random() - 0.5) * 2 * volatility;
-        const historicalPrice = basePrice * (1 + priceChange * (i / recordsToGenerate));
+        // Create realistic price variations (random walk)
+        const volatility = 0.005; // 0.5% max variation per step
+        const randomFactor = (Math.random() - 0.5) * 2;
+        const priceVariation = 1 + (randomFactor * volatility * (i / targetRecords));
+        const historicalPrice = basePrice * priceVariation;
         
-        // Ensure price is positive and reasonable
-        const finalPrice = Math.max(historicalPrice, basePrice * 0.5);
+        // Ensure price is positive and reasonable (within 10% of base)
+        const finalPrice = Math.max(historicalPrice, basePrice * 0.9);
+        const cappedPrice = Math.min(finalPrice, basePrice * 1.1);
         
         // Generate realistic volume
         const baseVolume = 100000;
@@ -81,7 +61,7 @@ export class MarketDataSeeder {
 
         seedData.push({
           symbol,
-          price: finalPrice,
+          price: cappedPrice,
           volume: volume,
           timestamp: timestamp.toISOString(),
           source: 'seeded_historical_data'
@@ -91,8 +71,11 @@ export class MarketDataSeeder {
       // Sort by timestamp to maintain chronological order
       seedData.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-      // Insert data in smaller batches to avoid timeout
-      const batchSize = 5;
+      console.log(`📝 ${symbol}: Generated ${seedData.length} historical data points`);
+      console.log(`📊 ${symbol}: Price range: $${Math.min(...seedData.map(d => d.price)).toFixed(6)} - $${Math.max(...seedData.map(d => d.price)).toFixed(6)}`);
+
+      // Insert data in batches to avoid timeout
+      const batchSize = 10;
       let insertedCount = 0;
       
       for (let i = 0; i < seedData.length; i += batchSize) {
@@ -104,30 +87,31 @@ export class MarketDataSeeder {
 
         if (insertError) {
           console.error(`❌ Error inserting batch for ${symbol}:`, insertError);
-          await this.logger.logError(`Failed to seed data batch for ${symbol}`, insertError, { symbol, batchIndex: i });
+          // Continue with other batches
         } else {
           insertedCount += batch.length;
-          console.log(`📊 ${symbol}: Inserted batch ${Math.floor(i / batchSize) + 1}, total: ${insertedCount}/${recordsToGenerate}`);
+          const progress = Math.round((insertedCount / seedData.length) * 100);
+          console.log(`📊 ${symbol}: Seeded ${insertedCount}/${seedData.length} records (${progress}%)`);
         }
 
-        // Small delay between batches to avoid overwhelming the database
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Small delay between batches
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
 
-      console.log(`✅ ${symbol}: Seeded ${insertedCount} historical records`);
-      console.log(`📊 ${symbol}: Total records now: ${currentCount + insertedCount}`);
+      console.log(`✅ ${symbol}: Successfully seeded ${insertedCount} historical records`);
 
       await this.logger.logSuccess(`Market data seeded for ${symbol}`, {
         symbol,
         recordsSeeded: insertedCount,
-        totalRecords: currentCount + insertedCount,
         basePrice,
-        targetRecords
+        targetRecords,
+        actualSeeded: insertedCount
       });
 
     } catch (error) {
       console.error(`❌ Error seeding data for ${symbol}:`, error);
       await this.logger.logError(`Failed to seed market data for ${symbol}`, error, { symbol });
+      throw error;
     }
   }
 }

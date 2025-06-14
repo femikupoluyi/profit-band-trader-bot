@@ -24,10 +24,10 @@ export class MarketDataScannerService {
       console.log(`🎯 Target symbols: ${config.trading_pairs.join(', ')}`);
       console.log(`📊 Required data points for analysis: ${config.support_candle_count || 128}`);
 
-      // CRITICAL: Ensure we have sufficient data before analysis
-      await this.ensureSufficientData(config.trading_pairs, config.support_candle_count || 128);
+      // CRITICAL: Always ensure sufficient data before any analysis
+      await this.ensureSufficientDataForAllSymbols(config.trading_pairs, config.support_candle_count || 128);
 
-      // Perform regular market scanning
+      // Perform regular market scanning to add fresh data
       const scanner = new MarketScanner(this.userId, this.bybitService, config);
       await scanner.scanMarkets();
 
@@ -46,60 +46,70 @@ export class MarketDataScannerService {
     }
   }
 
-  private async ensureSufficientData(symbols: string[], minRequired: number): Promise<void> {
+  private async ensureSufficientDataForAllSymbols(symbols: string[], minRequired: number): Promise<void> {
     try {
-      console.log('\n🔍 ENSURING SUFFICIENT MARKET DATA...');
+      console.log('\n🔍 ENSURING SUFFICIENT MARKET DATA FOR ALL SYMBOLS...');
+      console.log(`📊 Minimum required records per symbol: ${minRequired}`);
       
-      const symbolsNeedingData: string[] = [];
-      
-      // Check each symbol for sufficient data
       for (const symbol of symbols) {
-        const { count: existingCount, error } = await (globalThis as any).supabase
-          .from('market_data')
-          .select('*', { count: 'exact', head: true })
-          .eq('symbol', symbol);
-
-        if (error) {
-          console.error(`❌ Error checking data for ${symbol}:`, error);
-          symbolsNeedingData.push(symbol);
-          continue;
-        }
-
-        const actualCount = existingCount || 0;
-        console.log(`📊 ${symbol}: ${actualCount} existing records (need ${minRequired})`);
-
-        if (actualCount < minRequired) {
-          symbolsNeedingData.push(symbol);
-          console.log(`⚠️ ${symbol}: Needs data seeding (${actualCount} < ${minRequired})`);
-        }
+        await this.ensureSufficientDataForSymbol(symbol, minRequired);
       }
-
-      if (symbolsNeedingData.length > 0) {
-        console.log(`🌱 CRITICAL: Seeding data for ${symbolsNeedingData.length} symbols: ${symbolsNeedingData.join(', ')}`);
-        
-        // Seed more data than minimum to have buffer
-        const seedTarget = Math.max(minRequired, 50);
-        await this.seeder.seedInitialMarketData(symbolsNeedingData, seedTarget);
-        
-        console.log('✅ Data seeding completed, verifying...');
-        
-        // Verify seeding was successful
-        for (const symbol of symbolsNeedingData) {
-          const { count: verifyCount } = await (globalThis as any).supabase
-            .from('market_data')
-            .select('*', { count: 'exact', head: true })
-            .eq('symbol', symbol);
-          
-          console.log(`✅ ${symbol}: Verification count: ${verifyCount || 0}`);
-        }
-      } else {
-        console.log('✅ All symbols have sufficient market data');
-      }
+      
+      console.log('✅ ALL SYMBOLS DATA VERIFICATION COMPLETE');
 
     } catch (error) {
       console.error('❌ Error ensuring sufficient data:', error);
       await this.logger.logError('Failed to ensure sufficient market data', error);
-      // Don't throw - allow scanning to continue with whatever data exists
+      throw error; // Throw error to prevent analysis with insufficient data
+    }
+  }
+
+  private async ensureSufficientDataForSymbol(symbol: string, minRequired: number): Promise<void> {
+    try {
+      console.log(`\n🔍 CHECKING DATA FOR ${symbol}...`);
+      
+      // Check current data count
+      const { count: existingCount, error } = await (globalThis as any).supabase
+        .from('market_data')
+        .select('*', { count: 'exact', head: true })
+        .eq('symbol', symbol);
+
+      if (error) {
+        console.error(`❌ Error checking data count for ${symbol}:`, error);
+        throw error;
+      }
+
+      const actualCount = existingCount || 0;
+      console.log(`📊 ${symbol}: Current records: ${actualCount}, Required: ${minRequired}`);
+
+      if (actualCount < minRequired) {
+        const needed = minRequired - actualCount;
+        console.log(`🌱 ${symbol}: SEEDING ${needed} additional records...`);
+        
+        // Seed data with a buffer (150% of required to avoid frequent seeding)
+        const seedTarget = Math.max(minRequired * 1.5, 50);
+        await this.seeder.seedSymbolData(symbol, Math.ceil(seedTarget));
+        
+        // Verify seeding was successful
+        const { count: verifyCount } = await (globalThis as any).supabase
+          .from('market_data')
+          .select('*', { count: 'exact', head: true })
+          .eq('symbol', symbol);
+        
+        const finalCount = verifyCount || 0;
+        console.log(`✅ ${symbol}: Post-seed verification: ${finalCount} records`);
+        
+        if (finalCount < minRequired) {
+          console.error(`❌ ${symbol}: Still insufficient data after seeding (${finalCount} < ${minRequired})`);
+          throw new Error(`Failed to seed sufficient data for ${symbol}`);
+        }
+      } else {
+        console.log(`✅ ${symbol}: Already has sufficient data (${actualCount} >= ${minRequired})`);
+      }
+
+    } catch (error) {
+      console.error(`❌ Error ensuring data for ${symbol}:`, error);
+      throw error;
     }
   }
 }

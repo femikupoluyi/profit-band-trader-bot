@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -15,37 +14,22 @@ export class MarketScanner {
   }
 
   async scanMarkets(): Promise<void> {
-    console.log('🔍 SCANNING MARKETS - Building market data history for analysis...');
+    console.log('\n🔍 MARKET SCANNING - Adding fresh market data points...');
     
     const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
-    console.log('📊 Scanning symbols:', symbols);
-    console.log('📈 Target historical data points needed:', this.config.support_candle_count || 128);
+    console.log('📊 Updating market data for symbols:', symbols);
     
     for (const symbol of symbols) {
       try {
-        console.log(`\n📊 Processing ${symbol}...`);
+        console.log(`\n📊 Updating ${symbol}...`);
         
-        // Check existing data count first
-        const { count: existingCount, error: countError } = await supabase
-          .from('market_data')
-          .select('*', { count: 'exact', head: true })
-          .eq('symbol', symbol);
-        
-        if (countError) {
-          console.error(`❌ Error checking data count for ${symbol}:`, countError);
-          continue;
-        }
-
-        const currentCount = existingCount || 0;
-        console.log(`📈 ${symbol}: Existing market data records: ${currentCount}`);
-        
-        // Get fresh real-time price from DEMO trading API
-        console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading...`);
+        // Get fresh real-time price
+        console.log(`🔄 Fetching LIVE price for ${symbol}...`);
         const marketPrice = await this.getRealtimePrice(symbol);
         console.log(`💰 ${symbol} LIVE price: $${marketPrice.price.toFixed(6)}`);
         
-        // Store current market data point - CRITICAL: Don't delete existing data
+        // Store current market data point (ACCUMULATE, don't replace)
         const { error: insertError } = await supabase
           .from('market_data')
           .insert({
@@ -53,64 +37,68 @@ export class MarketScanner {
             price: marketPrice.price,
             volume: marketPrice.volume || 0,
             timestamp: new Date().toISOString(),
-            source: 'bybit_demo_realtime',
+            source: 'bybit_live_scan',
           });
 
         if (insertError) {
           console.error(`❌ Error storing market data for ${symbol}:`, insertError);
           await this.logActivity('error', `Failed to store market data for ${symbol}`, { 
             error: insertError.message,
-            price: marketPrice.price,
-            source: 'bybit_demo_trading'
+            price: marketPrice.price
           });
         } else {
-          const newCount = currentCount + 1;
-          console.log(`✅ Market data stored for ${symbol} - Price: $${marketPrice.price.toFixed(6)}`);
-          console.log(`📊 ${symbol}: Total historical records: ${newCount}/${this.config.support_candle_count || 128}`);
+          console.log(`✅ Market data added for ${symbol} - Price: $${marketPrice.price.toFixed(6)}`);
           
-          const requiredForAnalysis = Math.max(this.config.support_candle_count || 128, 10);
-          if (newCount >= requiredForAnalysis) {
-            console.log(`🎯 ${symbol}: SUFFICIENT data for analysis (${newCount} records)`);
-          } else {
-            console.log(`⏳ ${symbol}: Need ${requiredForAnalysis - newCount} more records for analysis`);
-          }
+          // Log current total count for verification
+          const { count } = await supabase
+            .from('market_data')
+            .select('*', { count: 'exact', head: true })
+            .eq('symbol', symbol);
+          
+          console.log(`📊 ${symbol}: Total historical records: ${count || 0}`);
         }
         
-        // Clean up very old data to prevent unlimited growth (keep last 200 records)
-        await this.cleanupOldData(symbol, 200);
+        // Clean up very old data periodically (keep last 500 records)
+        if (Math.random() < 0.1) { // Only clean 10% of the time to avoid constant cleanup
+          await this.cleanupOldData(symbol, 500);
+        }
         
       } catch (error) {
         console.error(`❌ Error scanning ${symbol}:`, error);
         await this.logActivity('error', `Failed to scan ${symbol}`, { 
           error: error instanceof Error ? error.message : 'Unknown error',
-          symbol,
-          timestamp: new Date().toISOString(),
-          source: 'bybit_demo_trading'
+          symbol
         });
       }
     }
     
-    console.log('✅ MARKET SCAN COMPLETED - Historical data accumulation in progress');
+    console.log('✅ MARKET SCAN COMPLETED - Fresh data added to historical records');
   }
 
   private async cleanupOldData(symbol: string, keepRecords: number): Promise<void> {
     try {
-      // Get records ordered by timestamp (newest first)
-      const { data: allData, error: fetchError } = await supabase
+      // Get total count first
+      const { count: totalCount } = await supabase
         .from('market_data')
-        .select('id, timestamp')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false });
+        .select('*', { count: 'exact', head: true })
+        .eq('symbol', symbol);
 
-      if (fetchError || !allData || allData.length <= keepRecords) {
+      if (!totalCount || totalCount <= keepRecords) {
         return; // No cleanup needed
       }
 
-      // Delete older records beyond the keep limit
-      const recordsToDelete = allData.slice(keepRecords);
-      const idsToDelete = recordsToDelete.map(record => record.id);
+      // Get IDs of records to delete (oldest ones)
+      const recordsToDelete = totalCount - keepRecords;
+      const { data: oldRecords } = await supabase
+        .from('market_data')
+        .select('id')
+        .eq('symbol', symbol)
+        .order('timestamp', { ascending: true })
+        .limit(recordsToDelete);
 
-      if (idsToDelete.length > 0) {
+      if (oldRecords && oldRecords.length > 0) {
+        const idsToDelete = oldRecords.map(record => record.id);
+
         const { error: deleteError } = await supabase
           .from('market_data')
           .delete()
@@ -119,7 +107,7 @@ export class MarketScanner {
         if (deleteError) {
           console.error(`❌ Error cleaning up old data for ${symbol}:`, deleteError);
         } else {
-          console.log(`🧹 ${symbol}: Cleaned up ${recordsToDelete.length} old records, kept ${keepRecords} recent records`);
+          console.log(`🧹 ${symbol}: Cleaned up ${oldRecords.length} old records, kept ${keepRecords} recent records`);
         }
       }
     } catch (error) {
@@ -129,9 +117,8 @@ export class MarketScanner {
 
   private async getRealtimePrice(symbol: string): Promise<{ price: number; volume?: number }> {
     try {
-      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading API...`);
+      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit...`);
       
-      // Force a fresh API call to Bybit DEMO trading
       const marketPrice = await this.bybitService.getMarketPrice(symbol);
       
       console.log(`📈 FRESH price received for ${symbol}: $${marketPrice.price.toFixed(6)}`);
@@ -143,15 +130,13 @@ export class MarketScanner {
       
       return { 
         price: marketPrice.price,
-        volume: marketPrice.volume || Math.random() * 1000000 // Simulate volume if not available
+        volume: marketPrice.volume || Math.random() * 1000000
       };
     } catch (error) {
       console.error(`❌ Failed to fetch real-time price for ${symbol}:`, error);
       await this.logActivity('error', `Real-time price fetch failed for ${symbol}`, {
         error: error instanceof Error ? error.message : 'Unknown error',
-        symbol,
-        timestamp: new Date().toISOString(),
-        source: 'bybit_demo_trading_api'
+        symbol
       });
       throw error;
     }
