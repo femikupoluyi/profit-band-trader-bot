@@ -72,9 +72,11 @@ export const isValidTestSymbol = (symbol: string): boolean => {
 };
 
 /**
- * Get supported trading pairs from a more dynamic source
+ * Get supported trading pairs - Note: This should not be used for live trading
+ * Use TradingPairsService.fetchActiveTradingPairs() for live data
  */
 export const getSupportedTradingPairs = (): string[] => {
+  console.warn('⚠️ Using hardcoded trading pairs for testing only. Use TradingPairsService for live data.');
   return [
     'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 
     'XRPUSDT', 'LTCUSDT', 'DOGEUSDT', 'MATICUSDT', 'FETUSDT', 

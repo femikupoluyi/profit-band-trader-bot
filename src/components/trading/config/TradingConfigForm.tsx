@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TradingConfigData } from './types/configTypes';
-import TradingPairsSelector from './components/TradingPairsSelector';
+import TradingPairsSelection from './components/TradingPairsSelection';
 import TradingLogicSelection from './components/TradingLogicSelection';
 import EndOfDayManagement from './components/EndOfDayManagement';
 
@@ -34,11 +34,10 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
         onIntegerInput={onIntegerInput}
       />
 
-      {/* Trading Pairs Configuration */}
-      <TradingPairsSelector
-        selectedPairs={config.trading_pairs}
-        onPairsChange={(pairs) => onInputChange('trading_pairs', pairs)}
-        maxActive={config.max_active_pairs}
+      {/* Trading Pairs Configuration - Using the updated component */}
+      <TradingPairsSelection
+        config={config}
+        onInputChange={onInputChange}
       />
 
       {/* Basic Trading Parameters */}
@@ -163,7 +162,7 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
         </CardContent>
       </Card>
 
-      {/* End of Day Management - NOW INCLUDED */}
+      {/* End of Day Management */}
       <EndOfDayManagement
         config={config}
         onInputChange={onInputChange}
