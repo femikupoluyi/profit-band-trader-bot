@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { PriceFormatter } from './core/PriceFormatter';
@@ -6,14 +7,12 @@ export async function closePosition(userId: string, tradeId: string, reason?: st
   try {
     console.log(`🔄 Attempting to close position for trade ${tradeId}`);
 
-    // Initialize Bybit service
-    const bybitService = new BybitService('', '', true);
-
-    // Fetch user's Bybit credentials
+    // Fetch user's Bybit credentials from api_credentials table
     const { data: credentials, error: credentialsError } = await supabase
-      .from('user_credentials')
-      .select('bybit_api_key, bybit_secret_key')
+      .from('api_credentials')
+      .select('api_key, api_secret')
       .eq('user_id', userId)
+      .eq('exchange_name', 'bybit')
       .single();
 
     if (credentialsError || !credentials) {
@@ -22,7 +21,7 @@ export async function closePosition(userId: string, tradeId: string, reason?: st
     }
 
     // Initialize Bybit service with credentials
-    bybitService.initialize(credentials.bybit_api_key, credentials.bybit_secret_key, true);
+    const bybitService = new BybitService(credentials.api_key, credentials.api_secret, true);
 
     // Fetch the trade
     const { data: trade, error: tradeError } = await supabase
@@ -51,22 +50,24 @@ export async function closePosition(userId: string, tradeId: string, reason?: st
       tradeId: tradeId
     });
 
-    // Place market sell order with properly formatted quantity
-    const sellOrderResult = await bybitService.placeSellOrder(
-      trade.symbol,
-      formattedQuantity,
-      'market'
-    );
+    // Place market sell order using the correct BybitService method
+    const sellOrderResult = await bybitService.placeOrder({
+      category: 'spot',
+      symbol: trade.symbol,
+      side: 'Sell',
+      orderType: 'Market',
+      qty: formattedQuantity.toString()
+    });
 
-    if (!sellOrderResult) {
-      console.error(`❌ Failed to place sell order for trade ${tradeId}`);
+    if (!sellOrderResult || sellOrderResult.retCode !== 0) {
+      console.error(`❌ Failed to place sell order for trade ${tradeId}:`, sellOrderResult);
       return false;
     }
 
     // Update trade status to closed
     const { error: updateError } = await supabase
       .from('trades')
-      .update({ status: 'closed', close_reason: reason || 'Market Close' })
+      .update({ status: 'closed' })
       .eq('id', tradeId);
 
     if (updateError) {
@@ -80,5 +81,30 @@ export async function closePosition(userId: string, tradeId: string, reason?: st
   } catch (error) {
     console.error(`❌ Error closing position for trade ${tradeId}:`, error);
     return false;
+  }
+}
+
+export class TradeCloser {
+  private userId: string;
+  private bybitService: BybitService;
+  private config: any;
+
+  constructor(userId: string, bybitService: BybitService, config: any) {
+    this.userId = userId;
+    this.bybitService = bybitService;
+    this.config = config;
+  }
+
+  async closePosition(trade: any, currentPrice: number, profitLoss: number): Promise<void> {
+    try {
+      const success = await closePosition(this.userId, trade.id, 'Take Profit Reached');
+      if (success) {
+        console.log(`✅ Successfully closed position for ${trade.symbol}`);
+      } else {
+        console.error(`❌ Failed to close position for ${trade.symbol}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error closing position for ${trade.symbol}:`, error);
+    }
   }
 }
