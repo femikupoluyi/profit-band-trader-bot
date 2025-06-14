@@ -4,17 +4,20 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 import { TradingLogger } from './TradingLogger';
 import { TradeValidator } from './TradeValidator';
 import { TradingLogicFactory } from './TradingLogicFactory';
+import { MarketDataScannerService } from './MarketDataScannerService';
 
 export class EnhancedSignalAnalysisService {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
+  private marketDataScanner: MarketDataScannerService;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
     this.bybitService.setLogger(this.logger);
+    this.marketDataScanner = new MarketDataScannerService(userId, bybitService);
   }
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
@@ -39,6 +42,11 @@ export class EnhancedSignalAnalysisService {
         maxPositionsPerPair: config.max_positions_per_pair,
         supportCandleCount: config.support_candle_count
       });
+
+      // CRITICAL: Use MarketDataScannerService to ensure sufficient data FIRST
+      console.log('\n🔥 STEP 1: ENSURING SUFFICIENT MARKET DATA FOR ALL SYMBOLS...');
+      await this.marketDataScanner.scanMarkets(config);
+      console.log('✅ STEP 1 COMPLETED: Market data verification and seeding done');
 
       // Get the selected trading logic with detailed logging
       console.log(`🧠 Fetching Trading Logic: ${config.trading_logic_type}`);
@@ -229,8 +237,8 @@ export class EnhancedSignalAnalysisService {
       console.log(`💰 ${symbol}: Current market price: $${currentPrice.toFixed(6)}`);
       await this.logger.logMarketDataUpdate(symbol, currentPrice, 'bybit');
 
-      // Step 4: Get recent market data for support analysis
-      console.log(`📈 Step 4: Fetching historical market data for ${symbol}...`);
+      // Step 4: VERIFY market data exists (should be guaranteed by MarketDataScannerService)
+      console.log(`📈 Step 4: VERIFYING historical market data for ${symbol} (should already be seeded)...`);
       const { data: recentData, error } = await supabase
         .from('market_data')
         .select('*')
@@ -245,9 +253,10 @@ export class EnhancedSignalAnalysisService {
       }
 
       if (!recentData || recentData.length < 10) {
-        const rejectionReason = `Insufficient market data (${recentData?.length || 0} records, need at least 10)`;
-        console.log(`⚠️ ${symbol}: ${rejectionReason}`);
-        await this.logger.logSignalRejected(symbol, rejectionReason, {
+        const rejectionReason = `CRITICAL: Still insufficient market data after seeding (${recentData?.length || 0} records, need at least 10)`;
+        console.error(`🚨 ${symbol}: ${rejectionReason}`);
+        console.error(`🚨 This should NOT happen after MarketDataScannerService.scanMarkets() was called!`);
+        await this.logger.logError(`Critical market data seeding failure for ${symbol}`, new Error(rejectionReason), {
           dataRecords: recentData?.length || 0,
           minimumRequired: 10,
           configuredCandleCount: config.support_candle_count
@@ -255,7 +264,7 @@ export class EnhancedSignalAnalysisService {
         return { signalGenerated: false, reason: rejectionReason };
       }
 
-      console.log(`📊 ${symbol}: Found ${recentData.length} market data records for analysis`);
+      console.log(`✅ ${symbol}: Confirmed ${recentData.length} market data records for analysis`);
 
       // Step 5: Convert market data to candle format
       console.log(`🔍 Step 5: Converting market data to candle format for ${symbol}...`);

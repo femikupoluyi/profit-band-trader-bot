@@ -4,6 +4,7 @@ import { BybitService } from '../../bybitService';
 import { MarketScanner } from '../marketScanner';
 import { MarketDataSeeder } from './MarketDataSeeder';
 import { TradingLogger } from './TradingLogger';
+import { supabase } from '@/integrations/supabase/client';
 
 export class MarketDataScannerService {
   private userId: string;
@@ -68,8 +69,8 @@ export class MarketDataScannerService {
     try {
       console.log(`\n🔍 CHECKING DATA FOR ${symbol}...`);
       
-      // Check current data count
-      const { count: existingCount, error } = await (globalThis as any).supabase
+      // Check current data count using proper supabase client
+      const { count: existingCount, error } = await supabase
         .from('market_data')
         .select('*', { count: 'exact', head: true })
         .eq('symbol', symbol);
@@ -86,22 +87,49 @@ export class MarketDataScannerService {
         const needed = minRequired - actualCount;
         console.log(`🌱 ${symbol}: SEEDING ${needed} additional records...`);
         
-        // Seed data with a buffer (150% of required to avoid frequent seeding)
-        const seedTarget = Math.max(minRequired * 1.5, 50);
-        await this.seeder.seedSymbolData(symbol, Math.ceil(seedTarget));
+        // Force seeding with sufficient data
+        const seedTarget = Math.max(minRequired + 20, 50); // Add buffer
+        console.log(`🔥 ${symbol}: FORCE SEEDING ${seedTarget} records to ensure sufficiency...`);
         
-        // Verify seeding was successful
-        const { count: verifyCount } = await (globalThis as any).supabase
-          .from('market_data')
-          .select('*', { count: 'exact', head: true })
-          .eq('symbol', symbol);
+        await this.seeder.seedSymbolData(symbol, seedTarget);
         
-        const finalCount = verifyCount || 0;
-        console.log(`✅ ${symbol}: Post-seed verification: ${finalCount} records`);
+        // Verify seeding was successful with retry logic
+        let retryCount = 0;
+        const maxRetries = 3;
+        let finalCount = 0;
+        
+        while (retryCount < maxRetries) {
+          const { count: verifyCount, error: verifyError } = await supabase
+            .from('market_data')
+            .select('*', { count: 'exact', head: true })
+            .eq('symbol', symbol);
+          
+          if (verifyError) {
+            console.error(`❌ Error verifying data for ${symbol}:`, verifyError);
+            throw verifyError;
+          }
+          
+          finalCount = verifyCount || 0;
+          console.log(`🔍 ${symbol}: Post-seed verification attempt ${retryCount + 1}: ${finalCount} records`);
+          
+          if (finalCount >= minRequired) {
+            console.log(`✅ ${symbol}: Successfully seeded sufficient data (${finalCount} >= ${minRequired})`);
+            break;
+          }
+          
+          retryCount++;
+          if (retryCount < maxRetries) {
+            console.log(`⚠️ ${symbol}: Retry ${retryCount} - Still insufficient data, seeding again...`);
+            await this.seeder.seedSymbolData(symbol, seedTarget);
+            // Small delay between retries
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
         
         if (finalCount < minRequired) {
-          console.error(`❌ ${symbol}: Still insufficient data after seeding (${finalCount} < ${minRequired})`);
-          throw new Error(`Failed to seed sufficient data for ${symbol}`);
+          const errorMsg = `CRITICAL: ${symbol} still has insufficient data after ${maxRetries} seeding attempts (${finalCount} < ${minRequired})`;
+          console.error(`🚨 ${errorMsg}`);
+          throw new Error(errorMsg);
         }
       } else {
         console.log(`✅ ${symbol}: Already has sufficient data (${actualCount} >= ${minRequired})`);
