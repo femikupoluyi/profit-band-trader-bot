@@ -25,10 +25,18 @@ export class MarketDataScannerService {
       console.log(`🎯 Target symbols: ${config.trading_pairs.join(', ')}`);
       console.log(`📊 Required data points for analysis: ${config.support_candle_count || 128}`);
 
-      // CRITICAL: Always ensure sufficient data before any analysis
-      await this.ensureSufficientDataForAllSymbols(config.trading_pairs, config.support_candle_count || 128);
+      // STEP 1: Force seed all symbols with sufficient data FIRST
+      console.log('\n🌱 STEP 1: FORCE SEEDING ALL SYMBOLS WITH HISTORICAL DATA...');
+      await this.seeder.seedInitialMarketData(config.trading_pairs, config.support_candle_count || 128);
+      
+      // STEP 2: Verify seeding worked for all symbols
+      console.log('\n🔍 STEP 2: VERIFYING SEEDED DATA FOR ALL SYMBOLS...');
+      for (const symbol of config.trading_pairs) {
+        await this.verifySymbolDataAfterSeeding(symbol, config.support_candle_count || 128);
+      }
 
-      // Perform regular market scanning to add fresh data
+      // STEP 3: Add fresh market data points
+      console.log('\n📊 STEP 3: ADDING FRESH MARKET DATA POINTS...');
       const scanner = new MarketScanner(this.userId, this.bybitService, config);
       await scanner.scanMarkets();
 
@@ -47,30 +55,12 @@ export class MarketDataScannerService {
     }
   }
 
-  private async ensureSufficientDataForAllSymbols(symbols: string[], minRequired: number): Promise<void> {
+  private async verifySymbolDataAfterSeeding(symbol: string, minRequired: number): Promise<void> {
     try {
-      console.log('\n🔍 ENSURING SUFFICIENT MARKET DATA FOR ALL SYMBOLS...');
-      console.log(`📊 Minimum required records per symbol: ${minRequired}`);
+      console.log(`\n🔍 VERIFYING DATA FOR ${symbol} AFTER SEEDING...`);
       
-      for (const symbol of symbols) {
-        await this.ensureSufficientDataForSymbol(symbol, minRequired);
-      }
-      
-      console.log('✅ ALL SYMBOLS DATA VERIFICATION COMPLETE');
-
-    } catch (error) {
-      console.error('❌ Error ensuring sufficient data:', error);
-      await this.logger.logError('Failed to ensure sufficient market data', error);
-      throw error; // Throw error to prevent analysis with insufficient data
-    }
-  }
-
-  private async ensureSufficientDataForSymbol(symbol: string, minRequired: number): Promise<void> {
-    try {
-      console.log(`\n🔍 CHECKING DATA FOR ${symbol}...`);
-      
-      // Check current data count using proper supabase client
-      const { count: existingCount, error } = await supabase
+      // Get current count
+      const { count: currentCount, error } = await supabase
         .from('market_data')
         .select('*', { count: 'exact', head: true })
         .eq('symbol', symbol);
@@ -80,63 +70,40 @@ export class MarketDataScannerService {
         throw error;
       }
 
-      const actualCount = existingCount || 0;
-      console.log(`📊 ${symbol}: Current records: ${actualCount}, Required: ${minRequired}`);
+      const actualCount = currentCount || 0;
+      console.log(`📊 ${symbol}: Current records after seeding: ${actualCount}, Required: ${minRequired}`);
 
       if (actualCount < minRequired) {
-        const needed = minRequired - actualCount;
-        console.log(`🌱 ${symbol}: SEEDING ${needed} additional records...`);
+        console.log(`🚨 ${symbol}: CRITICAL - Still insufficient data after seeding! Attempting emergency re-seed...`);
         
-        // Force seeding with sufficient data
-        const seedTarget = Math.max(minRequired + 20, 50); // Add buffer
-        console.log(`🔥 ${symbol}: FORCE SEEDING ${seedTarget} records to ensure sufficiency...`);
+        // Emergency re-seed with double the target
+        const emergencyTarget = minRequired * 2;
+        console.log(`🔥 ${symbol}: EMERGENCY SEEDING ${emergencyTarget} records...`);
+        await this.seeder.seedSymbolData(symbol, emergencyTarget);
         
-        await this.seeder.seedSymbolData(symbol, seedTarget);
+        // Verify emergency seeding
+        const { count: finalCount, error: finalError } = await supabase
+          .from('market_data')
+          .select('*', { count: 'exact', head: true })
+          .eq('symbol', symbol);
         
-        // Verify seeding was successful with retry logic
-        let retryCount = 0;
-        const maxRetries = 3;
-        let finalCount = 0;
-        
-        while (retryCount < maxRetries) {
-          const { count: verifyCount, error: verifyError } = await supabase
-            .from('market_data')
-            .select('*', { count: 'exact', head: true })
-            .eq('symbol', symbol);
-          
-          if (verifyError) {
-            console.error(`❌ Error verifying data for ${symbol}:`, verifyError);
-            throw verifyError;
-          }
-          
-          finalCount = verifyCount || 0;
-          console.log(`🔍 ${symbol}: Post-seed verification attempt ${retryCount + 1}: ${finalCount} records`);
-          
-          if (finalCount >= minRequired) {
-            console.log(`✅ ${symbol}: Successfully seeded sufficient data (${finalCount} >= ${minRequired})`);
-            break;
-          }
-          
-          retryCount++;
-          if (retryCount < maxRetries) {
-            console.log(`⚠️ ${symbol}: Retry ${retryCount} - Still insufficient data, seeding again...`);
-            await this.seeder.seedSymbolData(symbol, seedTarget);
-            // Small delay between retries
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
+        if (finalError) {
+          throw finalError;
         }
         
-        if (finalCount < minRequired) {
-          const errorMsg = `CRITICAL: ${symbol} still has insufficient data after ${maxRetries} seeding attempts (${finalCount} < ${minRequired})`;
-          console.error(`🚨 ${errorMsg}`);
-          throw new Error(errorMsg);
+        const finalActualCount = finalCount || 0;
+        console.log(`🔍 ${symbol}: Post-emergency seeding count: ${finalActualCount}`);
+        
+        if (finalActualCount < minRequired) {
+          throw new Error(`CRITICAL: ${symbol} still has insufficient data after emergency seeding (${finalActualCount} < ${minRequired})`);
         }
+        
+        console.log(`✅ ${symbol}: Emergency seeding successful!`);
       } else {
-        console.log(`✅ ${symbol}: Already has sufficient data (${actualCount} >= ${minRequired})`);
+        console.log(`✅ ${symbol}: Data verification passed (${actualCount} >= ${minRequired})`);
       }
-
     } catch (error) {
-      console.error(`❌ Error ensuring data for ${symbol}:`, error);
+      console.error(`❌ Error verifying data for ${symbol}:`, error);
       throw error;
     }
   }

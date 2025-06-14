@@ -48,6 +48,10 @@ export class EnhancedSignalAnalysisService {
       await this.marketDataScanner.scanMarkets(config);
       console.log('✅ STEP 1 COMPLETED: Market data verification and seeding done');
 
+      // STEP 2: Wait a moment for data to settle
+      console.log('\n⏳ STEP 2: Allowing data to settle...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
       // Get the selected trading logic with detailed logging
       console.log(`🧠 Fetching Trading Logic: ${config.trading_logic_type}`);
       const tradingLogic = TradingLogicFactory.getLogic(config.trading_logic_type);
@@ -237,29 +241,47 @@ export class EnhancedSignalAnalysisService {
       console.log(`💰 ${symbol}: Current market price: $${currentPrice.toFixed(6)}`);
       await this.logger.logMarketDataUpdate(symbol, currentPrice, 'bybit');
 
-      // Step 4: VERIFY market data exists (should be guaranteed by MarketDataScannerService)
-      console.log(`📈 Step 4: VERIFYING historical market data for ${symbol} (should already be seeded)...`);
-      const { data: recentData, error } = await supabase
-        .from('market_data')
-        .select('*')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false })
-        .limit(config.support_candle_count || 128);
+      // Step 4: VERIFY market data exists with multiple attempts
+      console.log(`📈 Step 4: VERIFYING historical market data for ${symbol}...`);
+      
+      let recentData = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts && (!recentData || recentData.length < 10)) {
+        attempts++;
+        console.log(`🔍 ${symbol}: Data verification attempt ${attempts}/${maxAttempts}...`);
+        
+        const { data, error } = await supabase
+          .from('market_data')
+          .select('*')
+          .eq('symbol', symbol)
+          .order('timestamp', { ascending: false })
+          .limit(config.support_candle_count || 128);
 
-      if (error) {
-        console.error(`❌ Database error fetching market data for ${symbol}:`, error);
-        await this.logger.logError(`Error fetching market data for ${symbol}`, error, { symbol });
-        return { signalGenerated: false, reason: 'Error fetching market data' };
+        if (error) {
+          console.error(`❌ Database error fetching market data for ${symbol}:`, error);
+          await this.logger.logError(`Error fetching market data for ${symbol}`, error, { symbol });
+          return { signalGenerated: false, reason: 'Error fetching market data' };
+        }
+
+        recentData = data;
+        console.log(`📊 ${symbol}: Attempt ${attempts} found ${recentData?.length || 0} records`);
+        
+        if (!recentData || recentData.length < 10) {
+          console.log(`⚠️ ${symbol}: Insufficient data on attempt ${attempts}, waiting and retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
 
       if (!recentData || recentData.length < 10) {
-        const rejectionReason = `CRITICAL: Still insufficient market data after seeding (${recentData?.length || 0} records, need at least 10)`;
+        const rejectionReason = `CRITICAL: Still insufficient market data after ${maxAttempts} attempts (${recentData?.length || 0} records, need at least 10)`;
         console.error(`🚨 ${symbol}: ${rejectionReason}`);
-        console.error(`🚨 This should NOT happen after MarketDataScannerService.scanMarkets() was called!`);
-        await this.logger.logError(`Critical market data seeding failure for ${symbol}`, new Error(rejectionReason), {
+        await this.logger.logError(`Critical market data verification failure for ${symbol}`, new Error(rejectionReason), {
           dataRecords: recentData?.length || 0,
           minimumRequired: 10,
-          configuredCandleCount: config.support_candle_count
+          configuredCandleCount: config.support_candle_count,
+          attempts: maxAttempts
         });
         return { signalGenerated: false, reason: rejectionReason };
       }
