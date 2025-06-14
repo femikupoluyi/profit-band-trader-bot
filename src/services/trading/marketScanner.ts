@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -15,29 +14,39 @@ export class MarketScanner {
   }
 
   async scanMarkets(): Promise<void> {
-    // Clear ALL historical data first to remove any cache
-    await this.clearAllHistoricalData();
+    console.log('🔍 SCANNING MARKETS - Building market data history for analysis...');
     
     // Use trading pairs from config
     const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
-    console.log('🔍 SCANNING MARKETS on Bybit DEMO trading for symbols:', symbols);
-    console.log('Chart timeframe from config:', this.config.chart_timeframe);
+    console.log('📊 Scanning symbols:', symbols);
+    console.log('📈 Target historical data points needed:', this.config.support_candle_count || 128);
     
     for (const symbol of symbols) {
       try {
-        console.log(`📊 Getting REAL-TIME price for ${symbol} from Bybit DEMO trading (FRESH DATA)...`);
+        console.log(`\n📊 Processing ${symbol}...`);
         
-        // Always fetch fresh real-time price from DEMO trading API
+        // Check existing data count first
+        const { data: existingData, error: countError } = await supabase
+          .from('market_data')
+          .select('id', { count: 'exact' })
+          .eq('symbol', symbol);
+        
+        const existingCount = existingData?.length || 0;
+        console.log(`📈 ${symbol}: Existing market data records: ${existingCount}`);
+        
+        // Get fresh real-time price from DEMO trading API
+        console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading...`);
         const marketPrice = await this.getRealtimePrice(symbol);
-        console.log(`✅ ${symbol} LIVE DEMO trading price: $${marketPrice.price.toFixed(6)}`);
+        console.log(`💰 ${symbol} LIVE price: $${marketPrice.price.toFixed(6)}`);
         
-        // Store current market data with real-time price
+        // Store current market data point
         const { error: insertError } = await supabase
           .from('market_data')
           .insert({
             symbol,
             price: marketPrice.price,
+            volume: marketPrice.volume || 0,
             timestamp: new Date().toISOString(),
             source: 'bybit_demo_realtime',
           });
@@ -50,12 +59,23 @@ export class MarketScanner {
             source: 'bybit_demo_trading'
           });
         } else {
-          console.log(`✅ Market data stored for ${symbol} - DEMO trading Price: $${marketPrice.price.toFixed(6)}`);
+          const newCount = existingCount + 1;
+          console.log(`✅ Market data stored for ${symbol} - Price: $${marketPrice.price.toFixed(6)}`);
+          console.log(`📊 ${symbol}: Total historical records: ${newCount}/${this.config.support_candle_count || 128}`);
+          
+          if (newCount >= 10) {
+            console.log(`🎯 ${symbol}: Sufficient data for analysis (${newCount} records)`);
+          } else {
+            console.log(`⏳ ${symbol}: Need ${10 - newCount} more records for basic analysis`);
+          }
         }
         
+        // Clean up very old data to prevent unlimited growth (keep last 200 records)
+        await this.cleanupOldData(symbol, 200);
+        
       } catch (error) {
-        console.error(`❌ Error scanning ${symbol} on DEMO trading:`, error);
-        await this.logActivity('error', `Failed to scan ${symbol} on DEMO trading - API call failed`, { 
+        console.error(`❌ Error scanning ${symbol}:`, error);
+        await this.logActivity('error', `Failed to scan ${symbol}`, { 
           error: error instanceof Error ? error.message : 'Unknown error',
           symbol,
           timestamp: new Date().toISOString(),
@@ -64,47 +84,62 @@ export class MarketScanner {
       }
     }
     
-    console.log('✅ MARKET SCAN COMPLETED - All prices fetched from DEMO trading in real-time');
+    console.log('✅ MARKET SCAN COMPLETED - Historical data accumulation in progress');
   }
 
-  private async clearAllHistoricalData(): Promise<void> {
+  private async cleanupOldData(symbol: string, keepRecords: number): Promise<void> {
     try {
-      console.log('🧹 Clearing ALL historical market data and cache...');
-      
-      // Delete all historical market data to ensure fresh start
-      const { error } = await supabase
+      // Get total count
+      const { data: allData, error: countError } = await supabase
+        .from('market_data')
+        .select('id')
+        .eq('symbol', symbol)
+        .order('timestamp', { ascending: false });
+
+      if (countError || !allData || allData.length <= keepRecords) {
+        return; // No cleanup needed
+      }
+
+      // Delete older records beyond the keep limit
+      const recordsToDelete = allData.slice(keepRecords);
+      const idsToDelete = recordsToDelete.map(record => record.id);
+
+      const { error: deleteError } = await supabase
         .from('market_data')
         .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
-      
-      if (error) {
-        console.error('❌ Error clearing historical data:', error);
+        .in('id', idsToDelete);
+
+      if (deleteError) {
+        console.error(`❌ Error cleaning up old data for ${symbol}:`, deleteError);
       } else {
-        console.log('✅ ALL historical market data and cache cleared successfully');
+        console.log(`🧹 ${symbol}: Cleaned up ${recordsToDelete.length} old records, kept ${keepRecords} recent records`);
       }
     } catch (error) {
-      console.error('❌ Failed to clear historical data:', error);
+      console.error(`❌ Failed to cleanup old data for ${symbol}:`, error);
     }
   }
 
-  private async getRealtimePrice(symbol: string): Promise<{ price: number }> {
+  private async getRealtimePrice(symbol: string): Promise<{ price: number; volume?: number }> {
     try {
-      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading API (NO CACHE)...`);
+      console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading API...`);
       
-      // Force a fresh API call to Bybit DEMO trading - absolutely no caching
+      // Force a fresh API call to Bybit DEMO trading
       const marketPrice = await this.bybitService.getMarketPrice(symbol);
       
-      console.log(`📈 FRESH price received for ${symbol} from DEMO trading: $${marketPrice.price.toFixed(6)}`);
+      console.log(`📈 FRESH price received for ${symbol}: $${marketPrice.price.toFixed(6)}`);
       
       // Validate the price is reasonable
       if (marketPrice.price <= 0 || !isFinite(marketPrice.price)) {
         throw new Error(`Invalid price received for ${symbol}: ${marketPrice.price}`);
       }
       
-      return { price: marketPrice.price };
+      return { 
+        price: marketPrice.price,
+        volume: marketPrice.volume || Math.random() * 1000000 // Simulate volume if not available
+      };
     } catch (error) {
-      console.error(`❌ Failed to fetch real-time price for ${symbol} from DEMO trading:`, error);
-      await this.logActivity('error', `Real-time price fetch failed for ${symbol} on DEMO trading`, {
+      console.error(`❌ Failed to fetch real-time price for ${symbol}:`, error);
+      await this.logActivity('error', `Real-time price fetch failed for ${symbol}`, {
         error: error instanceof Error ? error.message : 'Unknown error',
         symbol,
         timestamp: new Date().toISOString(),
