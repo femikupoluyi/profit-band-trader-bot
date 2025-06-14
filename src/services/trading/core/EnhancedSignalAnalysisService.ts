@@ -1,7 +1,7 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { InstrumentCache } from './InstrumentCache';
+import { BybitInstrumentService } from './BybitInstrumentService';
 import { TrendAnalysisService } from './TrendAnalysisService';
 import { SupportResistanceService } from './SupportResistanceService';
 import { MarketDataScannerService } from './MarketDataScannerService';
@@ -113,7 +113,7 @@ export class EnhancedSignalAnalysisService {
   private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
     try {
       console.log(`\n📈 Analyzing ${symbol}...`);
-      const instrumentInfo = await InstrumentCache.getInstrumentInfo(symbol, this.bybitService);
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
       if (!instrumentInfo) {
         throw new Error(`Could not fetch instrument info for ${symbol}`);
       }
@@ -183,7 +183,7 @@ export class EnhancedSignalAnalysisService {
       }
 
       const currentPrice = await this.bybitService.getMarketPrice(symbol);
-      const instrumentInfo = await InstrumentCache.getInstrumentInfo(symbol, this.bybitService);
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
 
       if (!instrumentInfo) {
         throw new Error(`Could not fetch instrument info for ${symbol}`);
@@ -240,7 +240,7 @@ export class EnhancedSignalAnalysisService {
       }
 
       const currentPrice = await this.bybitService.getMarketPrice(symbol);
-      const instrumentInfo = await InstrumentCache.getInstrumentInfo(symbol, this.bybitService);
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
 
       if (!instrumentInfo) {
         throw new Error(`Could not fetch instrument info for ${symbol}`);
