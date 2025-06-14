@@ -17,7 +17,7 @@ export class TradeValidator {
       return false;
     }
 
-    // Use BybitInstrumentService for validation instead of config values
+    // Use BybitInstrumentService for validation
     const isValidOrder = BybitInstrumentService.validateOrder(symbol, entryPrice, quantity, instrumentInfo);
     if (!isValidOrder) {
       console.error(`❌ Order validation failed for ${symbol}`);
@@ -41,8 +41,8 @@ export class TradeValidator {
     // Get instrument info for proper quantity calculation
     const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
     if (!instrumentInfo) {
-      console.error(`❌ Could not get instrument info for ${symbol}, using fallback`);
-      return this.calculateQuantityFallback(symbol, orderAmount, entryPrice, config);
+      console.error(`❌ Could not get instrument info for ${symbol}, calculation will fail`);
+      throw new Error(`Could not get instrument info for ${symbol}`);
     }
 
     // Calculate raw quantity
@@ -52,39 +52,26 @@ export class TradeValidator {
     const basePrecision = parseFloat(instrumentInfo.basePrecision);
     const adjustedQuantity = Math.floor(rawQuantity / basePrecision) * basePrecision;
     
+    // Format using instrument decimals
+    const finalQuantity = parseFloat(BybitInstrumentService.formatQuantity(symbol, adjustedQuantity, instrumentInfo));
+    
     console.log(`📊 Quantity calculation for ${symbol}:`, {
       orderAmount: orderAmount.toFixed(2),
-      entryPrice: entryPrice.toFixed(instrumentInfo.priceDecimals),
-      rawQuantity: rawQuantity.toFixed(6),
+      entryPrice: BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo),
+      rawQuantity: rawQuantity.toFixed(8),
       basePrecision: basePrecision,
-      adjustedQuantity: parseFloat(adjustedQuantity.toFixed(instrumentInfo.quantityDecimals))
+      adjustedQuantity: BybitInstrumentService.formatQuantity(symbol, adjustedQuantity, instrumentInfo),
+      finalQuantity: BybitInstrumentService.formatQuantity(symbol, finalQuantity, instrumentInfo)
     });
     
-    return parseFloat(adjustedQuantity.toFixed(instrumentInfo.quantityDecimals));
-  }
-
-  private static calculateQuantityFallback(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfigData): number {
-    // Fallback calculation using config
-    const rawQuantity = orderAmount / entryPrice;
-    const increment = config.quantity_increment_per_symbol?.[symbol] || 0.0001;
-    const adjustedQuantity = Math.floor(rawQuantity / increment) * increment;
-    
-    console.log(`📊 Fallback quantity calculation for ${symbol}:`, {
-      orderAmount: orderAmount.toFixed(2),
-      entryPrice: entryPrice.toFixed(6),
-      rawQuantity: rawQuantity.toFixed(6),
-      increment: increment,
-      adjustedQuantity: adjustedQuantity.toFixed(6)
-    });
-    
-    return adjustedQuantity;
+    return finalQuantity;
   }
 
   static async validateQuantityPrecision(symbol: string, quantity: number): Promise<boolean> {
     const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
     if (!instrumentInfo) {
-      console.warn(`⚠️ Could not validate quantity precision for ${symbol}, allowing`);
-      return true;
+      console.warn(`⚠️ Could not validate quantity precision for ${symbol}, rejecting`);
+      return false;
     }
 
     const basePrecision = parseFloat(instrumentInfo.basePrecision);

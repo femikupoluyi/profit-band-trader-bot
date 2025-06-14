@@ -1,7 +1,6 @@
 
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitInstrumentService, BybitInstrumentInfo } from './BybitInstrumentService';
-import { InstrumentCache } from './InstrumentCache';
 
 export class ConfigurableFormatter {
   private static config: TradingConfigData | null = null;
@@ -21,7 +20,7 @@ export class ConfigurableFormatter {
   }
 
   /**
-   * Format price using dynamic Bybit instrument info
+   * Format price using BybitInstrumentService ONLY
    */
   static async formatPrice(symbol: string, price: number): Promise<string> {
     try {
@@ -30,29 +29,21 @@ export class ConfigurableFormatter {
         return '0.00';
       }
 
-      // Get instrument info from Bybit
+      // ALWAYS get instrument info from Bybit - no fallbacks
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-      if (instrumentInfo) {
-        return BybitInstrumentService.formatPrice(symbol, price, instrumentInfo);
+      if (!instrumentInfo) {
+        throw new Error(`Could not get instrument info for ${symbol}`);
       }
 
-      // Fallback to config or defaults if instrument info unavailable
-      if (this.config?.price_decimals_per_symbol?.[symbol] !== undefined) {
-        const customDecimals = this.config.price_decimals_per_symbol[symbol];
-        if (typeof customDecimals === 'number') {
-          return price.toFixed(Math.max(0, Math.min(8, customDecimals)));
-        }
-      }
-
-      return this.formatPriceWithDefaults(symbol, price);
+      return BybitInstrumentService.formatPrice(symbol, price, instrumentInfo);
     } catch (error) {
       console.error(`Error formatting price for ${symbol}:`, error);
-      return this.formatPriceWithDefaults(symbol, price);
+      throw error;
     }
   }
 
   /**
-   * Format quantity using dynamic Bybit instrument info
+   * Format quantity using BybitInstrumentService ONLY
    */
   static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
@@ -61,24 +52,16 @@ export class ConfigurableFormatter {
         return '0.0000';
       }
 
-      // Get instrument info from Bybit
+      // ALWAYS get instrument info from Bybit - no fallbacks
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-      if (instrumentInfo) {
-        return BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
+      if (!instrumentInfo) {
+        throw new Error(`Could not get instrument info for ${symbol}`);
       }
 
-      // Fallback to config or defaults if instrument info unavailable
-      if (this.config?.quantity_decimals_per_symbol?.[symbol] !== undefined) {
-        const customDecimals = this.config.quantity_decimals_per_symbol[symbol];
-        if (typeof customDecimals === 'number') {
-          return quantity.toFixed(Math.max(0, Math.min(8, customDecimals)));
-        }
-      }
-
-      return this.formatQuantityWithDefaults(symbol, quantity);
+      return BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
     } catch (error) {
       console.error(`Error formatting quantity for ${symbol}:`, error);
-      return this.formatQuantityWithDefaults(symbol, quantity);
+      throw error;
     }
   }
 
@@ -88,13 +71,13 @@ export class ConfigurableFormatter {
   static formatPriceSync(symbol: string, price: number): string {
     try {
       const cached = this.instrumentCache.get(symbol);
-      if (cached) {
-        return BybitInstrumentService.formatPrice(symbol, price, cached);
+      if (!cached) {
+        throw new Error(`No cached instrument info for ${symbol} - use async version`);
       }
-      return this.formatPriceWithDefaults(symbol, price);
+      return BybitInstrumentService.formatPrice(symbol, price, cached);
     } catch (error) {
       console.error(`Error in sync price formatting for ${symbol}:`, error);
-      return this.formatPriceWithDefaults(symbol, price);
+      throw error;
     }
   }
 
@@ -104,29 +87,27 @@ export class ConfigurableFormatter {
   static formatQuantitySync(symbol: string, quantity: number): string {
     try {
       const cached = this.instrumentCache.get(symbol);
-      if (cached) {
-        return BybitInstrumentService.formatQuantity(symbol, quantity, cached);
+      if (!cached) {
+        throw new Error(`No cached instrument info for ${symbol} - use async version`);
       }
-      return this.formatQuantityWithDefaults(symbol, quantity);
+      return BybitInstrumentService.formatQuantity(symbol, quantity, cached);
     } catch (error) {
       console.error(`Error in sync quantity formatting for ${symbol}:`, error);
-      return this.formatQuantityWithDefaults(symbol, quantity);
+      throw error;
     }
   }
 
   /**
-   * Validate order using Bybit instrument requirements
+   * Validate order using Bybit instrument requirements ONLY
    */
   static async validateOrder(symbol: string, price: number, quantity: number): Promise<boolean> {
     try {
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-      if (instrumentInfo) {
-        return BybitInstrumentService.validateOrder(symbol, price, quantity, instrumentInfo);
+      if (!instrumentInfo) {
+        throw new Error(`Could not get instrument info for ${symbol}`);
       }
 
-      // Fallback validation
-      const orderValue = price * quantity;
-      return orderValue >= 10; // Basic minimum
+      return BybitInstrumentService.validateOrder(symbol, price, quantity, instrumentInfo);
     } catch (error) {
       console.error(`Error validating order for ${symbol}:`, error);
       return false;
@@ -142,6 +123,7 @@ export class ConfigurableFormatter {
       const instrumentMap = await BybitInstrumentService.getMultipleInstrumentInfo(symbols);
       
       // Cache the results locally
+      this.instrumentCache.clear(); // Clear old cache first
       for (const [symbol, info] of instrumentMap) {
         this.instrumentCache.set(symbol, info);
       }
@@ -149,50 +131,27 @@ export class ConfigurableFormatter {
       console.log(`✅ Preloaded instrument info for ${instrumentMap.size} symbols`);
     } catch (error) {
       console.error('Error preloading instrument info:', error);
+      throw error;
     }
   }
 
-  private static formatPriceWithDefaults(symbol: string, price: number): string {
-    const defaults: Record<string, number> = {
-      'BTCUSDT': 2, 'ETHUSDT': 2, 'BNBUSDT': 2, 'LTCUSDT': 2,
-      'SOLUSDT': 4, 'ADAUSDT': 6, 'XRPUSDT': 6, 'DOGEUSDT': 6,
-      'MATICUSDT': 6, 'FETUSDT': 6, 'POLUSDT': 4, 'XLMUSDT': 3
-    };
-
-    const decimals = defaults[symbol] || 4;
-    return price.toFixed(decimals);
-  }
-
-  private static formatQuantityWithDefaults(symbol: string, quantity: number): string {
-    const defaults: Record<string, number> = {
-      'BTCUSDT': 5, 'ETHUSDT': 4, 'SOLUSDT': 2, 'BNBUSDT': 3,
-      'ADAUSDT': 0, 'XRPUSDT': 1, 'LTCUSDT': 2, 'POLUSDT': 0,
-      'FETUSDT': 0, 'XLMUSDT': 0, 'DOGEUSDT': 0, 'MATICUSDT': 0
-    };
-
-    const decimals = defaults[symbol] || 4;
-    return quantity.toFixed(decimals);
-  }
-
   /**
-   * Clear all caches including trading transaction cache
+   * Clear all caches
    */
   static clearCache(): void {
     this.instrumentCache.clear();
     BybitInstrumentService.clearCache();
-    InstrumentCache.clearAllTradingCache();
-    console.log('🧹 Cleared all ConfigurableFormatter and trading transaction caches');
+    console.log('🧹 Cleared all ConfigurableFormatter caches');
   }
 
   /**
-   * Clear all trading transaction cache data (comprehensive clear)
+   * Clear all trading transaction cache data
    */
   static clearAllTradingCache(): void {
     this.instrumentCache.clear();
     this.config = null;
     this.activePairs = [];
     BybitInstrumentService.clearCache();
-    InstrumentCache.clearAllTradingCache();
-    console.log('🧹 Cleared ALL trading transaction cache data from ConfigurableFormatter');
+    console.log('🧹 Cleared ALL trading cache data from ConfigurableFormatter');
   }
 }

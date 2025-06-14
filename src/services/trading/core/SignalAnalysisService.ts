@@ -5,6 +5,7 @@ import { TradingConfigData } from '@/components/trading/config/useTradingConfig'
 import { TradingLogger } from './TradingLogger';
 import { TradeValidator } from './TradeValidator';
 import { TradingLogicFactory } from './TradingLogicFactory';
+import { BybitInstrumentService } from './BybitInstrumentService';
 
 export class SignalAnalysisService {
   private userId: string;
@@ -107,6 +108,13 @@ export class SignalAnalysisService {
       console.log(`\n🔍 ===== DETAILED ANALYSIS FOR ${symbol} =====`);
       await this.logger.logSystemInfo(`Starting detailed analysis for ${symbol}`);
 
+      // Get instrument info FIRST for consistent formatting throughout
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+      if (!instrumentInfo) {
+        console.error(`❌ Could not get instrument info for ${symbol}`);
+        return { signalGenerated: false, reason: 'Could not get instrument info' };
+      }
+
       // Step 1: Check existing signals and positions
       console.log(`📋 Step 1: Checking existing positions and signals for ${symbol}...`);
       const { data: existingSignals, error: signalsError } = await supabase
@@ -149,7 +157,7 @@ export class SignalAnalysisService {
       const marketData = await this.bybitService.getMarketPrice(symbol);
       const currentPrice = marketData.price;
       
-      console.log(`💰 ${symbol}: Current market price: $${currentPrice.toFixed(6)}`);
+      console.log(`💰 ${symbol}: Current market price: ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)}`);
 
       // Step 3: Determine if this is a new position or averaging down
       const isAveragingDown = activeTrades && activeTrades.length > 0;
@@ -158,7 +166,7 @@ export class SignalAnalysisService {
       if (isAveragingDown) {
         // Averaging down logic
         const lastBoughtPrice = Math.max(...activeTrades.map(t => parseFloat(t.price.toString())));
-        console.log(`📊 ${symbol}: Last bought price: $${lastBoughtPrice.toFixed(6)}`);
+        console.log(`📊 ${symbol}: Last bought price: ${BybitInstrumentService.formatPrice(symbol, lastBoughtPrice, instrumentInfo)}`);
         
         // Check if current price is within averaging bounds relative to last bought price
         const priceChangePercent = ((currentPrice - lastBoughtPrice) / lastBoughtPrice) * 100;
@@ -166,8 +174,8 @@ export class SignalAnalysisService {
         const upperBound = config.support_upper_bound_percent;
         
         console.log(`📐 ${symbol}: Averaging down analysis:
-          - Current Price: $${currentPrice.toFixed(6)}
-          - Last Bought Price: $${lastBoughtPrice.toFixed(6)}
+          - Current Price: ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)}
+          - Last Bought Price: ${BybitInstrumentService.formatPrice(symbol, lastBoughtPrice, instrumentInfo)}
           - Price Change: ${priceChangePercent.toFixed(2)}%
           - Allowed Range: ${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%
           - In Range: ${priceChangePercent >= lowerBound && priceChangePercent <= upperBound ? 'YES' : 'NO'}`);
@@ -180,9 +188,10 @@ export class SignalAnalysisService {
 
         // Place limit order below current market price for averaging down
         const entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
-        console.log(`🎯 ${symbol}: Averaging down entry price: $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% below current price)`);
+        const formattedEntryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
+        console.log(`🎯 ${symbol}: Averaging down entry price: ${BybitInstrumentService.formatPrice(symbol, formattedEntryPrice, instrumentInfo)} (${config.entry_offset_percent}% below current price)`);
         
-        return await this.createLimitBuySignal(symbol, entryPrice, { price: currentPrice, strength: 0.8, touches: 1 }, config, true);
+        return await this.createLimitBuySignal(symbol, formattedEntryPrice, { price: currentPrice, strength: 0.8, touches: 1 }, config, true, instrumentInfo);
 
       } else {
         // New position logic - analyze support levels
@@ -228,13 +237,14 @@ export class SignalAnalysisService {
         }
 
         const bestSupport = supportLevels[0];
-        console.log(`📊 ${symbol}: Best support level: $${bestSupport.price.toFixed(6)} (strength: ${bestSupport.strength.toFixed(3)})`);
+        console.log(`📊 ${symbol}: Best support level: ${BybitInstrumentService.formatPrice(symbol, bestSupport.price, instrumentInfo)} (strength: ${bestSupport.strength.toFixed(3)})`);
 
         // For new positions, place limit order above support level
         const entryPrice = bestSupport.price * (1 + config.entry_offset_percent / 100);
-        console.log(`🎯 ${symbol}: New position entry price: $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% above support)`);
+        const formattedEntryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
+        console.log(`🎯 ${symbol}: New position entry price: ${BybitInstrumentService.formatPrice(symbol, formattedEntryPrice, instrumentInfo)} (${config.entry_offset_percent}% above support)`);
         
-        return await this.createLimitBuySignal(symbol, entryPrice, bestSupport, config, false);
+        return await this.createLimitBuySignal(symbol, formattedEntryPrice, bestSupport, config, false, instrumentInfo);
       }
 
     } catch (error) {
@@ -244,7 +254,7 @@ export class SignalAnalysisService {
     }
   }
 
-  private async createLimitBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData, isAveragingDown: boolean = false): Promise<{ signalGenerated: boolean; reason?: string }> {
+  private async createLimitBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData, isAveragingDown: boolean = false, instrumentInfo: any): Promise<{ signalGenerated: boolean; reason?: string }> {
     try {
       console.log(`📝 Creating LIMIT buy signal for ${symbol}...`);
       
@@ -254,8 +264,8 @@ export class SignalAnalysisService {
       
       console.log(`🔧 ${symbol}: Trade parameter validation:
         - Max Order Amount: $${config.max_order_amount_usd}
-        - Entry Price: $${entryPrice.toFixed(6)}
-        - Calculated Quantity: ${testQuantity}
+        - Entry Price: ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)}
+        - Calculated Quantity: ${BybitInstrumentService.formatQuantity(symbol, testQuantity, instrumentInfo)}
         - Order Value: $${orderValue.toFixed(2)}`);
       
       const isValidTrade = await TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config);
@@ -267,11 +277,14 @@ export class SignalAnalysisService {
 
       const confidence = Math.min(0.95, supportLevel.strength || 0.8);
       const orderType = isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION';
-      const reasoning = `${orderType} LIMIT Buy: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% ${isAveragingDown ? 'below current price' : 'above support $' + supportLevel.price.toFixed(6)}). Take profit: ${config.take_profit_percent}%`;
+      const supportPriceText = isAveragingDown ? 
+        'below current price' : 
+        `above support ${BybitInstrumentService.formatPrice(symbol, supportLevel.price, instrumentInfo)}`;
+      const reasoning = `${orderType} LIMIT Buy: Entry at ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)} (${config.entry_offset_percent}% ${supportPriceText}). Take profit: ${config.take_profit_percent}%`;
 
       console.log(`📝 ${symbol}: LIMIT signal details:
         - Order Type: ${orderType} LIMIT
-        - Entry Price: $${entryPrice.toFixed(6)}
+        - Entry Price: ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)}
         - Take Profit: ${config.take_profit_percent}%
         - Confidence: ${confidence.toFixed(3)}
         - Reasoning: ${reasoning}`);
@@ -298,7 +311,7 @@ export class SignalAnalysisService {
       console.log(`✅ LIMIT buy signal created successfully for ${symbol}:
         - Signal ID: ${signal.id}
         - Order Type: ${orderType} LIMIT
-        - Entry Price: $${entryPrice.toFixed(6)}
+        - Entry Price: ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)}
         - Take Profit: ${config.take_profit_percent}%
         - Confidence: ${confidence.toFixed(3)}`);
       

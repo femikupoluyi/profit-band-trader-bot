@@ -69,6 +69,13 @@ export class EnhancedSignalAnalysisService {
     try {
       console.log(`🔍 Starting enhanced analysis for ${symbol}`);
 
+      // Get instrument info FIRST for consistent formatting
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+      if (!instrumentInfo) {
+        console.error(`❌ Could not get instrument info for ${symbol}`);
+        return null;
+      }
+
       // Check existing positions
       const { data: activeTrades } = await supabase
         .from('trades')
@@ -102,7 +109,7 @@ export class EnhancedSignalAnalysisService {
       const currentPrice = marketPrice.price;
       const isAveragingDown = activeTrades && activeTrades.length > 0;
 
-      console.log(`📊 ${symbol}: Current price: $${currentPrice.toFixed(6)} - ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} scenario`);
+      console.log(`📊 ${symbol}: Current price: ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)} - ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} scenario`);
 
       let entryPrice: number;
       let reasoning: string;
@@ -126,7 +133,7 @@ export class EnhancedSignalAnalysisService {
         // Place limit order below current price for averaging down
         entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
         confidence = 0.7; // Lower confidence for averaging down
-        reasoning = `AVERAGING DOWN: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% below current price $${currentPrice.toFixed(6)}). Last bought: $${lastBoughtPrice.toFixed(6)}`;
+        reasoning = `AVERAGING DOWN: Entry at ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)} (${config.entry_offset_percent}% below current price ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)}). Last bought: ${BybitInstrumentService.formatPrice(symbol, lastBoughtPrice, instrumentInfo)}`;
 
       } else {
         // New position logic - ensure sufficient data
@@ -165,16 +172,13 @@ export class EnhancedSignalAnalysisService {
         const volumeConfidence = Math.min(supportData.currentSupport.volume / 1000000, 1.0);
         confidence = Math.min(0.95, 0.6 + (volumeConfidence * 0.3)); // Base 0.6 + volume bonus up to 0.3
         
-        reasoning = `NEW POSITION: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% above support $${supportPrice.toFixed(6)})`;
+        reasoning = `NEW POSITION: Entry at ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)} (${config.entry_offset_percent}% above support ${BybitInstrumentService.formatPrice(symbol, supportPrice, instrumentInfo)})`;
       }
 
-      // Get instrument info for proper formatting
-      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-      if (instrumentInfo) {
-        entryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
-      }
+      // Format entry price using instrument precision
+      entryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
 
-      // Calculate quantity
+      // Calculate quantity using proper precision
       const quantity = await TradeValidator.calculateQuantity(
         symbol,
         config.max_order_amount_usd || 100,
@@ -192,8 +196,8 @@ export class EnhancedSignalAnalysisService {
       const orderValue = quantity * entryPrice;
 
       console.log(`✅ Generated ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} signal for ${symbol}:`, {
-        entryPrice: entryPrice.toFixed(instrumentInfo?.priceDecimals || 6),
-        quantity: quantity.toFixed(instrumentInfo?.quantityDecimals || 6),
+        entryPrice: BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo),
+        quantity: BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo),
         orderValue: orderValue.toFixed(2),
         confidence
       });
@@ -217,6 +221,12 @@ export class EnhancedSignalAnalysisService {
 
   private async storeSignal(signal: SignalAnalysisResult, config: TradingConfigData): Promise<void> {
     try {
+      // Get instrument info for consistent formatting in logs
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(signal.symbol);
+      const formattedPrice = instrumentInfo ? 
+        BybitInstrumentService.formatPrice(signal.symbol, signal.entryPrice, instrumentInfo) : 
+        signal.entryPrice.toFixed(6);
+
       const { error } = await supabase
         .from('trading_signals')
         .insert({
@@ -234,7 +244,7 @@ export class EnhancedSignalAnalysisService {
         throw error;
       }
 
-      console.log(`✅ Signal stored for ${signal.symbol}: ${signal.action} at $${signal.entryPrice.toFixed(6)} ${signal.isAveragingDown ? '(AVERAGING DOWN)' : '(NEW POSITION)'}`);
+      console.log(`✅ Signal stored for ${signal.symbol}: ${signal.action} at ${formattedPrice} ${signal.isAveragingDown ? '(AVERAGING DOWN)' : '(NEW POSITION)'}`);
     } catch (error) {
       console.error('Error storing signal in database:', error);
       throw error;
