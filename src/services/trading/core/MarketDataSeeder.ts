@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -15,10 +14,11 @@ export class MarketDataSeeder {
   }
 
   async seedInitialMarketData(symbols: string[], targetRecords: number = 50): Promise<void> {
-    console.log(`🌱 SEEDING INITIAL MARKET DATA for ${symbols.length} symbols...`);
+    console.log(`🌱 FAST SEEDING INITIAL MARKET DATA for ${symbols.length} symbols...`);
     console.log(`🎯 Target records per symbol: ${targetRecords}`);
 
-    for (const symbol of symbols) {
+    // Process symbols in parallel for faster initialization
+    const seedingPromises = symbols.map(async (symbol) => {
       try {
         console.log(`\n🔄 Processing ${symbol}...`);
         
@@ -32,8 +32,8 @@ export class MarketDataSeeder {
         console.log(`📊 ${symbol}: Current records: ${currentCount}, Target: ${targetRecords}`);
         
         if (currentCount < targetRecords) {
-          console.log(`🌱 ${symbol}: Seeding ${targetRecords} records...`);
-          await this.seedSymbolData(symbol, targetRecords);
+          console.log(`🌱 ${symbol}: Fast seeding ${targetRecords} records...`);
+          await this.seedSymbolDataFast(symbol, targetRecords);
         } else {
           console.log(`✅ ${symbol}: Already has sufficient data (${currentCount} >= ${targetRecords})`);
         }
@@ -41,46 +41,53 @@ export class MarketDataSeeder {
         console.error(`❌ Error processing ${symbol}:`, error);
         // Continue with other symbols even if one fails
       }
-    }
+    });
 
-    console.log('✅ MARKET DATA SEEDING COMPLETED');
+    // Wait for all symbols to complete
+    await Promise.allSettled(seedingPromises);
+    console.log('✅ FAST MARKET DATA SEEDING COMPLETED');
   }
 
-  async seedSymbolData(symbol: string, targetRecords: number): Promise<void> {
+  async seedSymbolDataFast(symbol: string, targetRecords: number): Promise<void> {
     try {
-      console.log(`\n🌱 SEEDING DATA FOR ${symbol}...`);
+      console.log(`\n🚀 FAST SEEDING DATA FOR ${symbol}...`);
       console.log(`🎯 Target: ${targetRecords} records`);
 
-      // Clear any existing data for this symbol to avoid confusion
-      console.log(`🧹 ${symbol}: Clearing existing data to ensure clean seeding...`);
-      const { error: deleteError } = await supabase
+      // DON'T clear existing data to avoid losing already seeded records
+      // Instead, check how many more records we need
+      const { count: existingCount } = await supabase
         .from('market_data')
-        .delete()
+        .select('*', { count: 'exact', head: true })
         .eq('symbol', symbol);
       
-      if (deleteError) {
-        console.error(`⚠️ ${symbol}: Could not clear existing data:`, deleteError);
-        // Continue anyway
+      const currentCount = existingCount || 0;
+      const recordsNeeded = Math.max(0, targetRecords - currentCount);
+      
+      if (recordsNeeded <= 0) {
+        console.log(`✅ ${symbol}: Already has sufficient data (${currentCount})`);
+        return;
       }
+
+      console.log(`📊 ${symbol}: Need ${recordsNeeded} more records (have ${currentCount})`);
 
       // Get current market price as base for historical data
       const currentMarketData = await this.bybitService.getMarketPrice(symbol);
       const basePrice = currentMarketData.price;
       console.log(`💰 ${symbol}: Base price for seeding: $${basePrice.toFixed(6)}`);
 
-      // Generate historical data points
+      // Generate only the needed historical data points
       const seedData = [];
       const now = Date.now();
       
       // Generate data going backwards in time (5-minute intervals)
-      for (let i = 0; i < targetRecords; i++) {
-        const minutesBack = (targetRecords - i) * 5;
+      for (let i = 0; i < recordsNeeded; i++) {
+        const minutesBack = (recordsNeeded - i + currentCount) * 5;
         const timestamp = new Date(now - (minutesBack * 60 * 1000));
         
         // Create realistic price variations (random walk)
         const volatility = 0.01; // 1% max variation per step
         const randomFactor = (Math.random() - 0.5) * 2;
-        const priceVariation = 1 + (randomFactor * volatility * (i / targetRecords));
+        const priceVariation = 1 + (randomFactor * volatility * (i / recordsNeeded));
         const historicalPrice = basePrice * priceVariation;
         
         // Ensure price is positive and reasonable (within 15% of base)
@@ -107,8 +114,8 @@ export class MarketDataSeeder {
       console.log(`📝 ${symbol}: Generated ${seedData.length} historical data points`);
       console.log(`📊 ${symbol}: Price range: $${Math.min(...seedData.map(d => d.price)).toFixed(6)} - $${Math.max(...seedData.map(d => d.price)).toFixed(6)}`);
 
-      // Insert data in smaller batches to avoid conflicts
-      const batchSize = 5;
+      // Insert data in larger batches for better performance
+      const batchSize = 25; // Increased from 5 for faster insertion
       let insertedCount = 0;
       
       for (let i = 0; i < seedData.length; i += batchSize) {
@@ -140,19 +147,21 @@ export class MarketDataSeeder {
           console.log(`📊 ${symbol}: Seeded ${insertedCount}/${seedData.length} records (${progress}%)`);
         }
 
-        // Small delay between batches
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Minimal delay between batches - reduced from 100ms to 10ms
+        if (i + batchSize < seedData.length) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
       }
 
-      // Verify final count
+      // Quick final count verification
       const { count: finalCount } = await supabase
         .from('market_data')
         .select('*', { count: 'exact', head: true })
         .eq('symbol', symbol);
 
-      console.log(`✅ ${symbol}: Seeding completed. Final count: ${finalCount || 0}, Target was: ${targetRecords}`);
+      console.log(`✅ ${symbol}: Fast seeding completed. Final count: ${finalCount || 0}, Target was: ${targetRecords}`);
 
-      await this.logger.logSuccess(`Market data seeded for ${symbol}`, {
+      await this.logger.logSuccess(`Fast market data seeded for ${symbol}`, {
         symbol,
         recordsSeeded: insertedCount,
         finalCount: finalCount || 0,
@@ -161,9 +170,15 @@ export class MarketDataSeeder {
       });
 
     } catch (error) {
-      console.error(`❌ Error seeding data for ${symbol}:`, error);
-      await this.logger.logError(`Failed to seed market data for ${symbol}`, error, { symbol });
+      console.error(`❌ Error fast seeding data for ${symbol}:`, error);
+      await this.logger.logError(`Failed to fast seed market data for ${symbol}`, error, { symbol });
       throw error;
     }
+  }
+
+  // Keep the old method for compatibility but mark as deprecated
+  async seedSymbolData(symbol: string, targetRecords: number): Promise<void> {
+    console.log(`⚠️ Using deprecated seedSymbolData, switching to fast seeding...`);
+    return this.seedSymbolDataFast(symbol, targetRecords);
   }
 }

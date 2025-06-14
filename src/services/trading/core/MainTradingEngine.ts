@@ -97,12 +97,27 @@ export class MainTradingEngine {
         } : null
       });
 
-      // Perform startup position sync to fix any discrepancies
-      console.log('🔄 Performing startup position synchronization...');
-      await this.positionSyncService.performStartupSync();
+      // FAST startup position sync - reduced scope
+      console.log('🔄 Performing quick startup position synchronization...');
+      try {
+        await Promise.race([
+          this.positionSyncService.performStartupSync(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 10000))
+        ]);
+      } catch (error) {
+        console.warn('⚠️ Startup sync took too long or failed, continuing anyway:', error);
+      }
 
-      // Perform startup reconciliation
-      await this.reconciliationService.performStartupReconciliation();
+      // FAST startup reconciliation - reduced scope
+      console.log('🔄 Performing quick startup reconciliation...');
+      try {
+        await Promise.race([
+          this.reconciliationService.performStartupReconciliation(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Reconciliation timeout')), 10000))
+        ]);
+      } catch (error) {
+        console.warn('⚠️ Startup reconciliation took too long or failed, continuing anyway:', error);
+      }
 
       console.log('✅ Enhanced MainTradingEngine initialized successfully');
       await this.logger.logSuccess('Enhanced MainTradingEngine initialized successfully');
@@ -193,15 +208,22 @@ export class MainTradingEngine {
       
       await this.logger.logCycleStart(Date.now(), this.config);
       
-      // 1. Sync positions with exchange first
-      console.log('\n📊 STEP 1: Position Synchronization');
-      await this.positionSyncService.syncAllPositionsWithExchange();
+      // 1. Quick sync positions with exchange first
+      console.log('\n📊 STEP 1: Quick Position Synchronization');
+      try {
+        await Promise.race([
+          this.positionSyncService.syncAllPositionsWithExchange(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 15000))
+        ]);
+      } catch (error) {
+        console.warn('⚠️ Position sync took too long, continuing anyway:', error);
+      }
       
       // 2. Monitor and check order fills
       console.log('\n👀 STEP 2: Position Monitoring & Order Fill Checks');
       await this.positionMonitorService.checkOrderFills(this.config);
       
-      // 3. ENHANCED SIGNAL ANALYSIS - This was the missing piece!
+      // 3. ENHANCED SIGNAL ANALYSIS
       console.log('\n🧠 STEP 3: Enhanced Signal Analysis & Generation');
       console.log(`🎯 Using Trading Logic: ${this.config.trading_logic_type}`);
       if (this.config.trading_logic_type === 'logic2_data_driven') {
@@ -215,10 +237,17 @@ export class MainTradingEngine {
       console.log('\n⚡ STEP 4: Signal Execution & Order Placement');
       await this.signalExecutionService.executeSignal(this.config);
       
-      // 5. Reconcile transactions every few loops
-      if (Math.random() < 0.1) { // 10% chance each loop
-        console.log('\n🔍 STEP 5: Transaction Reconciliation');
-        await this.reconciliationService.reconcileWithBybitHistory(6); // 6 hours lookback
+      // 5. Reconcile transactions every few loops (reduced frequency)
+      if (Math.random() < 0.05) { // 5% chance each loop (reduced from 10%)
+        console.log('\n🔍 STEP 5: Quick Transaction Reconciliation');
+        try {
+          await Promise.race([
+            this.reconciliationService.reconcileWithBybitHistory(3), // 3 hours lookback (reduced from 6)
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Reconciliation timeout')), 20000))
+          ]);
+        } catch (error) {
+          console.warn('⚠️ Reconciliation took too long, skipping:', error);
+        }
       }
       
       console.log('✅ ===== ENHANCED MAIN LOOP EXECUTION COMPLETE =====\n');
