@@ -160,7 +160,11 @@ export class EnhancedSignalAnalysisService {
         
         // Place limit order above support for new positions
         entryPrice = supportPrice * (1 + config.entry_offset_percent / 100);
-        confidence = Math.min(0.95, supportData.currentSupport.strength || 0.8);
+        
+        // Calculate confidence based on volume (higher volume = higher confidence)
+        const volumeConfidence = Math.min(supportData.currentSupport.volume / 1000000, 1.0);
+        confidence = Math.min(0.95, 0.6 + (volumeConfidence * 0.3)); // Base 0.6 + volume bonus up to 0.3
+        
         reasoning = `NEW POSITION: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% above support $${supportPrice.toFixed(6)})`;
       }
 
