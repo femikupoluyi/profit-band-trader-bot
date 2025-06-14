@@ -6,6 +6,7 @@ import { TradeValidator } from './TradeValidator';
 import { TrendAnalysisService } from './TrendAnalysisService';
 import { SupportResistanceService } from './SupportResistanceService';
 import { BybitInstrumentService } from './BybitInstrumentService';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface SignalAnalysisResult {
   symbol: string;
@@ -17,6 +18,7 @@ export interface SignalAnalysisResult {
   supportLevel?: number;
   trend?: string;
   orderValue: number;
+  isAveragingDown?: boolean;
 }
 
 export class EnhancedSignalAnalysisService {
@@ -46,7 +48,8 @@ export class EnhancedSignalAnalysisService {
           const result = await this.analyzeSignal(symbol, config);
           
           if (result && result.action !== 'hold') {
-            console.log(`✅ Generated ${result.action} signal for ${symbol}`);
+            console.log(`✅ Generated ${result.action} signal for ${symbol} ${result.isAveragingDown ? '(AVERAGING DOWN)' : '(NEW POSITION)'}`);
+            await this.storeSignal(result, config);
           } else {
             console.log(`⚠️ No signal generated for ${symbol}`);
           }
@@ -66,19 +69,26 @@ export class EnhancedSignalAnalysisService {
     try {
       console.log(`🔍 Starting enhanced analysis for ${symbol}`);
 
-      // Ensure sufficient market data with timeout
-      const hasData = await Promise.race([
-        this.marketDataScanner.ensureSufficientData(
-          symbol, 
-          config.support_candle_count || 128
-        ),
-        new Promise<boolean>((_, reject) => 
-          setTimeout(() => reject(new Error('Market data timeout')), 15000)
-        )
-      ]);
+      // Check existing positions
+      const { data: activeTrades } = await supabase
+        .from('trades')
+        .select('id, status, side, price, quantity, created_at')
+        .eq('user_id', this.userId)
+        .eq('symbol', symbol)
+        .eq('side', 'buy')
+        .in('status', ['pending', 'filled', 'partial_filled']);
 
-      if (!hasData) {
-        console.warn(`⚠️ Could not ensure sufficient market data for ${symbol}`);
+      const { data: existingSignals } = await supabase
+        .from('trading_signals')
+        .select('id')
+        .eq('user_id', this.userId)
+        .eq('symbol', symbol)
+        .eq('processed', false);
+
+      const totalActiveCount = (existingSignals?.length || 0) + (activeTrades?.length || 0);
+      
+      if (totalActiveCount >= config.max_positions_per_pair) {
+        console.log(`❌ ${symbol}: Max positions reached (${totalActiveCount}/${config.max_positions_per_pair})`);
         return null;
       }
 
@@ -90,77 +100,77 @@ export class EnhancedSignalAnalysisService {
       }
 
       const currentPrice = marketPrice.price;
+      const isAveragingDown = activeTrades && activeTrades.length > 0;
 
-      // Perform trend analysis
-      const trend = await this.trendAnalysis.getTrend(symbol, config.chart_timeframe);
+      console.log(`📊 ${symbol}: Current price: $${currentPrice.toFixed(6)} - ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} scenario`);
 
-      // Get support/resistance levels
-      const supportData = await this.supportResistance.getSupportResistanceLevels(
-        symbol,
-        config.chart_timeframe,
-        config.support_candle_count || 128,
-        config.support_lower_bound_percent || 5.0,
-        config.support_upper_bound_percent || 2.0
-      );
+      let entryPrice: number;
+      let reasoning: string;
+      let confidence: number;
 
-      // Only proceed if we have valid support data
-      if (!supportData.currentSupport || supportData.currentSupport.price <= 0) {
-        console.warn(`⚠️ No valid support level found for ${symbol}`);
-        return null;
-      }
+      if (isAveragingDown) {
+        // Averaging down logic
+        const lastBoughtPrice = Math.max(...activeTrades.map(t => parseFloat(t.price.toString())));
+        const priceChangePercent = ((currentPrice - lastBoughtPrice) / lastBoughtPrice) * 100;
+        
+        const lowerBound = -config.support_lower_bound_percent;
+        const upperBound = config.support_upper_bound_percent;
+        
+        console.log(`📐 ${symbol}: Averaging analysis - Price change: ${priceChangePercent.toFixed(2)}%, bounds: ${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%`);
 
-      const supportPrice = supportData.currentSupport.price;
-      const lowerBound = supportData.lowerBound;
-      const upperBound = supportData.upperBound;
-
-      console.log(`📊 Analysis for ${symbol}:`, {
-        currentPrice: currentPrice.toFixed(6),
-        supportPrice: supportPrice.toFixed(6),
-        trend,
-        lowerBound: lowerBound.toFixed(6),
-        upperBound: upperBound.toFixed(6)
-      });
-
-      // Enhanced signal logic
-      let action: 'buy' | 'sell' | 'hold' = 'hold';
-      let confidence = 0;
-      let reasoning = '';
-
-      // Check if price is near support with bullish conditions
-      if (currentPrice >= lowerBound && currentPrice <= upperBound) {
-        if (trend === 'bullish' || trend === 'neutral') {
-          action = 'buy';
-          confidence = trend === 'bullish' ? 0.8 : 0.6;
-          reasoning = `Price ${currentPrice.toFixed(6)} near support ${supportPrice.toFixed(6)} with ${trend} trend`;
+        if (priceChangePercent < lowerBound || priceChangePercent > upperBound) {
+          console.log(`❌ ${symbol}: Price not in averaging range`);
+          return null;
         }
-      }
 
-      if (action === 'hold') {
-        return {
+        // Place limit order below current price for averaging down
+        entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
+        confidence = 0.7; // Lower confidence for averaging down
+        reasoning = `AVERAGING DOWN: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% below current price $${currentPrice.toFixed(6)}). Last bought: $${lastBoughtPrice.toFixed(6)}`;
+
+      } else {
+        // New position logic - ensure sufficient data
+        const hasData = await Promise.race([
+          this.marketDataScanner.ensureSufficientData(symbol, config.support_candle_count || 128),
+          new Promise<boolean>((_, reject) => 
+            setTimeout(() => reject(new Error('Market data timeout')), 15000)
+          )
+        ]);
+
+        if (!hasData) {
+          console.warn(`⚠️ Could not ensure sufficient market data for ${symbol}`);
+          return null;
+        }
+
+        // Get support/resistance levels
+        const supportData = await this.supportResistance.getSupportResistanceLevels(
           symbol,
-          action,
-          confidence: 0,
-          entryPrice: currentPrice,
-          quantity: 0,
-          reasoning: `No favorable entry conditions. Price: ${currentPrice.toFixed(6)}, Support: ${supportPrice.toFixed(6)}, Trend: ${trend}`,
-          supportLevel: supportPrice,
-          trend,
-          orderValue: 0
-        };
-      }
+          config.chart_timeframe,
+          config.support_candle_count || 128,
+          config.support_lower_bound_percent || 5.0,
+          config.support_upper_bound_percent || 2.0
+        );
 
-      // Calculate entry price with proper formatting
-      const entryOffset = (config.entry_offset_percent || 0.5) / 100;
-      let entryPrice = supportPrice * (1 - entryOffset);
+        if (!supportData.currentSupport || supportData.currentSupport.price <= 0) {
+          console.warn(`⚠️ No valid support level found for ${symbol}`);
+          return null;
+        }
+
+        const supportPrice = supportData.currentSupport.price;
+        
+        // Place limit order above support for new positions
+        entryPrice = supportPrice * (1 + config.entry_offset_percent / 100);
+        confidence = Math.min(0.95, supportData.currentSupport.strength || 0.8);
+        reasoning = `NEW POSITION: Entry at $${entryPrice.toFixed(6)} (${config.entry_offset_percent}% above support $${supportPrice.toFixed(6)})`;
+      }
 
       // Get instrument info for proper formatting
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
       if (instrumentInfo) {
-        // Format entry price according to instrument precision
         entryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
       }
 
-      // Calculate quantity using proper validation
+      // Calculate quantity
       const quantity = await TradeValidator.calculateQuantity(
         symbol,
         config.max_order_amount_usd || 100,
@@ -168,7 +178,7 @@ export class EnhancedSignalAnalysisService {
         config
       );
 
-      // Validate the trade parameters
+      // Validate trade parameters
       const isValid = await TradeValidator.validateTradeParameters(symbol, quantity, entryPrice, config);
       if (!isValid) {
         console.error(`❌ Trade validation failed for ${symbol}`);
@@ -177,7 +187,7 @@ export class EnhancedSignalAnalysisService {
 
       const orderValue = quantity * entryPrice;
 
-      console.log(`✅ Generated ${action.toUpperCase()} signal for ${symbol}:`, {
+      console.log(`✅ Generated ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} signal for ${symbol}:`, {
         entryPrice: entryPrice.toFixed(instrumentInfo?.priceDecimals || 6),
         quantity: quantity.toFixed(instrumentInfo?.quantityDecimals || 6),
         orderValue: orderValue.toFixed(2),
@@ -186,19 +196,44 @@ export class EnhancedSignalAnalysisService {
 
       return {
         symbol,
-        action,
+        action: 'buy',
         confidence,
         entryPrice,
         quantity,
         reasoning,
-        supportLevel: supportPrice,
-        trend,
-        orderValue
+        orderValue,
+        isAveragingDown
       };
 
     } catch (error) {
       console.error(`❌ Error in enhanced signal analysis for ${symbol}:`, error);
       return null;
+    }
+  }
+
+  private async storeSignal(signal: SignalAnalysisResult, config: TradingConfigData): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('trading_signals')
+        .insert({
+          user_id: this.userId,
+          symbol: signal.symbol,
+          signal_type: signal.action,
+          price: signal.entryPrice,
+          confidence: signal.confidence,
+          reasoning: signal.reasoning,
+          processed: false
+        });
+
+      if (error) {
+        console.error('Error storing signal:', error);
+        throw error;
+      }
+
+      console.log(`✅ Signal stored for ${signal.symbol}: ${signal.action} at $${signal.entryPrice.toFixed(6)} ${signal.isAveragingDown ? '(AVERAGING DOWN)' : '(NEW POSITION)'}`);
+    } catch (error) {
+      console.error('Error storing signal in database:', error);
+      throw error;
     }
   }
 }
