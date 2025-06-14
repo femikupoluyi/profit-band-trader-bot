@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TradingConfigData } from './types/configTypes';
 import TradingPairsSelector from './components/TradingPairsSelector';
 import TradingLogicSelection from './components/TradingLogicSelection';
+import EndOfDayManagement from './components/EndOfDayManagement';
 
 interface TradingConfigFormProps {
   config: TradingConfigData;
@@ -161,6 +162,13 @@ const TradingConfigForm: React.FC<TradingConfigFormProps> = ({
           </div>
         </CardContent>
       </Card>
+
+      {/* End of Day Management - NOW INCLUDED */}
+      <EndOfDayManagement
+        config={config}
+        onInputChange={onInputChange}
+        onNumberInput={onNumberInput}
+      />
 
       {/* System Configuration */}
       <Card>

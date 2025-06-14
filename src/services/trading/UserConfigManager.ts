@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingPairsService } from './core/TradingPairsService';
@@ -38,7 +39,7 @@ export class UserConfigManager {
         max_active_pairs: this.validatePositiveInteger(config.max_active_pairs, 5),
         max_order_amount_usd: this.validatePositiveNumber(config.max_order_amount_usd, 100),
         max_portfolio_exposure_percent: this.validatePositiveNumber(config.max_portfolio_exposure_percent, 25),
-        daily_reset_time: this.validateTimeString(config.daily_reset_time) || '00:00:00',
+        daily_reset_time: this.validateAndNormalizeTime(config.daily_reset_time) || '00:00:00',
         chart_timeframe: this.validateChartTimeframe(config.chart_timeframe),
         entry_offset_percent: this.validatePositiveNumber(config.entry_offset_percent, 0.5),
         take_profit_percent: this.validatePositiveNumber(config.take_profit_percent, 1.0),
@@ -109,11 +110,22 @@ export class UserConfigManager {
     return isNaN(num) || num < 10 || num > 600 ? 30 : num;
   }
 
-  private static validateTimeString(timeStr: any): string | null {
+  private static validateAndNormalizeTime(timeStr: any): string | null {
     if (!timeStr || typeof timeStr !== 'string') return null;
     
-    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
-    return timeRegex.test(timeStr) ? timeStr : null;
+    // Accept HH:MM:SS format
+    const timeRegexHHMMSS = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
+    if (timeRegexHHMMSS.test(timeStr)) {
+      return timeStr;
+    }
+    
+    // Accept HH:MM format and convert to HH:MM:SS
+    const timeRegexHHMM = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (timeRegexHHMM.test(timeStr)) {
+      return timeStr + ':00';
+    }
+    
+    return null;
   }
 
   private static validateJSONBObject(value: any, defaultValue: Record<string, number>): Record<string, number> {

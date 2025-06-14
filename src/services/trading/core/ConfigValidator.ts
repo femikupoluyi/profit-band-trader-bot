@@ -97,11 +97,14 @@ export class ConfigValidator {
       errors.push('Maximum positions per pair must be between 1 and 10');
     }
 
-    // Daily reset time validation (if provided)
+    // Daily reset time validation (FIXED) - now accepts both HH:MM and HH:MM:SS formats
     if (config.daily_reset_time) {
-      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      if (!timeRegex.test(config.daily_reset_time)) {
-        errors.push('Daily reset time must be in HH:MM format');
+      // Accept both HH:MM and HH:MM:SS formats
+      const timeRegexHHMM = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      const timeRegexHHMMSS = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
+      
+      if (!timeRegexHHMM.test(config.daily_reset_time) && !timeRegexHHMMSS.test(config.daily_reset_time)) {
+        errors.push('Daily reset time must be in HH:MM or HH:MM:SS format');
       }
     }
 

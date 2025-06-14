@@ -17,6 +17,34 @@ const EndOfDayManagement: React.FC<EndOfDayManagementProps> = ({
   onInputChange,
   onNumberInput
 }) => {
+  // Convert HH:MM:SS to HH:MM for HTML time input
+  const formatTimeForInput = (timeStr: string): string => {
+    if (!timeStr) return '00:00';
+    
+    // If it's HH:MM:SS, convert to HH:MM
+    if (timeStr.includes(':') && timeStr.split(':').length === 3) {
+      const parts = timeStr.split(':');
+      return `${parts[0]}:${parts[1]}`;
+    }
+    
+    // If it's already HH:MM, return as is
+    if (timeStr.includes(':') && timeStr.split(':').length === 2) {
+      return timeStr;
+    }
+    
+    return '00:00';
+  };
+
+  // Convert HH:MM from HTML input to HH:MM:SS for database
+  const handleTimeChange = (timeValue: string) => {
+    if (timeValue && timeValue.includes(':')) {
+      const timeWithSeconds = timeValue + ':00';
+      onInputChange('daily_reset_time', timeWithSeconds);
+    } else {
+      onInputChange('daily_reset_time', '00:00:00');
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -38,9 +66,12 @@ const EndOfDayManagement: React.FC<EndOfDayManagementProps> = ({
             <Input
               id="daily_reset_time"
               type="time"
-              value={config.daily_reset_time || '00:00:00'}
-              onChange={(e) => onInputChange('daily_reset_time', e.target.value)}
+              value={formatTimeForInput(config.daily_reset_time || '00:00:00')}
+              onChange={(e) => handleTimeChange(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Time when daily trading cycle resets (24-hour format)
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -49,9 +80,14 @@ const EndOfDayManagement: React.FC<EndOfDayManagementProps> = ({
               id="eod_close_premium_percent"
               type="number"
               step="0.01"
+              min="0"
+              max="5"
               value={config.eod_close_premium_percent?.toString() || ''}
-              onChange={(e) => onNumberInput('eod_close_premium_percent', parseFloat(e.target.value))}
+              onChange={(e) => onNumberInput('eod_close_premium_percent', parseFloat(e.target.value) || 0.1)}
             />
+            <p className="text-xs text-muted-foreground">
+              Minimum profit % required to close positions at end of day
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -60,9 +96,14 @@ const EndOfDayManagement: React.FC<EndOfDayManagementProps> = ({
               id="manual_close_premium_percent"
               type="number"
               step="0.01"
+              min="0"
+              max="5"
               value={config.manual_close_premium_percent?.toString() || ''}
-              onChange={(e) => onNumberInput('manual_close_premium_percent', parseFloat(e.target.value))}
+              onChange={(e) => onNumberInput('manual_close_premium_percent', parseFloat(e.target.value) || 0.1)}
             />
+            <p className="text-xs text-muted-foreground">
+              Minimum profit % required for manual position closing
+            </p>
           </div>
         </div>
       </CardContent>

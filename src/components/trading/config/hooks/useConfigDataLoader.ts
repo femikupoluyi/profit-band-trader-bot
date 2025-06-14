@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { TradingConfigData, getDefaultConfig } from '../types/configTypes';
@@ -24,7 +23,7 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
           max_active_pairs: validateInteger(data.max_active_pairs, 20),
           max_order_amount_usd: validateNumber(data.max_order_amount_usd, 50),
           max_portfolio_exposure_percent: validateNumber(data.max_portfolio_exposure_percent, 20),
-          daily_reset_time: data.daily_reset_time || '00:00:00',
+          daily_reset_time: normalizeTimeFormat(data.daily_reset_time) || '00:00:00',
           chart_timeframe: data.chart_timeframe || '1m',
           entry_offset_percent: validateNumber(data.entry_offset_percent, 0.5),
           take_profit_percent: validateNumber(data.take_profit_percent, 1.0),
@@ -64,6 +63,23 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
       console.error('Error loading config:', error);
       setConfig(getDefaultConfig());
     }
+  };
+
+  // Helper function to normalize time format
+  const normalizeTimeFormat = (timeStr: any): string | null => {
+    if (!timeStr || typeof timeStr !== 'string') return null;
+    
+    // If it's already in HH:MM:SS format, keep it
+    if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(timeStr)) {
+      return timeStr;
+    }
+    
+    // If it's in HH:MM format, add :00 seconds
+    if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(timeStr)) {
+      return timeStr + ':00';
+    }
+    
+    return null;
   };
 
   // Validation helper functions
