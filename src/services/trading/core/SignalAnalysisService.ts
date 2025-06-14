@@ -3,19 +3,29 @@ import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from './TradingLogger';
-import { TradeValidator } from './TradeValidator';
 import { TradingLogicFactory } from './TradingLogicFactory';
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { SignalAnalysisCore } from './SignalAnalysisCore';
+import { AveragingDownAnalyzer } from './AveragingDownAnalyzer';
+import { NewPositionAnalyzer } from './NewPositionAnalyzer';
+import { SignalCreationService } from './SignalCreationService';
 
 export class SignalAnalysisService {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
+  private signalCore: SignalAnalysisCore;
+  private averagingAnalyzer: AveragingDownAnalyzer;
+  private newPositionAnalyzer: NewPositionAnalyzer;
+  private signalCreator: SignalCreationService;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
+    this.signalCore = new SignalAnalysisCore(userId);
+    this.averagingAnalyzer = new AveragingDownAnalyzer();
+    this.newPositionAnalyzer = new NewPositionAnalyzer(userId, bybitService);
+    this.signalCreator = new SignalCreationService(userId);
     this.bybitService.setLogger(this.logger);
   }
 
@@ -34,7 +44,6 @@ export class SignalAnalysisService {
         supportCandleCount: config.support_candle_count
       });
 
-      // Get the selected trading logic
       const tradingLogic = TradingLogicFactory.getLogic(config.trading_logic_type);
       console.log(`🧠 Using Trading Logic: ${tradingLogic.name}`);
       console.log(`📋 Logic Description: ${tradingLogic.description}`);
@@ -77,7 +86,6 @@ export class SignalAnalysisService {
             analysisResults.signalsRejected++;
             console.log(`❌ ${symbol}: Signal rejected - ${result.reason}`);
             
-            // Track rejection reasons
             const reason = result.reason || 'Unknown';
             analysisResults.rejectionReasons[reason] = (analysisResults.rejectionReasons[reason] || 0) + 1;
           }
@@ -108,231 +116,53 @@ export class SignalAnalysisService {
       console.log(`\n🔍 ===== DETAILED ANALYSIS FOR ${symbol} =====`);
       await this.logger.logSystemInfo(`Starting detailed analysis for ${symbol}`);
 
-      // Get instrument info FIRST for consistent formatting throughout
-      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-      if (!instrumentInfo) {
-        console.error(`❌ Could not get instrument info for ${symbol}`);
-        return { signalGenerated: false, reason: 'Could not get instrument info' };
+      // Get signal context
+      const context = await this.signalCore.getSignalContext(symbol, config);
+      if (!context) {
+        return { signalGenerated: false, reason: 'Could not get signal context' };
       }
 
-      // Step 1: Check existing signals and positions
-      console.log(`📋 Step 1: Checking existing positions and signals for ${symbol}...`);
-      const { data: existingSignals, error: signalsError } = await supabase
-        .from('trading_signals')
-        .select('id, signal_type, price, created_at')
-        .eq('user_id', this.userId)
-        .eq('symbol', symbol)
-        .eq('processed', false);
-
-      if (signalsError) {
-        console.error(`❌ Database error checking existing signals for ${symbol}:`, signalsError);
-        await this.logger.logError(`Error checking existing signals for ${symbol}`, signalsError, { symbol });
-        return { signalGenerated: false, reason: 'Database error checking existing signals' };
-      }
-
-      const { data: activeTrades, error: tradesError } = await supabase
-        .from('trades')
-        .select('id, status, side, price, quantity, created_at')
-        .eq('user_id', this.userId)
-        .eq('symbol', symbol)
-        .eq('side', 'buy')
-        .in('status', ['pending', 'filled', 'partial_filled']);
-
-      if (tradesError) {
-        console.error(`❌ Database error checking active trades for ${symbol}:`, tradesError);
-        return { signalGenerated: false, reason: 'Database error checking active trades' };
-      }
-
-      const totalActiveCount = (existingSignals?.length || 0) + (activeTrades?.length || 0);
-      console.log(`📊 ${symbol}: Found ${existingSignals?.length || 0} unprocessed signals + ${activeTrades?.length || 0} active trades = ${totalActiveCount} total (max allowed: ${config.max_positions_per_pair})`);
-      
-      if (totalActiveCount >= config.max_positions_per_pair) {
-        const rejectionReason = `Max positions reached (${totalActiveCount}/${config.max_positions_per_pair})`;
-        console.log(`⚠️ ${symbol}: ${rejectionReason}`);
-        return { signalGenerated: false, reason: rejectionReason };
-      }
-
-      // Step 2: Get current market price
+      // Get current market price
       console.log(`📊 Step 2: Getting current market price for ${symbol}...`);
       const marketData = await this.bybitService.getMarketPrice(symbol);
       const currentPrice = marketData.price;
+      context.currentPrice = currentPrice;
       
-      console.log(`💰 ${symbol}: Current market price: ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)}`);
+      console.log(`💰 ${symbol}: Current market price: ${currentPrice}`);
+      console.log(`🔄 ${symbol}: ${context.isAveragingDown ? 'AVERAGING DOWN scenario' : 'NEW POSITION scenario'}`);
 
-      // Step 3: Determine if this is a new position or averaging down
-      const isAveragingDown = activeTrades && activeTrades.length > 0;
-      console.log(`🔄 ${symbol}: ${isAveragingDown ? 'AVERAGING DOWN scenario' : 'NEW POSITION scenario'}`);
+      let analysisResult;
 
-      if (isAveragingDown) {
-        // Averaging down logic
-        const lastBoughtPrice = Math.max(...activeTrades.map(t => parseFloat(t.price.toString())));
-        console.log(`📊 ${symbol}: Last bought price: ${BybitInstrumentService.formatPrice(symbol, lastBoughtPrice, instrumentInfo)}`);
-        
-        // Check if current price is within averaging bounds relative to last bought price
-        const priceChangePercent = ((currentPrice - lastBoughtPrice) / lastBoughtPrice) * 100;
-        const lowerBound = -config.support_lower_bound_percent; // Negative because price should be lower
-        const upperBound = config.support_upper_bound_percent;
-        
-        console.log(`📐 ${symbol}: Averaging down analysis:
-          - Current Price: ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)}
-          - Last Bought Price: ${BybitInstrumentService.formatPrice(symbol, lastBoughtPrice, instrumentInfo)}
-          - Price Change: ${priceChangePercent.toFixed(2)}%
-          - Allowed Range: ${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%
-          - In Range: ${priceChangePercent >= lowerBound && priceChangePercent <= upperBound ? 'YES' : 'NO'}`);
-
-        if (priceChangePercent < lowerBound || priceChangePercent > upperBound) {
-          const rejectionReason = `Price not in averaging range (${priceChangePercent.toFixed(2)}% change, allowed: ${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%)`;
-          console.log(`❌ ${symbol}: ${rejectionReason}`);
-          return { signalGenerated: false, reason: rejectionReason };
-        }
-
-        // Place limit order below current market price for averaging down
-        const entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
-        const formattedEntryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
-        console.log(`🎯 ${symbol}: Averaging down entry price: ${BybitInstrumentService.formatPrice(symbol, formattedEntryPrice, instrumentInfo)} (${config.entry_offset_percent}% below current price)`);
-        
-        return await this.createLimitBuySignal(symbol, formattedEntryPrice, { price: currentPrice, strength: 0.8, touches: 1 }, config, true, instrumentInfo);
-
+      if (context.isAveragingDown) {
+        // Analyze averaging down scenario
+        analysisResult = this.averagingAnalyzer.analyzeAveragingDown(context, currentPrice, config);
       } else {
-        // New position logic - analyze support levels
-        console.log(`📈 Step 3: Fetching historical market data for ${symbol}...`);
-        const { data: recentData, error } = await supabase
-          .from('market_data')
-          .select('*')
-          .eq('symbol', symbol)
-          .order('timestamp', { ascending: false })
-          .limit(config.support_candle_count || 128);
-
-        if (error) {
-          console.error(`❌ Database error fetching market data for ${symbol}:`, error);
-          return { signalGenerated: false, reason: 'Error fetching market data' };
-        }
-
-        if (!recentData || recentData.length < 10) {
-          const rejectionReason = `Insufficient market data (${recentData?.length || 0} records, need at least 10)`;
-          console.log(`⚠️ ${symbol}: ${rejectionReason}`);
-          return { signalGenerated: false, reason: rejectionReason };
-        }
-
-        console.log(`📊 ${symbol}: Found ${recentData.length} market data records for analysis`);
-
-        // Convert market data to candle format
-        const candleData = recentData.map(d => ({
-          open: parseFloat(d.price.toString()),
-          high: parseFloat(d.price.toString()) * 1.001,
-          low: parseFloat(d.price.toString()) * 0.999,
-          close: parseFloat(d.price.toString()),
-          volume: parseFloat(d.volume?.toString() || '0'),
-          timestamp: new Date(d.timestamp).getTime()
-        }));
-
-        // Analyze support levels using selected logic
-        console.log(`🧠 Step 4: Analyzing support levels using ${tradingLogic.name} for ${symbol}...`);
-        const supportLevels = tradingLogic.analyzeSupportLevels(candleData, config);
-
-        if (!supportLevels || supportLevels.length === 0) {
-          const rejectionReason = `No support levels found using ${tradingLogic.name}`;
-          console.log(`❌ ${symbol}: ${rejectionReason}`);
-          return { signalGenerated: false, reason: rejectionReason };
-        }
-
-        const bestSupport = supportLevels[0];
-        console.log(`📊 ${symbol}: Best support level: ${BybitInstrumentService.formatPrice(symbol, bestSupport.price, instrumentInfo)} (strength: ${bestSupport.strength.toFixed(3)})`);
-
-        // For new positions, place limit order above support level
-        const entryPrice = bestSupport.price * (1 + config.entry_offset_percent / 100);
-        const formattedEntryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
-        console.log(`🎯 ${symbol}: New position entry price: ${BybitInstrumentService.formatPrice(symbol, formattedEntryPrice, instrumentInfo)} (${config.entry_offset_percent}% above support)`);
-        
-        return await this.createLimitBuySignal(symbol, formattedEntryPrice, bestSupport, config, false, instrumentInfo);
+        // Analyze new position scenario
+        analysisResult = await this.newPositionAnalyzer.analyzeNewPosition(context, currentPrice, config);
       }
+
+      if (!analysisResult.shouldCreateSignal) {
+        return { signalGenerated: false, reason: 'Analysis conditions not met' };
+      }
+
+      // Create the signal
+      const signalResult = await this.signalCreator.createSignal({
+        symbol,
+        entryPrice: analysisResult.entryPrice!,
+        confidence: analysisResult.confidence!,
+        reasoning: analysisResult.reasoning!,
+        isAveragingDown: context.isAveragingDown
+      }, config);
+
+      return { 
+        signalGenerated: signalResult.success, 
+        reason: signalResult.reason || 'Signal created successfully' 
+      };
 
     } catch (error) {
       console.error(`❌ Error analyzing ${symbol}:`, error);
       await this.logger.logError(`Failed to analyze ${symbol}`, error, { symbol });
       return { signalGenerated: false, reason: `Analysis error: ${error.message}` };
-    }
-  }
-
-  private async createLimitBuySignal(symbol: string, entryPrice: number, supportLevel: any, config: TradingConfigData, isAveragingDown: boolean = false, instrumentInfo: any): Promise<{ signalGenerated: boolean; reason?: string }> {
-    try {
-      console.log(`📝 Creating LIMIT buy signal for ${symbol}...`);
-      
-      // Validate trade parameters
-      const testQuantity = await TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
-      const orderValue = testQuantity * entryPrice;
-      
-      console.log(`🔧 ${symbol}: Trade parameter validation:
-        - Max Order Amount: $${config.max_order_amount_usd}
-        - Entry Price: ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)}
-        - Calculated Quantity: ${BybitInstrumentService.formatQuantity(symbol, testQuantity, instrumentInfo)}
-        - Order Value: $${orderValue.toFixed(2)}`);
-      
-      const isValidTrade = await TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config);
-      if (!isValidTrade) {
-        const rejectionReason = 'Trade parameter validation failed';
-        console.log(`❌ ${symbol}: ${rejectionReason}`);
-        return { signalGenerated: false, reason: rejectionReason };
-      }
-
-      const confidence = Math.min(0.95, supportLevel.strength || 0.8);
-      const orderType = isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION';
-      const supportPriceText = isAveragingDown ? 
-        'below current price' : 
-        `above support ${BybitInstrumentService.formatPrice(symbol, supportLevel.price, instrumentInfo)}`;
-      const reasoning = `${orderType} LIMIT Buy: Entry at ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)} (${config.entry_offset_percent}% ${supportPriceText}). Take profit: ${config.take_profit_percent}%`;
-
-      console.log(`📝 ${symbol}: LIMIT signal details:
-        - Order Type: ${orderType} LIMIT
-        - Entry Price: ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)}
-        - Take Profit: ${config.take_profit_percent}%
-        - Confidence: ${confidence.toFixed(3)}
-        - Reasoning: ${reasoning}`);
-
-      const { data: signal, error } = await supabase
-        .from('trading_signals')
-        .insert({
-          user_id: this.userId,
-          symbol: symbol,
-          signal_type: 'buy',
-          price: entryPrice,
-          confidence: confidence,
-          reasoning: reasoning,
-          processed: false
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error(`❌ Database error creating signal for ${symbol}:`, error);
-        return { signalGenerated: false, reason: 'Database error creating signal' };
-      }
-
-      console.log(`✅ LIMIT buy signal created successfully for ${symbol}:
-        - Signal ID: ${signal.id}
-        - Order Type: ${orderType} LIMIT
-        - Entry Price: ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)}
-        - Take Profit: ${config.take_profit_percent}%
-        - Confidence: ${confidence.toFixed(3)}`);
-      
-      await this.logger.logSignalProcessed(symbol, 'buy', {
-        signalId: signal.id,
-        orderType: `${orderType} LIMIT`,
-        entryPrice,
-        takeProfitPercent: config.take_profit_percent,
-        supportLevel: supportLevel.price,
-        confidence: confidence,
-        reasoning: reasoning,
-        isAveragingDown,
-        createdAt: signal.created_at
-      });
-
-      return { signalGenerated: true, reason: 'Signal created successfully' };
-
-    } catch (error) {
-      console.error(`❌ Error creating LIMIT buy signal for ${symbol}:`, error);
-      await this.logger.logError(`Failed to create LIMIT buy signal for ${symbol}`, error, { symbol });
-      return { signalGenerated: false, reason: `Signal creation error: ${error.message}` };
     }
   }
 }

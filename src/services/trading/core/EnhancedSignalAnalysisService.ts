@@ -1,12 +1,10 @@
 
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { MarketDataScannerService } from './MarketDataScannerService';
-import { TradeValidator } from './TradeValidator';
-import { TrendAnalysisService } from './TrendAnalysisService';
-import { SupportResistanceService } from './SupportResistanceService';
-import { BybitInstrumentService } from './BybitInstrumentService';
-import { supabase } from '@/integrations/supabase/client';
+import { SignalAnalysisCore } from './SignalAnalysisCore';
+import { AveragingDownAnalyzer } from './AveragingDownAnalyzer';
+import { NewPositionAnalyzer } from './NewPositionAnalyzer';
+import { SignalCreationService } from './SignalCreationService';
 
 export interface SignalAnalysisResult {
   symbol: string;
@@ -22,18 +20,20 @@ export interface SignalAnalysisResult {
 }
 
 export class EnhancedSignalAnalysisService {
-  private marketDataScanner: MarketDataScannerService;
-  private trendAnalysis: TrendAnalysisService;
-  private supportResistance: SupportResistanceService;
   private userId: string;
   private bybitService: BybitService;
+  private signalCore: SignalAnalysisCore;
+  private averagingAnalyzer: AveragingDownAnalyzer;
+  private newPositionAnalyzer: NewPositionAnalyzer;
+  private signalCreator: SignalCreationService;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
-    this.marketDataScanner = new MarketDataScannerService(userId, bybitService);
-    this.trendAnalysis = new TrendAnalysisService(bybitService);
-    this.supportResistance = new SupportResistanceService(bybitService);
+    this.signalCore = new SignalAnalysisCore(userId);
+    this.averagingAnalyzer = new AveragingDownAnalyzer();
+    this.newPositionAnalyzer = new NewPositionAnalyzer(userId, bybitService);
+    this.signalCreator = new SignalCreationService(userId);
   }
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
@@ -69,33 +69,9 @@ export class EnhancedSignalAnalysisService {
     try {
       console.log(`🔍 Starting enhanced analysis for ${symbol}`);
 
-      // Get instrument info FIRST for consistent formatting
-      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-      if (!instrumentInfo) {
-        console.error(`❌ Could not get instrument info for ${symbol}`);
-        return null;
-      }
-
-      // Check existing positions
-      const { data: activeTrades } = await supabase
-        .from('trades')
-        .select('id, status, side, price, quantity, created_at')
-        .eq('user_id', this.userId)
-        .eq('symbol', symbol)
-        .eq('side', 'buy')
-        .in('status', ['pending', 'filled', 'partial_filled']);
-
-      const { data: existingSignals } = await supabase
-        .from('trading_signals')
-        .select('id')
-        .eq('user_id', this.userId)
-        .eq('symbol', symbol)
-        .eq('processed', false);
-
-      const totalActiveCount = (existingSignals?.length || 0) + (activeTrades?.length || 0);
-      
-      if (totalActiveCount >= config.max_positions_per_pair) {
-        console.log(`❌ ${symbol}: Max positions reached (${totalActiveCount}/${config.max_positions_per_pair})`);
+      // Get signal context
+      const context = await this.signalCore.getSignalContext(symbol, config);
+      if (!context) {
         return null;
       }
 
@@ -107,110 +83,46 @@ export class EnhancedSignalAnalysisService {
       }
 
       const currentPrice = marketPrice.price;
-      const isAveragingDown = activeTrades && activeTrades.length > 0;
+      context.currentPrice = currentPrice;
 
-      console.log(`📊 ${symbol}: Current price: ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)} - ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} scenario`);
+      console.log(`📊 ${symbol}: Current price: ${currentPrice} - ${context.isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} scenario`);
 
-      let entryPrice: number;
-      let reasoning: string;
-      let confidence: number;
+      let analysisResult;
 
-      if (isAveragingDown) {
-        // Averaging down logic
-        const lastBoughtPrice = Math.max(...activeTrades.map(t => parseFloat(t.price.toString())));
-        const priceChangePercent = ((currentPrice - lastBoughtPrice) / lastBoughtPrice) * 100;
-        
-        const lowerBound = -config.support_lower_bound_percent;
-        const upperBound = config.support_upper_bound_percent;
-        
-        console.log(`📐 ${symbol}: Averaging analysis - Price change: ${priceChangePercent.toFixed(2)}%, bounds: ${lowerBound.toFixed(2)}% to +${upperBound.toFixed(2)}%`);
-
-        if (priceChangePercent < lowerBound || priceChangePercent > upperBound) {
-          console.log(`❌ ${symbol}: Price not in averaging range`);
-          return null;
-        }
-
-        // Place limit order below current price for averaging down
-        entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
-        confidence = 0.7; // Lower confidence for averaging down
-        reasoning = `AVERAGING DOWN: Entry at ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)} (${config.entry_offset_percent}% below current price ${BybitInstrumentService.formatPrice(symbol, currentPrice, instrumentInfo)}). Last bought: ${BybitInstrumentService.formatPrice(symbol, lastBoughtPrice, instrumentInfo)}`;
-
+      if (context.isAveragingDown) {
+        // Analyze averaging down scenario
+        analysisResult = this.averagingAnalyzer.analyzeAveragingDown(context, currentPrice, config);
       } else {
-        // New position logic - ensure sufficient data
-        const hasData = await Promise.race([
-          this.marketDataScanner.ensureSufficientData(symbol, config.support_candle_count || 128),
-          new Promise<boolean>((_, reject) => 
-            setTimeout(() => reject(new Error('Market data timeout')), 15000)
-          )
-        ]);
-
-        if (!hasData) {
-          console.warn(`⚠️ Could not ensure sufficient market data for ${symbol}`);
-          return null;
-        }
-
-        // Get support/resistance levels
-        const supportData = await this.supportResistance.getSupportResistanceLevels(
-          symbol,
-          config.chart_timeframe,
-          config.support_candle_count || 128,
-          config.support_lower_bound_percent || 5.0,
-          config.support_upper_bound_percent || 2.0
-        );
-
-        if (!supportData.currentSupport || supportData.currentSupport.price <= 0) {
-          console.warn(`⚠️ No valid support level found for ${symbol}`);
-          return null;
-        }
-
-        const supportPrice = supportData.currentSupport.price;
-        
-        // Place limit order above support for new positions
-        entryPrice = supportPrice * (1 + config.entry_offset_percent / 100);
-        
-        // Calculate confidence based on volume (higher volume = higher confidence)
-        const volumeConfidence = Math.min(supportData.currentSupport.volume / 1000000, 1.0);
-        confidence = Math.min(0.95, 0.6 + (volumeConfidence * 0.3)); // Base 0.6 + volume bonus up to 0.3
-        
-        reasoning = `NEW POSITION: Entry at ${BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo)} (${config.entry_offset_percent}% above support ${BybitInstrumentService.formatPrice(symbol, supportPrice, instrumentInfo)})`;
+        // Analyze new position scenario
+        analysisResult = await this.newPositionAnalyzer.analyzeNewPosition(context, currentPrice, config);
       }
 
-      // Format entry price using instrument precision
-      entryPrice = parseFloat(BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo));
-
-      // Calculate quantity using proper precision
-      const quantity = await TradeValidator.calculateQuantity(
-        symbol,
-        config.max_order_amount_usd || 100,
-        entryPrice,
-        config
-      );
-
-      // Validate trade parameters
-      const isValid = await TradeValidator.validateTradeParameters(symbol, quantity, entryPrice, config);
-      if (!isValid) {
-        console.error(`❌ Trade validation failed for ${symbol}`);
+      if (!analysisResult.shouldCreateSignal) {
         return null;
       }
 
-      const orderValue = quantity * entryPrice;
+      // Calculate quantity (this would typically be done in the signal creation service,
+      // but we need it for the return value of this method)
+      const quantity = await this.calculateQuantityForResult(symbol, config.max_order_amount_usd || 100, analysisResult.entryPrice!, config);
+      const orderValue = quantity * analysisResult.entryPrice!;
 
-      console.log(`✅ Generated ${isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} signal for ${symbol}:`, {
-        entryPrice: BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo),
-        quantity: BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo),
+      console.log(`✅ Generated ${context.isAveragingDown ? 'AVERAGING DOWN' : 'NEW POSITION'} signal for ${symbol}:`, {
+        entryPrice: analysisResult.entryPrice,
+        quantity: quantity,
         orderValue: orderValue.toFixed(2),
-        confidence
+        confidence: analysisResult.confidence
       });
 
       return {
         symbol,
         action: 'buy',
-        confidence,
-        entryPrice,
+        confidence: analysisResult.confidence!,
+        entryPrice: analysisResult.entryPrice!,
         quantity,
-        reasoning,
+        reasoning: analysisResult.reasoning!,
+        supportLevel: analysisResult.supportLevel,
         orderValue,
-        isAveragingDown
+        isAveragingDown: context.isAveragingDown
       };
 
     } catch (error) {
@@ -219,32 +131,26 @@ export class EnhancedSignalAnalysisService {
     }
   }
 
+  private async calculateQuantityForResult(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfigData): Promise<number> {
+    // Simple quantity calculation for the result - the actual validation happens in SignalCreationService
+    return orderAmount / entryPrice;
+  }
+
   private async storeSignal(signal: SignalAnalysisResult, config: TradingConfigData): Promise<void> {
     try {
-      // Get instrument info for consistent formatting in logs
-      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(signal.symbol);
-      const formattedPrice = instrumentInfo ? 
-        BybitInstrumentService.formatPrice(signal.symbol, signal.entryPrice, instrumentInfo) : 
-        signal.entryPrice.toFixed(6);
+      const signalResult = await this.signalCreator.createSignal({
+        symbol: signal.symbol,
+        entryPrice: signal.entryPrice,
+        confidence: signal.confidence,
+        reasoning: signal.reasoning,
+        isAveragingDown: signal.isAveragingDown || false
+      }, config);
 
-      const { error } = await supabase
-        .from('trading_signals')
-        .insert({
-          user_id: this.userId,
-          symbol: signal.symbol,
-          signal_type: signal.action,
-          price: signal.entryPrice,
-          confidence: signal.confidence,
-          reasoning: signal.reasoning,
-          processed: false
-        });
-
-      if (error) {
-        console.error('Error storing signal:', error);
-        throw error;
+      if (signalResult.success) {
+        console.log(`✅ Signal stored for ${signal.symbol}: ${signal.action} at ${signal.entryPrice} ${signal.isAveragingDown ? '(AVERAGING DOWN)' : '(NEW POSITION)'}`);
+      } else {
+        console.error(`❌ Failed to store signal for ${signal.symbol}: ${signalResult.reason}`);
       }
-
-      console.log(`✅ Signal stored for ${signal.symbol}: ${signal.action} at ${formattedPrice} ${signal.isAveragingDown ? '(AVERAGING DOWN)' : '(NEW POSITION)'}`);
     } catch (error) {
       console.error('Error storing signal in database:', error);
       throw error;
