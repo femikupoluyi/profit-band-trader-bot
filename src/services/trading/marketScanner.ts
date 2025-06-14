@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -16,7 +17,6 @@ export class MarketScanner {
   async scanMarkets(): Promise<void> {
     console.log('🔍 SCANNING MARKETS - Building market data history for analysis...');
     
-    // Use trading pairs from config
     const symbols = this.config.trading_pairs || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT'];
     
     console.log('📊 Scanning symbols:', symbols);
@@ -27,20 +27,25 @@ export class MarketScanner {
         console.log(`\n📊 Processing ${symbol}...`);
         
         // Check existing data count first
-        const { data: existingData, error: countError } = await supabase
+        const { count: existingCount, error: countError } = await supabase
           .from('market_data')
-          .select('id', { count: 'exact' })
+          .select('*', { count: 'exact', head: true })
           .eq('symbol', symbol);
         
-        const existingCount = existingData?.length || 0;
-        console.log(`📈 ${symbol}: Existing market data records: ${existingCount}`);
+        if (countError) {
+          console.error(`❌ Error checking data count for ${symbol}:`, countError);
+          continue;
+        }
+
+        const currentCount = existingCount || 0;
+        console.log(`📈 ${symbol}: Existing market data records: ${currentCount}`);
         
         // Get fresh real-time price from DEMO trading API
         console.log(`🔄 Fetching LIVE price for ${symbol} from Bybit DEMO trading...`);
         const marketPrice = await this.getRealtimePrice(symbol);
         console.log(`💰 ${symbol} LIVE price: $${marketPrice.price.toFixed(6)}`);
         
-        // Store current market data point
+        // Store current market data point - CRITICAL: Don't delete existing data
         const { error: insertError } = await supabase
           .from('market_data')
           .insert({
@@ -59,14 +64,15 @@ export class MarketScanner {
             source: 'bybit_demo_trading'
           });
         } else {
-          const newCount = existingCount + 1;
+          const newCount = currentCount + 1;
           console.log(`✅ Market data stored for ${symbol} - Price: $${marketPrice.price.toFixed(6)}`);
           console.log(`📊 ${symbol}: Total historical records: ${newCount}/${this.config.support_candle_count || 128}`);
           
-          if (newCount >= 10) {
-            console.log(`🎯 ${symbol}: Sufficient data for analysis (${newCount} records)`);
+          const requiredForAnalysis = Math.max(this.config.support_candle_count || 128, 10);
+          if (newCount >= requiredForAnalysis) {
+            console.log(`🎯 ${symbol}: SUFFICIENT data for analysis (${newCount} records)`);
           } else {
-            console.log(`⏳ ${symbol}: Need ${10 - newCount} more records for basic analysis`);
+            console.log(`⏳ ${symbol}: Need ${requiredForAnalysis - newCount} more records for analysis`);
           }
         }
         
@@ -89,14 +95,14 @@ export class MarketScanner {
 
   private async cleanupOldData(symbol: string, keepRecords: number): Promise<void> {
     try {
-      // Get total count
-      const { data: allData, error: countError } = await supabase
+      // Get records ordered by timestamp (newest first)
+      const { data: allData, error: fetchError } = await supabase
         .from('market_data')
-        .select('id')
+        .select('id, timestamp')
         .eq('symbol', symbol)
         .order('timestamp', { ascending: false });
 
-      if (countError || !allData || allData.length <= keepRecords) {
+      if (fetchError || !allData || allData.length <= keepRecords) {
         return; // No cleanup needed
       }
 
@@ -104,15 +110,17 @@ export class MarketScanner {
       const recordsToDelete = allData.slice(keepRecords);
       const idsToDelete = recordsToDelete.map(record => record.id);
 
-      const { error: deleteError } = await supabase
-        .from('market_data')
-        .delete()
-        .in('id', idsToDelete);
+      if (idsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('market_data')
+          .delete()
+          .in('id', idsToDelete);
 
-      if (deleteError) {
-        console.error(`❌ Error cleaning up old data for ${symbol}:`, deleteError);
-      } else {
-        console.log(`🧹 ${symbol}: Cleaned up ${recordsToDelete.length} old records, kept ${keepRecords} recent records`);
+        if (deleteError) {
+          console.error(`❌ Error cleaning up old data for ${symbol}:`, deleteError);
+        } else {
+          console.log(`🧹 ${symbol}: Cleaned up ${recordsToDelete.length} old records, kept ${keepRecords} recent records`);
+        }
       }
     } catch (error) {
       console.error(`❌ Failed to cleanup old data for ${symbol}:`, error);
