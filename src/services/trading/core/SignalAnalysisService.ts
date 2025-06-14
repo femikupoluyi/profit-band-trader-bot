@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -300,9 +299,9 @@ export class SignalAnalysisService {
         return { signalGenerated: false, reason: rejectionReason };
       }
 
-      // Step 10: Validate trade parameters
+      // Step 10: Validate trade parameters with proper async handling
       console.log(`🔧 Step 10: Validating trade parameters for ${symbol}...`);
-      const testQuantity = TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
+      const testQuantity = await TradeValidator.calculateQuantity(symbol, config.max_order_amount_usd, entryPrice, config);
       const orderValue = testQuantity * entryPrice;
       
       console.log(`🔧 ${symbol}: Trade parameter validation:
@@ -311,7 +310,8 @@ export class SignalAnalysisService {
         - Calculated Quantity: ${testQuantity}
         - Order Value: $${orderValue.toFixed(2)}`);
       
-      if (!TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config)) {
+      const isValidTrade = await TradeValidator.validateTradeParameters(symbol, testQuantity, entryPrice, config);
+      if (!isValidTrade) {
         const rejectionReason = 'Trade parameter validation failed';
         console.log(`❌ ${symbol}: ${rejectionReason}`);
         await this.logger.logSignalRejected(symbol, rejectionReason, {

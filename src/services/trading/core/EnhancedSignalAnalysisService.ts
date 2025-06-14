@@ -34,6 +34,34 @@ export class EnhancedSignalAnalysisService {
     this.supportResistance = new SupportResistanceService(bybitService);
   }
 
+  async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
+    try {
+      console.log('\n🧠 ===== ENHANCED SIGNAL ANALYSIS START =====');
+      console.log(`🎯 Trading Logic: ${config.trading_logic_type}`);
+      console.log(`📊 Trading Pairs: ${config.trading_pairs.join(', ')}`);
+
+      for (const symbol of config.trading_pairs) {
+        try {
+          console.log(`\n🔍 Analyzing ${symbol}...`);
+          const result = await this.analyzeSignal(symbol, config);
+          
+          if (result && result.action !== 'hold') {
+            console.log(`✅ Generated ${result.action} signal for ${symbol}`);
+          } else {
+            console.log(`⚠️ No signal generated for ${symbol}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error analyzing ${symbol}:`, error);
+        }
+      }
+
+      console.log('✅ ===== ENHANCED SIGNAL ANALYSIS COMPLETE =====');
+    } catch (error) {
+      console.error('❌ Error in enhanced signal analysis:', error);
+      throw error;
+    }
+  }
+
   async analyzeSignal(symbol: string, config: TradingConfigData): Promise<SignalAnalysisResult | null> {
     try {
       console.log(`🔍 Starting enhanced analysis for ${symbol}`);

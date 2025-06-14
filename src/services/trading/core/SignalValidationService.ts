@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from './TradingLogger';
@@ -75,7 +74,7 @@ export class SignalValidationService {
         };
       }
 
-      // Calculate order parameters
+      // Calculate order parameters with proper async handling
       const signalPrice = parseFloat(signal.price.toString());
       if (isNaN(signalPrice) || signalPrice <= 0) {
         return { isValid: false, reason: 'Invalid signal price' };
@@ -83,15 +82,16 @@ export class SignalValidationService {
 
       const entryPrice = signalPrice * (1 + (config.entry_offset_percent || 0.1) / 100);
       const takeProfitPrice = entryPrice * (1 + (config.take_profit_percent || 2.0) / 100);
-      const quantity = TradeValidator.calculateQuantity(
+      const quantity = await TradeValidator.calculateQuantity(
         signal.symbol, 
         config.max_order_amount_usd || 100, 
         entryPrice, 
         config
       );
 
-      // Validate calculated parameters
-      if (!TradeValidator.validateTradeParameters(signal.symbol, quantity, entryPrice, config)) {
+      // Validate calculated parameters with proper async handling
+      const isValidTrade = await TradeValidator.validateTradeParameters(signal.symbol, quantity, entryPrice, config);
+      if (!isValidTrade) {
         return { isValid: false, reason: 'Trade parameters validation failed' };
       }
 

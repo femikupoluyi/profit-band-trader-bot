@@ -1,4 +1,3 @@
-
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../../bybitService';
 import { MarketScanner } from '../marketScanner';
@@ -17,6 +16,38 @@ export class MarketDataScannerService {
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
     this.seeder = new MarketDataSeeder(userId, bybitService);
+  }
+
+  async ensureSufficientData(symbol: string, requiredCount: number): Promise<boolean> {
+    try {
+      console.log(`🔍 Ensuring sufficient data for ${symbol} (need ${requiredCount} records)...`);
+      
+      // Check current count
+      const { count: currentCount, error } = await supabase
+        .from('market_data')
+        .select('*', { count: 'exact', head: true })
+        .eq('symbol', symbol);
+
+      if (error) {
+        console.error(`❌ Error checking data count for ${symbol}:`, error);
+        return false;
+      }
+
+      const actualCount = currentCount || 0;
+      console.log(`📊 ${symbol}: Has ${actualCount} records, needs ${requiredCount}`);
+
+      if (actualCount < requiredCount) {
+        console.log(`🚨 ${symbol}: Need more data, seeding...`);
+        await this.seeder.seedSymbolDataFast(symbol, requiredCount);
+        return true;
+      }
+
+      console.log(`✅ ${symbol}: Has sufficient data`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error ensuring sufficient data for ${symbol}:`, error);
+      return false;
+    }
   }
 
   async scanMarkets(config: TradingConfigData): Promise<void> {
