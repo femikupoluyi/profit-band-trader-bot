@@ -1,8 +1,8 @@
-
 import { getSupportedTradingPairs } from '@/components/trading/test/testConstants';
+import { BybitInstrumentService } from './BybitInstrumentService';
 
 export class PriceFormatter {
-  // Symbol-specific precision mapping for common trading pairs
+  // Legacy symbol-specific precision mapping - now deprecated in favor of BybitInstrumentService
   private static readonly SYMBOL_PRECISION: Record<string, { price: number; quantity: number }> = {
     'BTCUSDT': { price: 2, quantity: 5 },
     'ETHUSDT': { price: 2, quantity: 4 },
@@ -18,21 +18,34 @@ export class PriceFormatter {
     'MATICUSDT': { price: 6, quantity: 0 }
   };
 
-  // Default precision for unknown symbols
   private static readonly DEFAULT_PRECISION = { price: 4, quantity: 4 };
 
   /**
-   * Format price for a specific symbol with correct decimal places
+   * Format price for a specific symbol - now uses BybitInstrumentService when possible
    */
-  static formatPriceForSymbol(symbol: string, price: number): string {
+  static async formatPriceForSymbol(symbol: string, price: number): Promise<string> {
+    // Use BybitInstrumentService for accurate formatting
+    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+    if (instrumentInfo) {
+      return BybitInstrumentService.formatPrice(symbol, price, instrumentInfo);
+    }
+    
+    // Fallback to legacy precision
     const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
     return price.toFixed(precision.price);
   }
 
   /**
-   * Format quantity for a specific symbol with correct decimal places
+   * Format quantity for a specific symbol - now uses BybitInstrumentService when possible
    */
-  static formatQuantityForSymbol(symbol: string, quantity: number): string {
+  static async formatQuantityForSymbol(symbol: string, quantity: number): Promise<string> {
+    // Use BybitInstrumentService for accurate formatting
+    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+    if (instrumentInfo) {
+      return BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
+    }
+    
+    // Fallback to legacy precision
     const precision = this.SYMBOL_PRECISION[symbol] || this.DEFAULT_PRECISION;
     return quantity.toFixed(precision.quantity);
   }
