@@ -19,16 +19,16 @@ export class OrderFormatter {
       // Clear any cached data first to ensure fresh precision
       BybitPrecisionFormatter.clearCache();
 
-      // Use Bybit precision formatter for exact formatting
+      // Use Bybit precision formatter for exact formatting - ensure strings are returned
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
 
-      console.log(`🔧 Formatted values - Quantity: ${formattedQuantity}, Price: ${formattedPrice}`);
+      console.log(`🔧 Formatted values - Quantity: "${formattedQuantity}", Price: "${formattedPrice}"`);
 
-      // Validate the order meets Bybit requirements
+      // Validate the order meets Bybit requirements using the formatted values
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
       if (!isValid) {
-        throw new Error(`Order validation failed for ${symbol}`);
+        throw new Error(`Order validation failed for ${symbol} - qty: ${formattedQuantity}, price: ${formattedPrice}`);
       }
 
       // Get instrument info for reference
@@ -58,16 +58,16 @@ export class OrderFormatter {
       // Clear any cached data first to ensure fresh precision
       BybitPrecisionFormatter.clearCache();
 
-      // Use Bybit precision formatter for exact formatting
+      // Use Bybit precision formatter for exact formatting - ensure strings are returned
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       
-      console.log(`🔧 Formatted values - Quantity: ${formattedQuantity}, Price: ${formattedPrice}`);
+      console.log(`🔧 Formatted values - Quantity: "${formattedQuantity}", Price: "${formattedPrice}"`);
       
-      // Validate the formatted sell order
+      // Validate the formatted sell order using the formatted values
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
       if (!isValid) {
-        throw new Error(`Sell order validation failed for ${symbol}`);
+        throw new Error(`Sell order validation failed for ${symbol} - qty: ${formattedQuantity}, price: ${formattedPrice}`);
       }
 
       return {

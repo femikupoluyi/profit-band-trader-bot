@@ -19,12 +19,15 @@ export class PositionSyncService {
       console.log('🔄 Starting comprehensive position sync with exchange...');
       await this.logger.logSuccess('Starting position sync with exchange');
 
-      // Get all local active trades
+      // Get all local active trades (but exclude very recent ones to avoid premature closing)
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
       const { data: localActiveTrades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', this.userId)
-        .in('status', ['pending', 'filled', 'partial_filled']);
+        .in('status', ['pending', 'filled', 'partial_filled'])
+        .lt('created_at', fiveMinutesAgo); // Only sync trades older than 5 minutes
 
       if (error) {
         console.error('❌ Error fetching local active trades:', error);
@@ -33,11 +36,11 @@ export class PositionSyncService {
       }
 
       if (!localActiveTrades || localActiveTrades.length === 0) {
-        console.log('📭 No local active trades to sync');
+        console.log('📭 No local active trades to sync (excluding recent orders)');
         return;
       }
 
-      console.log(`📊 Found ${localActiveTrades.length} local active trades to sync`);
+      console.log(`📊 Found ${localActiveTrades.length} local active trades to sync (excluding recent orders)`);
 
       // Get current account balance to check actual positions
       const accountBalance = await this.getAccountBalance();
@@ -65,32 +68,48 @@ export class PositionSyncService {
     exchangeOrders: any[]
   ): Promise<void> {
     try {
-      console.log(`🔍 Syncing position: ${localTrade.symbol} (${localTrade.status})`);
+      console.log(`🔍 Syncing position: ${localTrade.symbol} (${localTrade.status}) - Created: ${localTrade.created_at}`);
+
+      // Don't close trades that are less than 10 minutes old
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const tradeCreatedAt = new Date(localTrade.created_at);
+      
+      if (tradeCreatedAt > tenMinutesAgo) {
+        console.log(`⏰ Skipping recent trade ${localTrade.symbol} (created ${Math.round((Date.now() - tradeCreatedAt.getTime()) / 1000 / 60)} minutes ago)`);
+        return;
+      }
 
       // Extract base asset from symbol (e.g., BTC from BTCUSDT)
       const baseAsset = localTrade.symbol.replace('USDT', '');
       const currentBalance = accountBalance.get(baseAsset) || 0;
       
-      // Check if we still have the asset in our balance
-      const hasPosition = currentBalance > 0.00001; // Small threshold for floating point precision
+      // Check if we still have the asset in our balance - use higher threshold
+      const hasPosition = currentBalance > 0.001; // Higher threshold for floating point precision
       
       console.log(`Balance check for ${baseAsset}: ${currentBalance}, Has position: ${hasPosition}`);
 
-      // If no balance and trade is marked as filled, it was likely closed
+      // Only mark as closed if no balance AND we can confirm it was sold
       if (!hasPosition && localTrade.status === 'filled') {
-        console.log(`🎯 Detected closed position for ${localTrade.symbol} - no balance remaining`);
-        await this.markTradeAsClosed(localTrade, 'balance_check');
+        // Look for matching sell orders in exchange history
+        const matchingSellOrders = exchangeOrders.filter(order => 
+          order.symbol === localTrade.symbol &&
+          order.side === 'Sell' &&
+          order.orderStatus === 'Filled' &&
+          Math.abs(parseFloat(order.qty) - localTrade.quantity) < localTrade.quantity * 0.1 // 10% tolerance
+        );
+
+        if (matchingSellOrders.length > 0) {
+          console.log(`🎯 Confirmed position closure for ${localTrade.symbol} - found matching sell order`);
+          await this.markTradeAsClosed(localTrade, 'confirmed_sell_order');
+        } else {
+          console.log(`⚠️ No balance for ${localTrade.symbol} but no matching sell order found - keeping trade active`);
+        }
         return;
       }
 
       // Check order status on exchange if we have a Bybit order ID
       if (localTrade.bybit_order_id && !localTrade.bybit_order_id.startsWith('mock_')) {
         await this.checkOrderStatusOnExchange(localTrade, exchangeOrders);
-      }
-
-      // Additional check: look for matching sell orders in history
-      if (localTrade.status === 'filled' && localTrade.side === 'buy') {
-        await this.checkForMatchingSellOrder(localTrade, exchangeOrders);
       }
 
     } catch (error) {

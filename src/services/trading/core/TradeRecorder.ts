@@ -31,9 +31,13 @@ export class TradeRecorder {
         status: 'pending',
         order_type: 'limit',
         bybit_order_id: bybitOrderId,
-        signal_id: signalId,
         created_at: new Date().toISOString()
       };
+
+      // Only add signal_id if it's provided and not undefined
+      if (signalId) {
+        (tradeData as any).signal_id = signalId;
+      }
 
       // Validate trade data before insertion
       const validation = DataValidationService.validateTradeForDatabase(tradeData);
@@ -66,7 +70,7 @@ export class TradeRecorder {
         signalId
       });
 
-      // Immediately try to sync the order status
+      // Immediately try to sync the order status after a longer delay
       setTimeout(async () => {
         try {
           const { TradeSyncService } = await import('../tradeSyncService');
@@ -83,7 +87,7 @@ export class TradeRecorder {
         } catch (error) {
           console.error(`❌ Error auto-syncing trade ${data.id}:`, error);
         }
-      }, 5000); // Wait 5 seconds before first sync attempt
+      }, 10000); // Wait 10 seconds before first sync attempt to give exchange time
 
     } catch (error) {
       console.error(`❌ Error recording buy order for ${symbol}:`, error);

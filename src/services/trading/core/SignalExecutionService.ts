@@ -121,7 +121,7 @@ export class SignalExecutionService {
         - Take Profit: $${takeProfitPrice.toFixed(6)}
         - Order Value: $${(quantity * entryPrice).toFixed(2)}`);
 
-      // Step 3: Place the order using the correct method name
+      // Step 3: Place the order with signal ID for proper tracking
       console.log(`📝 Step 3: Placing order for ${signal.symbol}...`);
       await this.orderPlacer.placeRealBybitOrder(signal, quantity, entryPrice, takeProfitPrice);
       console.log(`✅ ${signal.symbol}: Order placed successfully`);

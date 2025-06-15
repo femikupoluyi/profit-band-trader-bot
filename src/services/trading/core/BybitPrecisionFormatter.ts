@@ -14,11 +14,11 @@ export class BybitPrecisionFormatter {
       const instrumentInfo = await this.getInstrumentInfo(symbol);
       const tickSize = parseFloat(instrumentInfo.tickSize);
       
-      // Round to nearest tick size
+      // Round to nearest tick size using proper rounding
       const roundedPrice = Math.round(price / tickSize) * tickSize;
       
-      // Format with correct decimal places
-      const decimals = this.getDecimalPlaces(tickSize);
+      // Format with correct decimal places based on tick size
+      const decimals = this.getDecimalPlaces(tickSize.toString());
       const formatted = roundedPrice.toFixed(decimals);
       
       console.log(`✅ Price formatted for ${symbol}: ${price} → ${formatted} (tick: ${tickSize}, decimals: ${decimals})`);
@@ -39,15 +39,18 @@ export class BybitPrecisionFormatter {
       const instrumentInfo = await this.getInstrumentInfo(symbol);
       const basePrecision = parseFloat(instrumentInfo.basePrecision);
       
-      // Round down to nearest base precision increment
+      // Round DOWN to nearest base precision increment to avoid "too many decimals"
       const roundedQuantity = Math.floor(quantity / basePrecision) * basePrecision;
       
-      // Format with correct decimal places
-      const decimals = this.getDecimalPlaces(basePrecision);
+      // Format with correct decimal places based on base precision
+      const decimals = this.getDecimalPlaces(basePrecision.toString());
       const formatted = roundedQuantity.toFixed(decimals);
       
-      console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → ${formatted} (base: ${basePrecision}, decimals: ${decimals})`);
-      return formatted;
+      // Remove trailing zeros and ensure we don't exceed the precision
+      const finalFormatted = parseFloat(formatted).toString();
+      
+      console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → ${finalFormatted} (base: ${basePrecision}, decimals: ${decimals})`);
+      return finalFormatted;
     } catch (error) {
       console.error(`❌ Error formatting quantity for ${symbol}:`, error);
       throw error;
@@ -86,7 +89,7 @@ export class BybitPrecisionFormatter {
   }
 
   /**
-   * Calculate proper quantity for order amount using Bybit precision
+   * Calculate proper quantity for order amount using Bybit precision  
    */
   static async calculateQuantity(symbol: string, orderAmount: number, price: number): Promise<number> {
     try {
@@ -119,10 +122,9 @@ export class BybitPrecisionFormatter {
     return instrumentInfo;
   }
 
-  private static getDecimalPlaces(value: number): number {
-    const str = value.toString();
-    if (str.indexOf('.') === -1) return 0;
-    return str.split('.')[1].length;
+  private static getDecimalPlaces(value: string): number {
+    if (value.indexOf('.') === -1) return 0;
+    return value.split('.')[1].length;
   }
 
   /**
