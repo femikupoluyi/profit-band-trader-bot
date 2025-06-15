@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { BybitService } from '../bybitService';
 
@@ -39,11 +38,35 @@ export class TradeSyncService {
         return false;
       }
 
-      // Get order status from Bybit
-      const bybitStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
+      console.log(`🔍 Checking Bybit order status for: ${trade.bybit_order_id}`);
+
+      // Get order status from Bybit with retries
+      let bybitStatus;
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (attempts < maxAttempts) {
+        try {
+          bybitStatus = await this.bybitService.getOrderStatus(trade.bybit_order_id);
+          if (bybitStatus && bybitStatus.retCode === 0) {
+            break;
+          }
+          attempts++;
+          if (attempts < maxAttempts) {
+            console.log(`⏳ Retrying order status check (attempt ${attempts + 1}/${maxAttempts})`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        } catch (error) {
+          console.error(`❌ Attempt ${attempts + 1} failed:`, error);
+          attempts++;
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+      }
       
-      if (bybitStatus.retCode !== 0) {
-        console.error('Failed to get Bybit order status:', bybitStatus);
+      if (!bybitStatus || bybitStatus.retCode !== 0) {
+        console.error('Failed to get Bybit order status after retries:', bybitStatus);
         return false;
       }
 
@@ -53,7 +76,12 @@ export class TradeSyncService {
         return false;
       }
 
-      console.log(`Bybit order status: ${orderData.orderStatus}, avgPrice: ${orderData.avgPrice}, cumExecQty: ${orderData.cumExecQty}`);
+      console.log(`📊 Bybit order data:`, {
+        status: orderData.orderStatus,
+        avgPrice: orderData.avgPrice,
+        cumExecQty: orderData.cumExecQty,
+        qty: orderData.qty
+      });
 
       // Map Bybit status to our status with enhanced detection
       let newStatus = trade.status;
@@ -68,7 +96,7 @@ export class TradeSyncService {
             actualFillPrice = parseFloat(orderData.avgPrice || orderData.price || trade.price);
             actualQuantity = parseFloat(orderData.cumExecQty || orderData.qty || trade.quantity);
             statusChanged = true;
-            console.log(`✅ Order ${trade.bybit_order_id} is FILLED - updating to filled status`);
+            console.log(`✅ Order ${trade.bybit_order_id} is FILLED - updating status`);
           }
           break;
         case 'PartiallyFilled':
@@ -96,7 +124,7 @@ export class TradeSyncService {
           }
           break;
         default:
-          console.log(`Unknown Bybit status: ${orderData.orderStatus}`);
+          console.log(`❓ Unknown Bybit status: ${orderData.orderStatus}`);
           return false;
       }
 
@@ -114,10 +142,16 @@ export class TradeSyncService {
         }
         if (priceChanged) {
           updateData.price = actualFillPrice;
+          // Store fill price separately for reference
+          if (trade.side === 'buy') {
+            updateData.buy_fill_price = actualFillPrice;
+          }
         }
         if (quantityChanged) {
           updateData.quantity = actualQuantity;
         }
+
+        console.log(`📝 Updating trade ${tradeId} with:`, updateData);
 
         const { error: updateError } = await supabase
           .from('trades')
@@ -125,34 +159,31 @@ export class TradeSyncService {
           .eq('id', tradeId);
 
         if (updateError) {
-          console.error('Failed to update trade status:', updateError);
+          console.error('❌ Failed to update trade status:', updateError);
           return false;
         }
 
-        console.log(`✅ Trade ${tradeId} synced: ${trade.status} → ${newStatus}, Price: ${trade.price} → ${actualFillPrice}, Qty: ${trade.quantity} → ${actualQuantity}`);
+        console.log(`✅ Trade ${tradeId} synced successfully`);
         
-        // Log the sync activity with detailed information
-        await this.logActivity('trade_synced', `Trade ${trade.symbol} synced with Bybit - Status: ${trade.status} → ${newStatus}`, {
+        // Log the sync activity
+        await this.logActivity('trade_synced', `Trade ${trade.symbol} synced with Bybit`, {
           tradeId,
           symbol: trade.symbol,
           oldStatus: trade.status,
           newStatus,
-          oldPrice: trade.price,
-          newPrice: actualFillPrice,
-          oldQuantity: trade.quantity,
-          newQuantity: actualQuantity,
           bybitOrderId: trade.bybit_order_id,
-          bybitStatus: orderData.orderStatus,
-          bybitAvgPrice: orderData.avgPrice,
-          bybitCumExecQty: orderData.cumExecQty
+          statusChanged,
+          priceChanged,
+          quantityChanged
         });
 
         return true;
       }
 
+      console.log(`ℹ️ No changes needed for trade ${tradeId}`);
       return false;
     } catch (error) {
-      console.error(`Error syncing trade ${tradeId}:`, error);
+      console.error(`❌ Error syncing trade ${tradeId}:`, error);
       return false;
     }
   }
@@ -171,21 +202,30 @@ export class TradeSyncService {
         .not('bybit_order_id', 'like', 'mock_%');
 
       if (!activeTrades || activeTrades.length === 0) {
-        console.log('No active trades to sync');
+        console.log('📭 No active trades to sync');
         return;
       }
 
-      console.log(`Syncing ${activeTrades.length} active trades...`);
+      console.log(`📊 Found ${activeTrades.length} active trades to sync`);
 
-      for (const trade of activeTrades) {
-        await this.syncTradeWithBybit(trade.id);
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200));
+      // Sync trades in smaller batches to avoid overwhelming the API
+      const batchSize = 5;
+      for (let i = 0; i < activeTrades.length; i += batchSize) {
+        const batch = activeTrades.slice(i, i + batchSize);
+        console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} trades)`);
+        
+        const syncPromises = batch.map(trade => this.syncTradeWithBybit(trade.id));
+        await Promise.allSettled(syncPromises);
+        
+        // Small delay between batches
+        if (i + batchSize < activeTrades.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
 
       console.log('✅ Completed syncing all active trades');
     } catch (error) {
-      console.error('Error syncing active trades:', error);
+      console.error('❌ Error syncing active trades:', error);
     }
   }
 
@@ -203,17 +243,17 @@ export class TradeSyncService {
         .not('bybit_order_id', 'like', 'mock_%');
 
       if (!filledTrades || filledTrades.length === 0) {
-        console.log('No filled trades to check for closure');
+        console.log('📭 No filled trades to check for closure');
         return;
       }
 
-      console.log(`Checking ${filledTrades.length} filled trades for potential closure...`);
+      console.log(`🔍 Checking ${filledTrades.length} filled trades for potential closure`);
 
-      // Get current account balance to see which positions still exist
+      // Get current account balance
       const balanceData = await this.bybitService.getAccountBalance();
       
       if (balanceData.retCode !== 0 || !balanceData.result?.list?.[0]?.coin) {
-        console.error('Failed to get account balance for position detection');
+        console.warn('⚠️ Failed to get account balance for position detection');
         return;
       }
 
@@ -225,79 +265,58 @@ export class TradeSyncService {
         coinBalances.set(coin.coin, parseFloat(coin.walletBalance || '0'));
       });
 
-      // Check each filled trade to see if position still exists
+      console.log(`💰 Current balances:`, Object.fromEntries(coinBalances));
+
+      // Check each filled trade
       for (const trade of filledTrades) {
         try {
           const baseSymbol = trade.symbol.replace('USDT', '');
           const currentBalance = coinBalances.get(baseSymbol) || 0;
+          const tradeQuantity = parseFloat(trade.quantity.toString());
           
-          console.log(`Checking ${trade.symbol}: Current ${baseSymbol} balance: ${currentBalance}, Trade quantity: ${trade.quantity}`);
+          console.log(`🔍 ${trade.symbol}: Balance=${currentBalance}, Trade Qty=${tradeQuantity}`);
           
-          // If balance is zero or significantly less than trade quantity, position was likely closed
-          if (currentBalance === 0 || currentBalance < trade.quantity * 0.1) {
-            console.log(`🎯 Detected closed position for ${trade.symbol} - updating status (balance: ${currentBalance})`);
+          // If balance is significantly less than trade quantity, position was likely closed
+          const threshold = tradeQuantity * 0.05; // 5% threshold
+          if (currentBalance < threshold) {
+            console.log(`🎯 Detected closed position for ${trade.symbol} (balance: ${currentBalance} < threshold: ${threshold})`);
             
-            // Update trade status to closed
-            const { error: updateError } = await supabase
-              .from('trades')
-              .update({
-                status: 'closed',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', trade.id)
-              .eq('status', 'filled'); // Only update if still filled
-
-            if (updateError) {
-              console.error(`Error updating trade ${trade.id} to closed:`, updateError);
-            } else {
-              await this.logActivity('position_closed', `Auto-detected closed position for ${trade.symbol} via balance check`, {
-                tradeId: trade.id,
-                symbol: trade.symbol,
-                detectionMethod: 'balance_check',
-                currentBalance,
-                tradeQuantity: trade.quantity,
-                balanceRatio: currentBalance / trade.quantity
-              });
-            }
-          } else {
-            console.log(`Position ${trade.symbol} still active - balance: ${currentBalance} >= threshold`);
+            await this.markTradeAsClosed(trade, 'balance_check', currentBalance, tradeQuantity);
           }
         } catch (error) {
-          console.error(`Error checking balance for ${trade.symbol}:`, error);
+          console.error(`❌ Error checking balance for ${trade.symbol}:`, error);
         }
       }
 
-      // Additional check: Look for sell orders in Bybit history that we might have missed
+      // Additional check: Look for sell orders in Bybit history
       await this.detectClosedPositionsFromOrderHistory();
 
     } catch (error) {
-      console.error('Error detecting closed positions:', error);
+      console.error('❌ Error detecting closed positions:', error);
     }
   }
 
   private async detectClosedPositionsFromOrderHistory(): Promise<void> {
     try {
-      console.log('🔍 Checking Bybit order history for missed sell orders...');
+      console.log('📋 Checking Bybit order history for sell orders...');
       
-      // Get recent order history from Bybit
-      const orderHistory = await this.bybitService.getOrderHistory();
+      const orderHistory = await this.bybitService.getOrderHistory(50);
       
       if (orderHistory.retCode !== 0 || !orderHistory.result?.list) {
-        console.log('No order history available');
+        console.log('📭 No order history available');
         return;
       }
 
-      // Look for sell orders that might correspond to our filled trades
       const sellOrders = orderHistory.result.list.filter((order: any) => 
         order.side === 'Sell' && order.orderStatus === 'Filled'
       );
 
       if (sellOrders.length === 0) {
-        console.log('No filled sell orders found in recent history');
+        console.log('📭 No filled sell orders found');
         return;
       }
 
-      console.log(`Found ${sellOrders.length} filled sell orders in Bybit history`);
+      console.log(`📊 Found ${sellOrders.length} filled sell orders`);
 
       // Get our filled trades to match against
       const { data: filledTrades } = await supabase
@@ -312,49 +331,84 @@ export class TradeSyncService {
 
       // Try to match sell orders with our positions
       for (const sellOrder of sellOrders) {
-        const matchingTrade = filledTrades.find(trade => 
-          trade.symbol === sellOrder.symbol && 
-          Math.abs(parseFloat(sellOrder.qty) - trade.quantity) < trade.quantity * 0.05 // 5% tolerance
-        );
+        const sellQuantity = parseFloat(sellOrder.qty);
+        const matchingTrade = filledTrades.find(trade => {
+          const tradeQuantity = parseFloat(trade.quantity.toString());
+          return (
+            trade.symbol === sellOrder.symbol && 
+            Math.abs(sellQuantity - tradeQuantity) < tradeQuantity * 0.05 // 5% tolerance
+          );
+        });
 
         if (matchingTrade) {
-          console.log(`🎯 Found matching sell order for ${matchingTrade.symbol} - marking as closed`);
+          console.log(`🎯 Found matching sell order for ${matchingTrade.symbol}`);
           
-          const { error: updateError } = await supabase
-            .from('trades')
-            .update({
-              status: 'closed',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', matchingTrade.id)
-            .eq('status', 'filled');
-
-          if (!updateError) {
-            await this.logActivity('position_closed', `Auto-detected closed position for ${matchingTrade.symbol} via order history`, {
-              tradeId: matchingTrade.id,
-              symbol: matchingTrade.symbol,
-              detectionMethod: 'order_history_match',
-              bybitSellOrderId: sellOrder.orderId,
-              sellQuantity: sellOrder.qty,
-              sellPrice: sellOrder.avgPrice
-            });
-          }
+          const sellPrice = parseFloat(sellOrder.avgPrice || sellOrder.price);
+          const buyPrice = matchingTrade.buy_fill_price ? 
+            parseFloat(matchingTrade.buy_fill_price.toString()) : 
+            parseFloat(matchingTrade.price.toString());
+          
+          const profitLoss = (sellPrice - buyPrice) * sellQuantity;
+          
+          await this.markTradeAsClosed(matchingTrade, 'order_history_match', sellPrice, sellQuantity, profitLoss);
         }
       }
     } catch (error) {
-      console.error('Error checking order history:', error);
+      console.error('❌ Error checking order history:', error);
     }
   }
 
-  async verifyOrderPlacement(tradeId: string, maxRetries: number = 3): Promise<boolean> {
+  private async markTradeAsClosed(
+    trade: any, 
+    reason: string, 
+    sellPrice?: number, 
+    sellQuantity?: number, 
+    profitLoss?: number
+  ): Promise<void> {
+    try {
+      const updateData: any = {
+        status: 'closed',
+        updated_at: new Date().toISOString()
+      };
+
+      if (profitLoss !== undefined) {
+        updateData.profit_loss = profitLoss;
+      }
+
+      const { error } = await supabase
+        .from('trades')
+        .update(updateData)
+        .eq('id', trade.id)
+        .eq('status', 'filled'); // Only update if still filled
+
+      if (error) {
+        console.error(`❌ Error closing trade ${trade.id}:`, error);
+      } else {
+        console.log(`✅ Marked trade ${trade.id} (${trade.symbol}) as closed - Reason: ${reason}`);
+        
+        await this.logActivity('position_closed', `Auto-closed ${trade.symbol} position`, {
+          tradeId: trade.id,
+          symbol: trade.symbol,
+          reason,
+          sellPrice,
+          sellQuantity,
+          profitLoss
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Error marking trade as closed:`, error);
+    }
+  }
+
+  async verifyOrderPlacement(tradeId: string, maxRetries: number = 5): Promise<boolean> {
     try {
       console.log(`🔍 Verifying order placement for trade ${tradeId}...`);
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`Verification attempt ${attempt}/${maxRetries}`);
+        console.log(`📡 Verification attempt ${attempt}/${maxRetries}`);
 
-        // Wait a bit for order to appear in Bybit system
-        await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        // Progressive delay
+        await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
 
         const success = await this.syncTradeWithBybit(tradeId);
         if (success) {
@@ -381,7 +435,7 @@ export class TradeSyncService {
 
       return false;
     } catch (error) {
-      console.error(`Error verifying order placement for trade ${tradeId}:`, error);
+      console.error(`❌ Error verifying order placement for trade ${tradeId}:`, error);
       return false;
     }
   }
@@ -391,7 +445,8 @@ export class TradeSyncService {
       const validLogTypes = [
         'signal_processed', 'trade_executed', 'trade_filled', 'position_closed',
         'system_error', 'order_placed', 'order_failed', 'calculation_error',
-        'execution_error', 'signal_rejected', 'order_rejected', 'trade_synced'
+        'execution_error', 'signal_rejected', 'order_rejected', 'trade_synced',
+        'order_verification_failed'
       ];
 
       const validType = validLogTypes.includes(type) ? type : 'system_error';
@@ -405,7 +460,7 @@ export class TradeSyncService {
           data: data || null,
         });
     } catch (error) {
-      console.error('Error logging activity:', error);
+      console.error('❌ Error logging activity:', error);
     }
   }
 }

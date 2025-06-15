@@ -20,7 +20,7 @@ export class TradeRecorder {
     signalId?: string
   ): Promise<void> {
     try {
-      console.log(`📝 Recording buy order for ${symbol}`);
+      console.log(`📝 Recording buy order for ${symbol}: qty=${quantity}, price=${entryPrice}, orderId=${bybitOrderId}`);
 
       const tradeData = {
         user_id: this.userId,
@@ -31,7 +31,8 @@ export class TradeRecorder {
         status: 'pending',
         order_type: 'limit',
         bybit_order_id: bybitOrderId,
-        signal_id: signalId
+        signal_id: signalId,
+        created_at: new Date().toISOString()
       };
 
       // Validate trade data before insertion
@@ -39,6 +40,8 @@ export class TradeRecorder {
       if (!validation.isValid) {
         throw new Error(`Trade validation failed: ${validation.errors.join(', ')}`);
       }
+
+      console.log(`💾 Inserting trade data:`, validation.sanitizedTrade);
 
       const { data, error } = await supabase
         .from('trades')
@@ -52,12 +55,35 @@ export class TradeRecorder {
       }
 
       console.log(`✅ Buy order recorded in database: Trade ID ${data.id}`);
+      
+      // Log success with detailed information
       await this.logger.logSuccess(`Buy order recorded for ${symbol}`, {
         tradeId: data.id,
         bybitOrderId,
         quantity,
-        entryPrice
+        entryPrice,
+        symbol,
+        signalId
       });
+
+      // Immediately try to sync the order status
+      setTimeout(async () => {
+        try {
+          const { TradeSyncService } = await import('../tradeSyncService');
+          const { CredentialsManager } = await import('../credentialsManager');
+          
+          const credentialsManager = new CredentialsManager(this.userId);
+          const bybitService = await credentialsManager.fetchCredentials();
+          
+          if (bybitService) {
+            const syncService = new TradeSyncService(this.userId, bybitService);
+            console.log(`🔄 Auto-syncing newly recorded trade ${data.id}`);
+            await syncService.verifyOrderPlacement(data.id, 3);
+          }
+        } catch (error) {
+          console.error(`❌ Error auto-syncing trade ${data.id}:`, error);
+        }
+      }, 5000); // Wait 5 seconds before first sync attempt
 
     } catch (error) {
       console.error(`❌ Error recording buy order for ${symbol}:`, error);
@@ -73,11 +99,15 @@ export class TradeRecorder {
 
   async updateTradeStatus(tradeId: string, status: string, additionalData?: any): Promise<void> {
     try {
+      console.log(`📝 Updating trade ${tradeId} status to ${status}`);
+      
       const updateData = {
         status: status,
         updated_at: new Date().toISOString(),
         ...additionalData
       };
+
+      console.log(`💾 Update data:`, updateData);
 
       const { error } = await supabase
         .from('trades')

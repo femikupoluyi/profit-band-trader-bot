@@ -14,14 +14,16 @@ export class OrderFormatter {
     entryPrice: number
   ): Promise<FormattedOrderData> {
     try {
-      console.log(`📋 Formatting buy order for ${symbol}...`);
+      console.log(`📋 Formatting buy order for ${symbol}: qty=${quantity}, price=${entryPrice}`);
+
+      // Clear any cached data first to ensure fresh precision
+      BybitPrecisionFormatter.clearCache();
 
       // Use Bybit precision formatter for exact formatting
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
 
-      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
-      console.log(`  🔧 Formatted Entry Price: ${formattedPrice}`);
+      console.log(`🔧 Formatted values - Quantity: ${formattedQuantity}, Price: ${formattedPrice}`);
 
       // Validate the order meets Bybit requirements
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
@@ -51,17 +53,21 @@ export class OrderFormatter {
     instrumentInfo: any
   ): Promise<FormattedOrderData> {
     try {
+      console.log(`📋 Formatting sell order for ${symbol}: qty=${quantity}, price=${price}`);
+
+      // Clear any cached data first to ensure fresh precision
+      BybitPrecisionFormatter.clearCache();
+
       // Use Bybit precision formatter for exact formatting
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       
-      console.log(`  🔧 Formatted Take-Profit Price: ${formattedPrice}`);
-      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
+      console.log(`🔧 Formatted values - Quantity: ${formattedQuantity}, Price: ${formattedPrice}`);
       
-      // Validate the formatted take-profit order
+      // Validate the formatted sell order
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
       if (!isValid) {
-        throw new Error(`Take-profit order validation failed for ${symbol}`);
+        throw new Error(`Sell order validation failed for ${symbol}`);
       }
 
       return {

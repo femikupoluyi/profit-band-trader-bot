@@ -3,6 +3,7 @@ import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
 import { TradeRecorder } from './TradeRecorder';
 import { OrderExecutor } from './OrderExecutor';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 
 export interface OrderPlacementResult {
   success: boolean;
@@ -54,6 +55,9 @@ export class OrderPlacer {
       console.log(`📈 Take-Profit Price: ${takeProfitPrice}`);
       console.log(`📦 Quantity: ${quantity}`);
 
+      // Clear any cached precision data to ensure fresh formatting
+      BybitPrecisionFormatter.clearCache();
+
       await this.logger.logSuccess(`Starting order placement for ${signal.symbol}`, {
         signal: signal.signal_type,
         entryPrice,
@@ -61,7 +65,7 @@ export class OrderPlacer {
         quantity
       });
 
-      // Execute buy order - Fixed the syntax error here
+      // Execute buy order with proper precision formatting
       const buyResult = await this.orderExecutor.executeBuyOrder(signal.symbol, quantity, entryPrice);
       
       if (!buyResult.success) {
