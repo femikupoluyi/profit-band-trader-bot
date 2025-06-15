@@ -1,8 +1,9 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../bybitService';
 import { TradingLogger } from './core/TradingLogger';
-import { SupportLevelAnalyzer } from './supportLevelAnalyzer';
+import { TradingLogicFactory } from './core/TradingLogicFactory';
 import { SignalGenerator } from './signalGenerator';
 import { SupportLevel } from './core/TypeDefinitions';
 
@@ -10,20 +11,18 @@ export class SignalAnalyzer {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
-  private supportAnalyzer: SupportLevelAnalyzer;
   private signalGenerator: SignalGenerator;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
     this.logger = new TradingLogger(userId);
-    this.supportAnalyzer = new SupportLevelAnalyzer();
     this.signalGenerator = new SignalGenerator(userId, {} as TradingConfigData); // Will be updated per call
   }
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
     try {
-      console.log('🔍 Starting signal analysis for all symbols...');
+      console.log('🔍 Starting signal analysis for all symbols with precision formatting...');
       await this.logger.logSystemInfo('Starting signal analysis', { symbolCount: config.trading_pairs.length });
 
       // Update signal generator with current config
@@ -34,7 +33,7 @@ export class SignalAnalyzer {
       }
 
       console.log('✅ Signal analysis completed for all symbols');
-      await this.logger.logSuccess('Signal analysis completed');
+      await this.logger.logSuccess('Signal analysis completed with precision formatting');
     } catch (error) {
       console.error('❌ Error in signal analysis:', error);
       await this.logger.logError('Signal analysis failed', error);
@@ -49,7 +48,7 @@ export class SignalAnalyzer {
 
   private async analyzeSymbol(symbol: string, config: TradingConfigData): Promise<void> {
     try {
-      console.log(`\n🔍 Analyzing ${symbol}...`);
+      console.log(`\n🔍 Analyzing ${symbol} with ${config.trading_logic_type}...`);
 
       // Get current market price
       const marketData = await this.bybitService.getMarketPrice(symbol);
@@ -71,15 +70,12 @@ export class SignalAnalyzer {
         return;
       }
 
-      // SIMPLIFIED SUPPORT ANALYSIS - Always create a basic support level
-      let supportLevel: SupportLevel = {
-        price: currentPrice * 0.995, // Support 0.5% below current price
-        strength: 0.8,
-        timestamp: Date.now(),
-        touches: 3
-      };
+      // Get the appropriate trading logic
+      const tradingLogic = TradingLogicFactory.getLogic(config.trading_logic_type);
+      console.log(`🔧 Using ${tradingLogic.name} for ${symbol}`);
 
-      // Try to get better support data if available
+      let supportLevel: SupportLevel;
+
       if (recentData && recentData.length >= 10) {
         const candleData = recentData.map(d => ({
           low: parseFloat(d.price.toString()),
@@ -90,25 +86,52 @@ export class SignalAnalyzer {
           timestamp: new Date(d.timestamp).getTime()
         }));
 
-        const analyzedSupport = this.supportAnalyzer.identifySupportLevel(candleData);
-        if (analyzedSupport && analyzedSupport.strength > 0.3) {
-          supportLevel = analyzedSupport;
-          console.log(`📊 Found stronger support at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
+        // Use the trading logic with precision formatting
+        const supportLevels = await tradingLogic.analyzeSupportLevels(candleData, config, symbol);
+        
+        if (supportLevels && supportLevels.length > 0) {
+          supportLevel = supportLevels[0]; // Use the strongest support level
+          console.log(`📊 ${tradingLogic.name} found formatted support at $${supportLevel.price.toFixed(4)} (strength: ${supportLevel.strength})`);
+        } else {
+          // Fallback: create a basic support level with proper formatting
+          const { SupportLevelProcessor } = await import('./core/SupportLevelProcessor');
+          const fallbackPrice = await SupportLevelProcessor.formatSupportLevel(symbol, currentPrice * 0.995);
+          
+          supportLevel = {
+            price: fallbackPrice,
+            strength: 0.6,
+            timestamp: Date.now(),
+            touches: 2
+          };
+          console.log(`📊 Using formatted fallback support at $${supportLevel.price.toFixed(4)}`);
         }
+      } else {
+        // Fallback: support 0.5% below current price with proper formatting
+        const { SupportLevelProcessor } = await import('./core/SupportLevelProcessor');
+        const fallbackPrice = await SupportLevelProcessor.formatSupportLevel(symbol, currentPrice * 0.995);
+        
+        supportLevel = {
+          price: fallbackPrice,
+          strength: 0.8,
+          timestamp: Date.now(),
+          touches: 3
+        };
+        console.log(`📊 Using formatted fallback support at $${supportLevel.price.toFixed(4)} (insufficient data)`);
       }
 
       // Generate signal if conditions are met
       const signal = await this.signalGenerator.generateSignal(symbol, currentPrice, supportLevel);
       if (signal) {
-        console.log(`🎯 Signal generated for ${symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
-        await this.logger.logSuccess(`Signal generated for ${symbol}`, {
+        console.log(`🎯 Precision-formatted signal generated for ${symbol}: ${signal.action} at $${signal.price.toFixed(4)}`);
+        await this.logger.logSuccess(`Precision-formatted signal generated for ${symbol}`, {
           symbol,
           action: signal.action,
           price: signal.price,
-          supportLevel: supportLevel.price
+          supportLevel: supportLevel.price,
+          tradingLogic: tradingLogic.name
         });
       } else {
-        console.log(`📭 No signal generated for ${symbol}`);
+        console.log(`📭 No signal generated for ${symbol} using ${tradingLogic.name}`);
       }
 
     } catch (error) {

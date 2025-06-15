@@ -1,10 +1,9 @@
 
+import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
-import { SignalContext } from './SignalAnalysisCore';
-import { SupportResistanceService } from './SupportResistanceService';
-import { MarketDataScannerService } from './MarketDataScannerService';
 import { BybitService } from '../../bybitService';
+import { SupportLevelProcessor } from './SupportLevelProcessor';
+import { SignalContext } from './SignalAnalysisCore';
 
 export interface NewPositionResult {
   shouldCreateSignal: boolean;
@@ -15,12 +14,12 @@ export interface NewPositionResult {
 }
 
 export class NewPositionAnalyzer {
-  private supportResistance: SupportResistanceService;
-  private marketDataScanner: MarketDataScannerService;
+  private userId: string;
+  private bybitService: BybitService;
 
   constructor(userId: string, bybitService: BybitService) {
-    this.supportResistance = new SupportResistanceService(bybitService);
-    this.marketDataScanner = new MarketDataScannerService(userId, bybitService);
+    this.userId = userId;
+    this.bybitService = bybitService;
   }
 
   async analyzeNewPosition(context: SignalContext, currentPrice: number, config: TradingConfigData): Promise<NewPositionResult> {
@@ -29,53 +28,75 @@ export class NewPositionAnalyzer {
     }
 
     try {
-      // Ensure sufficient data
-      const hasData = await Promise.race([
-        this.marketDataScanner.ensureSufficientData(context.symbol, config.support_candle_count || 128),
-        new Promise<boolean>((_, reject) => 
-          setTimeout(() => reject(new Error('Market data timeout')), 15000)
-        )
-      ]);
+      console.log(`🔍 ${context.symbol}: Analyzing new position at current price: ${currentPrice}`);
 
-      if (!hasData) {
-        console.warn(`⚠️ Could not ensure sufficient market data for ${context.symbol}`);
+      // Get recent market data for analysis
+      const { data: recentData, error } = await supabase
+        .from('market_data')
+        .select('*')
+        .eq('symbol', context.symbol)
+        .order('timestamp', { ascending: false })
+        .limit(config.support_candle_count || 128);
+
+      if (error) {
+        console.error(`❌ Error fetching market data for ${context.symbol}:`, error);
         return { shouldCreateSignal: false };
       }
 
-      // Get support/resistance levels
-      const supportData = await this.supportResistance.getSupportResistanceLevels(
+      // Calculate support level with proper formatting
+      let supportLevel: number;
+      
+      if (recentData && recentData.length >= 10) {
+        // Use recent lows to find support
+        const recentLows = recentData.map(d => parseFloat(d.price.toString())).sort((a, b) => a - b);
+        const lowestPrice = recentLows[0];
+        const supportCandidate = lowestPrice * 1.005; // 0.5% above lowest price
+        
+        supportLevel = await SupportLevelProcessor.formatSupportLevel(context.symbol, supportCandidate);
+      } else {
+        // Fallback: support 1% below current price
+        supportLevel = await SupportLevelProcessor.formatSupportLevel(context.symbol, currentPrice * 0.99);
+      }
+
+      // Check if current price is near support level
+      const priceToSupportPercent = ((currentPrice - supportLevel) / supportLevel) * 100;
+      
+      console.log(`📊 ${context.symbol}: Support analysis - Support: ${supportLevel}, Current: ${currentPrice}, Distance: ${priceToSupportPercent.toFixed(2)}%`);
+
+      // Only create signal if price is within bounds of support level
+      const lowerBound = config.support_lower_bound_percent || 0.5;
+      const upperBound = config.support_upper_bound_percent || 2.0;
+
+      if (priceToSupportPercent < -lowerBound || priceToSupportPercent > upperBound) {
+        console.log(`❌ ${context.symbol}: Price not within support bounds (${-lowerBound}% to +${upperBound}%)`);
+        return { shouldCreateSignal: false };
+      }
+
+      // Calculate entry price with proper formatting
+      const entryPrice = await SupportLevelProcessor.calculateFormattedEntryPrice(
         context.symbol,
-        config.chart_timeframe,
-        config.support_candle_count || 128,
-        config.support_lower_bound_percent || 5.0,
-        config.support_upper_bound_percent || 2.0
+        currentPrice,
+        -config.entry_offset_percent // Negative for buy below current price
       );
 
-      if (!supportData.currentSupport || supportData.currentSupport.price <= 0) {
-        console.warn(`⚠️ No valid support level found for ${context.symbol}`);
+      // Validate the calculated price
+      const isPriceValid = await SupportLevelProcessor.validatePriceRange(context.symbol, entryPrice);
+      if (!isPriceValid) {
+        console.log(`❌ ${context.symbol}: Entry price validation failed`);
         return { shouldCreateSignal: false };
       }
 
-      const supportPrice = supportData.currentSupport.price;
-      
-      // Place limit order above support for new positions
-      const entryPrice = supportPrice * (1 + config.entry_offset_percent / 100);
-      const formattedEntryPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, entryPrice);
-      const finalEntryPrice = parseFloat(formattedEntryPrice);
-      
-      // Calculate confidence based on volume (higher volume = higher confidence)
-      const volumeConfidence = Math.min(supportData.currentSupport.volume / 1000000, 1.0);
-      const confidence = Math.min(0.95, 0.6 + (volumeConfidence * 0.3)); // Base 0.6 + volume bonus up to 0.3
-      
-      const formattedSupportPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, supportPrice);
-      const reasoning = `NEW POSITION: Entry at ${formattedEntryPrice} (${config.entry_offset_percent}% above support ${formattedSupportPrice})`;
+      const confidence = 0.8; // Higher confidence for new positions near support
+      const reasoning = `NEW POSITION: Entry at ${entryPrice} (${config.entry_offset_percent}% below current ${currentPrice}). Support level: ${supportLevel}`;
+
+      console.log(`✅ ${context.symbol}: New position signal generated - Entry: ${entryPrice}, Support: ${supportLevel}, Confidence: ${confidence}`);
 
       return {
         shouldCreateSignal: true,
-        entryPrice: finalEntryPrice,
+        entryPrice,
         reasoning,
         confidence,
-        supportLevel: supportPrice
+        supportLevel
       };
     } catch (error) {
       console.error(`❌ Error in new position analysis for ${context.symbol}:`, error);

@@ -2,6 +2,7 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { SupportLevelAnalyzer } from '../supportLevelAnalyzer';
 import { DataDrivenSupportAnalyzer } from './DataDrivenSupportAnalyzer';
+import { SupportLevelProcessor } from './SupportLevelProcessor';
 import { SupportLevel } from './TypeDefinitions';
 
 export interface CandleData {
@@ -16,34 +17,73 @@ export interface CandleData {
 export interface TradingLogic {
   name: string;
   description: string;
-  analyzeSupportLevels(candles: CandleData[], config: TradingConfigData): SupportLevel[];
+  analyzeSupportLevels(candles: CandleData[], config: TradingConfigData, symbol: string): Promise<SupportLevel[]>;
   calculateDynamicBounds?(candles: CandleData[], config: TradingConfigData): { lowerBound: number; upperBound: number };
 }
 
 export class Logic1BaseSupport implements TradingLogic {
   name = 'Logic 1 - Base Support Detection';
-  description = 'Original simple support level detection using price grouping';
+  description = 'Original simple support level detection using price grouping with Bybit precision';
   
   private analyzer = new SupportLevelAnalyzer();
 
-  analyzeSupportLevels(candles: CandleData[], config: TradingConfigData): SupportLevel[] {
-    console.log('🔧 Using Logic 1 - Base Support Detection');
+  async analyzeSupportLevels(candles: CandleData[], config: TradingConfigData, symbol: string): Promise<SupportLevel[]> {
+    console.log('🔧 Using Logic 1 - Base Support Detection with Bybit precision');
     
-    const result = this.analyzer.identifySupportLevel(candles);
-    return result ? [result] : [];
+    try {
+      const result = this.analyzer.identifySupportLevel(candles);
+      if (!result) {
+        return [];
+      }
+
+      // Format the support level price using Bybit precision
+      const formattedPrice = await SupportLevelProcessor.formatSupportLevel(symbol, result.price);
+      
+      const formattedResult: SupportLevel = {
+        ...result,
+        price: formattedPrice
+      };
+
+      console.log(`✅ Logic 1 formatted support for ${symbol}: ${result.price} → ${formattedPrice}`);
+      return [formattedResult];
+    } catch (error) {
+      console.error(`❌ Error in Logic 1 support analysis for ${symbol}:`, error);
+      return [];
+    }
   }
 }
 
 export class Logic2DataDriven implements TradingLogic {
   name = 'Logic 2 - Data-Driven Support Analysis';
-  description = 'Advanced support detection using swing lows, volume profile, and Fibonacci analysis';
+  description = 'Advanced support detection using swing lows, volume profile, and Fibonacci analysis with Bybit precision';
   
   private analyzer = new DataDrivenSupportAnalyzer();
 
-  analyzeSupportLevels(candles: CandleData[], config: TradingConfigData): SupportLevel[] {
-    console.log('🔧 Using Logic 2 - Data-Driven Support Analysis');
+  async analyzeSupportLevels(candles: CandleData[], config: TradingConfigData, symbol: string): Promise<SupportLevel[]> {
+    console.log('🔧 Using Logic 2 - Data-Driven Support Analysis with Bybit precision');
     
-    return this.analyzer.analyzeSupport(candles, config);
+    try {
+      const results = this.analyzer.analyzeSupport(candles, config);
+      
+      // Format all support level prices using Bybit precision
+      const formattedResults: SupportLevel[] = [];
+      
+      for (const result of results) {
+        const formattedPrice = await SupportLevelProcessor.formatSupportLevel(symbol, result.price);
+        
+        formattedResults.push({
+          ...result,
+          price: formattedPrice
+        });
+        
+        console.log(`✅ Logic 2 formatted support for ${symbol}: ${result.price} → ${formattedPrice}`);
+      }
+
+      return formattedResults;
+    } catch (error) {
+      console.error(`❌ Error in Logic 2 support analysis for ${symbol}:`, error);
+      return [];
+    }
   }
 
   calculateDynamicBounds(candles: CandleData[], config: TradingConfigData): { lowerBound: number; upperBound: number } {
@@ -52,7 +92,6 @@ export class Logic2DataDriven implements TradingLogic {
 }
 
 export class TradingLogicFactory {
-  // Fix: Properly type the Map to accept both logic types
   private static logics = new Map<string, TradingLogic>();
 
   static {
