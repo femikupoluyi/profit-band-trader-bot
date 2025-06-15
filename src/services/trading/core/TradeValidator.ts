@@ -1,6 +1,6 @@
 
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 
 export class TradeValidator {
   static async validateTradeParameters(symbol: string, quantity: number, entryPrice: number, config: TradingConfigData): Promise<boolean> {
@@ -10,21 +10,21 @@ export class TradeValidator {
       return false;
     }
 
-    // Get instrument info for proper validation
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      console.error(`❌ Could not get instrument info for ${symbol}`);
-      return false;
-    }
+    // Format and validate using Bybit precision
+    const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
+    const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+    
+    const finalPrice = parseFloat(formattedPrice);
+    const finalQuantity = parseFloat(formattedQuantity);
 
-    // Use BybitInstrumentService for validation
-    const isValidOrder = BybitInstrumentService.validateOrder(symbol, entryPrice, quantity, instrumentInfo);
+    // Validate using Bybit requirements
+    const isValidOrder = await BybitPrecisionFormatter.validateOrder(symbol, finalPrice, finalQuantity);
     if (!isValidOrder) {
       console.error(`❌ Order validation failed for ${symbol}`);
       return false;
     }
 
-    const orderValue = quantity * entryPrice;
+    const orderValue = finalQuantity * finalPrice;
     
     // Validate against maximum order amount from config
     const maxOrderAmount = config.max_order_amount_usd || 100;
@@ -38,54 +38,35 @@ export class TradeValidator {
   }
 
   static async calculateQuantity(symbol: string, orderAmount: number, entryPrice: number, config: TradingConfigData): Promise<number> {
-    // Get instrument info for proper quantity calculation
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      console.error(`❌ Could not get instrument info for ${symbol}, calculation will fail`);
-      throw new Error(`Could not get instrument info for ${symbol}`);
+    try {
+      // Use Bybit precision formatter for accurate calculation
+      const quantity = await BybitPrecisionFormatter.calculateQuantity(symbol, orderAmount, entryPrice);
+      
+      console.log(`📊 Quantity calculation for ${symbol}:`, {
+        orderAmount: orderAmount.toFixed(2),
+        entryPrice: await BybitPrecisionFormatter.formatPrice(symbol, entryPrice),
+        calculatedQuantity: await BybitPrecisionFormatter.formatQuantity(symbol, quantity)
+      });
+      
+      return quantity;
+    } catch (error) {
+      console.error(`❌ Error calculating quantity for ${symbol}:`, error);
+      throw error;
     }
-
-    // Calculate raw quantity
-    const rawQuantity = orderAmount / entryPrice;
-    
-    // Use instrument precision for proper rounding
-    const basePrecision = parseFloat(instrumentInfo.basePrecision);
-    const adjustedQuantity = Math.floor(rawQuantity / basePrecision) * basePrecision;
-    
-    // Format using instrument decimals
-    const finalQuantity = parseFloat(BybitInstrumentService.formatQuantity(symbol, adjustedQuantity, instrumentInfo));
-    
-    console.log(`📊 Quantity calculation for ${symbol}:`, {
-      orderAmount: orderAmount.toFixed(2),
-      entryPrice: BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo),
-      rawQuantity: rawQuantity.toFixed(8),
-      basePrecision: basePrecision,
-      adjustedQuantity: BybitInstrumentService.formatQuantity(symbol, adjustedQuantity, instrumentInfo),
-      finalQuantity: BybitInstrumentService.formatQuantity(symbol, finalQuantity, instrumentInfo)
-    });
-    
-    return finalQuantity;
   }
 
   static async validateQuantityPrecision(symbol: string, quantity: number): Promise<boolean> {
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      console.warn(`⚠️ Could not validate quantity precision for ${symbol}, rejecting`);
+    try {
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+      const parsedQuantity = parseFloat(formattedQuantity);
+      
+      // Check if the formatted quantity matches the original (within tolerance)
+      const tolerance = 0.0001;
+      return Math.abs(quantity - parsedQuantity) <= tolerance;
+    } catch (error) {
+      console.error(`❌ Error validating quantity precision for ${symbol}:`, error);
       return false;
     }
-
-    const basePrecision = parseFloat(instrumentInfo.basePrecision);
-    const remainder = quantity % basePrecision;
-    
-    // Check if quantity is properly aligned with base precision
-    const tolerance = basePrecision / 1000;
-    
-    if (remainder > tolerance && (basePrecision - remainder) > tolerance) {
-      console.error(`❌ Quantity ${quantity} not aligned with base precision ${basePrecision} for ${symbol}`);
-      return false;
-    }
-    
-    return true;
   }
 
   static validatePriceRange(currentPrice: number, entryPrice: number, maxDeviationPercent: number = 5): boolean {

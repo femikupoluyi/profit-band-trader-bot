@@ -1,6 +1,6 @@
 
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 import { SignalContext } from './SignalAnalysisCore';
 import { SupportResistanceService } from './SupportResistanceService';
 import { MarketDataScannerService } from './MarketDataScannerService';
@@ -28,51 +28,58 @@ export class NewPositionAnalyzer {
       return { shouldCreateSignal: false };
     }
 
-    // Ensure sufficient data
-    const hasData = await Promise.race([
-      this.marketDataScanner.ensureSufficientData(context.symbol, config.support_candle_count || 128),
-      new Promise<boolean>((_, reject) => 
-        setTimeout(() => reject(new Error('Market data timeout')), 15000)
-      )
-    ]);
+    try {
+      // Ensure sufficient data
+      const hasData = await Promise.race([
+        this.marketDataScanner.ensureSufficientData(context.symbol, config.support_candle_count || 128),
+        new Promise<boolean>((_, reject) => 
+          setTimeout(() => reject(new Error('Market data timeout')), 15000)
+        )
+      ]);
 
-    if (!hasData) {
-      console.warn(`⚠️ Could not ensure sufficient market data for ${context.symbol}`);
+      if (!hasData) {
+        console.warn(`⚠️ Could not ensure sufficient market data for ${context.symbol}`);
+        return { shouldCreateSignal: false };
+      }
+
+      // Get support/resistance levels
+      const supportData = await this.supportResistance.getSupportResistanceLevels(
+        context.symbol,
+        config.chart_timeframe,
+        config.support_candle_count || 128,
+        config.support_lower_bound_percent || 5.0,
+        config.support_upper_bound_percent || 2.0
+      );
+
+      if (!supportData.currentSupport || supportData.currentSupport.price <= 0) {
+        console.warn(`⚠️ No valid support level found for ${context.symbol}`);
+        return { shouldCreateSignal: false };
+      }
+
+      const supportPrice = supportData.currentSupport.price;
+      
+      // Place limit order above support for new positions
+      const entryPrice = supportPrice * (1 + config.entry_offset_percent / 100);
+      const formattedEntryPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, entryPrice);
+      const finalEntryPrice = parseFloat(formattedEntryPrice);
+      
+      // Calculate confidence based on volume (higher volume = higher confidence)
+      const volumeConfidence = Math.min(supportData.currentSupport.volume / 1000000, 1.0);
+      const confidence = Math.min(0.95, 0.6 + (volumeConfidence * 0.3)); // Base 0.6 + volume bonus up to 0.3
+      
+      const formattedSupportPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, supportPrice);
+      const reasoning = `NEW POSITION: Entry at ${formattedEntryPrice} (${config.entry_offset_percent}% above support ${formattedSupportPrice})`;
+
+      return {
+        shouldCreateSignal: true,
+        entryPrice: finalEntryPrice,
+        reasoning,
+        confidence,
+        supportLevel: supportPrice
+      };
+    } catch (error) {
+      console.error(`❌ Error in new position analysis for ${context.symbol}:`, error);
       return { shouldCreateSignal: false };
     }
-
-    // Get support/resistance levels
-    const supportData = await this.supportResistance.getSupportResistanceLevels(
-      context.symbol,
-      config.chart_timeframe,
-      config.support_candle_count || 128,
-      config.support_lower_bound_percent || 5.0,
-      config.support_upper_bound_percent || 2.0
-    );
-
-    if (!supportData.currentSupport || supportData.currentSupport.price <= 0) {
-      console.warn(`⚠️ No valid support level found for ${context.symbol}`);
-      return { shouldCreateSignal: false };
-    }
-
-    const supportPrice = supportData.currentSupport.price;
-    
-    // Place limit order above support for new positions
-    const entryPrice = supportPrice * (1 + config.entry_offset_percent / 100);
-    const formattedEntryPrice = parseFloat(BybitInstrumentService.formatPrice(context.symbol, entryPrice, context.instrumentInfo));
-    
-    // Calculate confidence based on volume (higher volume = higher confidence)
-    const volumeConfidence = Math.min(supportData.currentSupport.volume / 1000000, 1.0);
-    const confidence = Math.min(0.95, 0.6 + (volumeConfidence * 0.3)); // Base 0.6 + volume bonus up to 0.3
-    
-    const reasoning = `NEW POSITION: Entry at ${BybitInstrumentService.formatPrice(context.symbol, formattedEntryPrice, context.instrumentInfo)} (${config.entry_offset_percent}% above support ${BybitInstrumentService.formatPrice(context.symbol, supportPrice, context.instrumentInfo)})`;
-
-    return {
-      shouldCreateSignal: true,
-      entryPrice: formattedEntryPrice,
-      reasoning,
-      confidence,
-      supportLevel: supportPrice
-    };
   }
 }

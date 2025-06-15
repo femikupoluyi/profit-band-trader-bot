@@ -1,35 +1,26 @@
 
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 
 export class PriceFormatter {
   /**
-   * Format price for a specific symbol - ALWAYS uses BybitInstrumentService
+   * Format price for a specific symbol using Bybit precision
    */
   static async formatPriceForSymbol(symbol: string, price: number): Promise<string> {
-    // Always use BybitInstrumentService for accurate formatting
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      throw new Error(`Could not get instrument info for ${symbol}`);
-    }
-    return BybitInstrumentService.formatPrice(symbol, price, instrumentInfo);
+    return await BybitPrecisionFormatter.formatPrice(symbol, price);
   }
 
   /**
-   * Format quantity for a specific symbol - ALWAYS uses BybitInstrumentService
+   * Format quantity for a specific symbol using Bybit precision
    */
   static async formatQuantityForSymbol(symbol: string, quantity: number): Promise<string> {
-    // Always use BybitInstrumentService for accurate formatting
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      throw new Error(`Could not get instrument info for ${symbol}`);
-    }
-    return BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
+    return await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
   }
 
   /**
    * Get the minimum notional value for a symbol
    */
   static async getMinimumNotional(symbol: string): Promise<number> {
+    const { BybitInstrumentService } = await import('./BybitInstrumentService');
     const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
     if (instrumentInfo) {
       return parseFloat(instrumentInfo.minOrderAmt);
@@ -41,6 +32,7 @@ export class PriceFormatter {
    * Get the quantity increment for a symbol
    */
   static async getQuantityIncrement(symbol: string): Promise<number> {
+    const { BybitInstrumentService } = await import('./BybitInstrumentService');
     const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
     if (instrumentInfo) {
       return parseFloat(instrumentInfo.basePrecision);
@@ -52,33 +44,30 @@ export class PriceFormatter {
    * Validate if a price is properly formatted for a symbol
    */
   static async validatePrice(symbol: string, price: number): Promise<boolean> {
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      return false;
-    }
-    return BybitInstrumentService.validateOrder(symbol, price, 1, instrumentInfo);
+    return await BybitPrecisionFormatter.validateOrder(symbol, price, 1);
   }
 
   /**
    * Validate if a quantity is properly formatted for a symbol
    */
   static async validateQuantity(symbol: string, quantity: number): Promise<boolean> {
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
+    try {
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+      const parsedQuantity = parseFloat(formattedQuantity);
+      
+      // Check if the formatted quantity matches the original (within tolerance)
+      const tolerance = 0.0001;
+      return Math.abs(quantity - parsedQuantity) <= tolerance;
+    } catch (error) {
+      console.error(`Error validating quantity for ${symbol}:`, error);
       return false;
     }
-    
-    const basePrecision = parseFloat(instrumentInfo.basePrecision);
-    const remainder = quantity % basePrecision;
-    const tolerance = basePrecision / 1000;
-    
-    return remainder <= tolerance || (basePrecision - remainder) <= tolerance;
   }
 
   /**
    * Clear all cached data
    */
   static clearCache(): void {
-    BybitInstrumentService.clearCache();
+    BybitPrecisionFormatter.clearCache();
   }
 }

@@ -1,5 +1,5 @@
 
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 
 export interface FormattedOrderData {
   quantity: string;
@@ -13,31 +13,35 @@ export class OrderFormatter {
     quantity: number, 
     entryPrice: number
   ): Promise<FormattedOrderData> {
-    // Get instrument info for precise formatting
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      throw new Error(`Failed to get instrument info for ${symbol}`);
+    try {
+      console.log(`📋 Formatting buy order for ${symbol}...`);
+
+      // Use Bybit precision formatter for exact formatting
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+      const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
+
+      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
+      console.log(`  🔧 Formatted Entry Price: ${formattedPrice}`);
+
+      // Validate the order meets Bybit requirements
+      const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
+      if (!isValid) {
+        throw new Error(`Order validation failed for ${symbol}`);
+      }
+
+      // Get instrument info for reference
+      const { BybitInstrumentService } = await import('./BybitInstrumentService');
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+
+      return {
+        quantity: formattedQuantity,
+        price: formattedPrice,
+        instrumentInfo
+      };
+    } catch (error) {
+      console.error(`❌ Error formatting buy order for ${symbol}:`, error);
+      throw error;
     }
-
-    console.log(`📋 Using instrument info for ${symbol}:`, instrumentInfo);
-
-    // CRITICAL: Use Bybit instrument info for ALL price and quantity formatting
-    const formattedQuantity = BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
-    const formattedPrice = BybitInstrumentService.formatPrice(symbol, entryPrice, instrumentInfo);
-
-    console.log(`  🔧 Formatted Quantity: ${formattedQuantity} (${instrumentInfo.quantityDecimals} decimals)`);
-    console.log(`  🔧 Formatted Entry Price: ${formattedPrice} (${instrumentInfo.priceDecimals} decimals)`);
-
-    // Validate the order meets Bybit requirements
-    if (!BybitInstrumentService.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity), instrumentInfo)) {
-      throw new Error(`Order validation failed for ${symbol}`);
-    }
-
-    return {
-      quantity: formattedQuantity,
-      price: formattedPrice,
-      instrumentInfo
-    };
   }
 
   static async formatSellOrder(
@@ -46,21 +50,28 @@ export class OrderFormatter {
     price: number, 
     instrumentInfo: any
   ): Promise<FormattedOrderData> {
-    const formattedPrice = BybitInstrumentService.formatPrice(symbol, price, instrumentInfo);
-    const formattedQuantity = BybitInstrumentService.formatQuantity(symbol, quantity, instrumentInfo);
-    
-    console.log(`  🔧 Formatted Take-Profit Price: ${formattedPrice} (${instrumentInfo.priceDecimals} decimals)`);
-    console.log(`  🔧 Formatted Quantity: ${formattedQuantity} (${instrumentInfo.quantityDecimals} decimals)`);
-    
-    // Validate the formatted take-profit order
-    if (!BybitInstrumentService.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity), instrumentInfo)) {
-      throw new Error(`Take-profit order validation failed for ${symbol}`);
-    }
+    try {
+      // Use Bybit precision formatter for exact formatting
+      const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+      
+      console.log(`  🔧 Formatted Take-Profit Price: ${formattedPrice}`);
+      console.log(`  🔧 Formatted Quantity: ${formattedQuantity}`);
+      
+      // Validate the formatted take-profit order
+      const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
+      if (!isValid) {
+        throw new Error(`Take-profit order validation failed for ${symbol}`);
+      }
 
-    return {
-      quantity: formattedQuantity,
-      price: formattedPrice,
-      instrumentInfo
-    };
+      return {
+        quantity: formattedQuantity,
+        price: formattedPrice,
+        instrumentInfo
+      };
+    } catch (error) {
+      console.error(`❌ Error formatting sell order for ${symbol}:`, error);
+      throw error;
+    }
   }
 }

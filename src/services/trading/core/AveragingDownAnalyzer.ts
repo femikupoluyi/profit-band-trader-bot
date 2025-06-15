@@ -1,6 +1,6 @@
 
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { BybitInstrumentService } from './BybitInstrumentService';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 import { SignalContext } from './SignalAnalysisCore';
 
 export interface AveragingDownResult {
@@ -11,7 +11,7 @@ export interface AveragingDownResult {
 }
 
 export class AveragingDownAnalyzer {
-  analyzeAveragingDown(context: SignalContext, currentPrice: number, config: TradingConfigData): AveragingDownResult {
+  async analyzeAveragingDown(context: SignalContext, currentPrice: number, config: TradingConfigData): Promise<AveragingDownResult> {
     if (!context.isAveragingDown) {
       return { shouldCreateSignal: false };
     }
@@ -29,18 +29,27 @@ export class AveragingDownAnalyzer {
       return { shouldCreateSignal: false };
     }
 
-    // Place limit order below current price for averaging down
-    const entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
-    const formattedEntryPrice = parseFloat(BybitInstrumentService.formatPrice(context.symbol, entryPrice, context.instrumentInfo));
-    
-    const confidence = 0.7; // Lower confidence for averaging down
-    const reasoning = `AVERAGING DOWN: Entry at ${BybitInstrumentService.formatPrice(context.symbol, formattedEntryPrice, context.instrumentInfo)} (${config.entry_offset_percent}% below current price ${BybitInstrumentService.formatPrice(context.symbol, currentPrice, context.instrumentInfo)}). Last bought: ${BybitInstrumentService.formatPrice(context.symbol, lastBoughtPrice, context.instrumentInfo)}`;
+    try {
+      // Place limit order below current price for averaging down
+      const entryPrice = currentPrice * (1 - config.entry_offset_percent / 100);
+      const formattedEntryPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, entryPrice);
+      const finalEntryPrice = parseFloat(formattedEntryPrice);
+      
+      const confidence = 0.7; // Lower confidence for averaging down
+      const formattedCurrentPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, currentPrice);
+      const formattedLastBoughtPrice = await BybitPrecisionFormatter.formatPrice(context.symbol, lastBoughtPrice);
+      
+      const reasoning = `AVERAGING DOWN: Entry at ${formattedEntryPrice} (${config.entry_offset_percent}% below current price ${formattedCurrentPrice}). Last bought: ${formattedLastBoughtPrice}`;
 
-    return {
-      shouldCreateSignal: true,
-      entryPrice: formattedEntryPrice,
-      reasoning,
-      confidence
-    };
+      return {
+        shouldCreateSignal: true,
+        entryPrice: finalEntryPrice,
+        reasoning,
+        confidence
+      };
+    } catch (error) {
+      console.error(`❌ Error in averaging down analysis for ${context.symbol}:`, error);
+      return { shouldCreateSignal: false };
+    }
   }
 }
