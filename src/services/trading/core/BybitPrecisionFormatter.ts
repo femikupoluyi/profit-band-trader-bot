@@ -5,7 +5,7 @@ export class BybitPrecisionFormatter {
   private static instrumentCache = new Map<string, any>();
 
   /**
-   * Format price using Bybit's exact tick size precision
+   * Format price using Bybit's exact tick size precision - ALWAYS returns string
    */
   static async formatPrice(symbol: string, price: number): Promise<string> {
     try {
@@ -21,7 +21,7 @@ export class BybitPrecisionFormatter {
       const decimals = this.getDecimalPlaces(tickSize.toString());
       const formatted = roundedPrice.toFixed(decimals);
       
-      console.log(`✅ Price formatted for ${symbol}: ${price} → ${formatted} (tick: ${tickSize}, decimals: ${decimals})`);
+      console.log(`✅ Price formatted for ${symbol}: ${price} → "${formatted}" (tick: ${tickSize}, decimals: ${decimals})`);
       return formatted;
     } catch (error) {
       console.error(`❌ Error formatting price for ${symbol}:`, error);
@@ -30,7 +30,7 @@ export class BybitPrecisionFormatter {
   }
 
   /**
-   * Format quantity using Bybit's exact base precision
+   * Format quantity using Bybit's exact base precision - ALWAYS returns string
    */
   static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
@@ -46,15 +46,32 @@ export class BybitPrecisionFormatter {
       const decimals = this.getDecimalPlaces(basePrecision.toString());
       const formatted = roundedQuantity.toFixed(decimals);
       
-      // Remove trailing zeros and ensure we don't exceed the precision
-      const finalFormatted = parseFloat(formatted).toString();
+      // Remove trailing zeros but preserve minimum required decimals
+      const finalFormatted = this.removeTrailingZeros(formatted, decimals);
       
-      console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → ${finalFormatted} (base: ${basePrecision}, decimals: ${decimals})`);
+      console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → "${finalFormatted}" (base: ${basePrecision}, decimals: ${decimals})`);
       return finalFormatted;
     } catch (error) {
       console.error(`❌ Error formatting quantity for ${symbol}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Remove trailing zeros while preserving minimum required decimals
+   */
+  private static removeTrailingZeros(value: string, minDecimals: number): string {
+    if (value.indexOf('.') === -1) return value;
+    
+    const [integerPart, decimalPart] = value.split('.');
+    let trimmedDecimals = decimalPart.replace(/0+$/, '');
+    
+    // Ensure we have at least the minimum required decimals
+    if (trimmedDecimals.length < minDecimals) {
+      trimmedDecimals = trimmedDecimals.padEnd(minDecimals, '0');
+    }
+    
+    return trimmedDecimals.length > 0 ? `${integerPart}.${trimmedDecimals}` : integerPart;
   }
 
   /**

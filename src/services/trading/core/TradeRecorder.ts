@@ -35,7 +35,8 @@ export class TradeRecorder {
       };
 
       // Only add signal_id if it's provided and not undefined
-      if (signalId) {
+      if (signalId && signalId.trim() !== '') {
+        console.log(`🔗 Linking trade to signal ID: ${signalId}`);
         (tradeData as any).signal_id = signalId;
       }
 

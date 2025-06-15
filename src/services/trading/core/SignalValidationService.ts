@@ -1,9 +1,11 @@
-import { supabase } from '@/integrations/supabase/client';
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { TradingLogger } from './TradingLogger';
-import { TradeValidator } from './TradeValidator';
 
-export interface ValidationResult {
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { PositionValidator } from './PositionValidator';
+import { TradeValidator } from './TradeValidator';
+import { TradingLogger } from './TradingLogger';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
+
+export interface SignalValidationResult {
   isValid: boolean;
   reason?: string;
   calculatedData?: {
@@ -16,99 +18,91 @@ export interface ValidationResult {
 
 export class SignalValidationService {
   private userId: string;
+  private positionValidator: PositionValidator;
   private logger: TradingLogger;
 
   constructor(userId: string) {
     this.userId = userId;
+    this.positionValidator = new PositionValidator(userId);
     this.logger = new TradingLogger(userId);
   }
 
-  async validateSignal(signal: any, config: TradingConfigData): Promise<ValidationResult> {
+  async validateSignal(signal: any, config: TradingConfigData): Promise<SignalValidationResult> {
     try {
-      console.log(`🔍 Validating signal for ${signal.symbol}...`);
+      console.log(`🔍 Validating signal for ${signal.symbol}: ${signal.signal_type} at $${parseFloat(signal.price).toFixed(6)}`);
 
-      // Validate signal structure
-      if (!signal || !signal.symbol || !signal.signal_type || !signal.price) {
-        return { isValid: false, reason: 'Invalid signal structure' };
+      // Step 1: Basic signal validation
+      if (!signal.symbol || !signal.price || !signal.signal_type) {
+        return { isValid: false, reason: 'Invalid signal data: missing required fields' };
       }
 
-      // Check for existing unprocessed signals
-      const { data: existingSignals, error: signalsError } = await supabase
-        .from('trading_signals')
-        .select('id')
-        .eq('user_id', this.userId)
-        .eq('symbol', signal.symbol)
-        .eq('processed', false);
-
-      if (signalsError) {
-        console.error(`❌ Error checking existing signals:`, signalsError);
-        return { isValid: false, reason: 'Database error checking signals' };
+      if (signal.signal_type !== 'buy') {
+        return { isValid: false, reason: `Unsupported signal type: ${signal.signal_type}` };
       }
 
-      if (existingSignals && existingSignals.length >= config.max_positions_per_pair) {
+      // Step 2: CRITICAL - Check position limits FIRST before any calculations
+      console.log(`📊 Checking position limits for ${signal.symbol}...`);
+      const canOpenPosition = await this.positionValidator.validatePositionLimits(signal.symbol, config);
+      if (!canOpenPosition) {
         return { 
           isValid: false, 
-          reason: `Max unprocessed signals reached (${existingSignals.length}/${config.max_positions_per_pair})` 
+          reason: `Position limits exceeded for ${signal.symbol}. Max positions per pair: ${config.max_positions_per_pair}` 
         };
       }
 
-      // Check for active positions
-      const { data: activeTrades, error: tradesError } = await supabase
-        .from('trades')
-        .select('id')
-        .eq('user_id', this.userId)
-        .eq('symbol', signal.symbol)
-        .eq('side', 'buy')
-        .in('status', ['pending', 'filled', 'partial_filled']);
+      // Step 3: Calculate entry and take profit prices
+      const signalPrice = parseFloat(signal.price);
+      const entryPrice = signalPrice * (1 + (config.entry_offset_percent / 100));
+      const takeProfitPrice = entryPrice * (1 + (config.take_profit_percent / 100));
 
-      if (tradesError) {
-        console.error(`❌ Error checking active trades:`, tradesError);
-        return { isValid: false, reason: 'Database error checking trades' };
+      console.log(`💰 Price calculations for ${signal.symbol}:
+        - Signal Price: $${signalPrice.toFixed(6)}
+        - Entry Price: $${entryPrice.toFixed(6)} (+${config.entry_offset_percent}%)
+        - Take Profit: $${takeProfitPrice.toFixed(6)} (+${config.take_profit_percent}%)`);
+
+      // Step 4: Calculate quantity using Bybit precision
+      const maxOrderAmount = config.max_order_amount_usd || 100;
+      const calculatedQuantity = await TradeValidator.calculateQuantity(signal.symbol, maxOrderAmount, entryPrice, config);
+      
+      if (calculatedQuantity <= 0) {
+        return { isValid: false, reason: `Invalid calculated quantity: ${calculatedQuantity}` };
       }
 
-      const activeCount = activeTrades?.length || 0;
-      if (activeCount >= config.max_positions_per_pair) {
-        return { 
-          isValid: false, 
-          reason: `Max active positions reached (${activeCount}/${config.max_positions_per_pair})` 
-        };
-      }
-
-      // Calculate order parameters with proper async handling
-      const signalPrice = parseFloat(signal.price.toString());
-      if (isNaN(signalPrice) || signalPrice <= 0) {
-        return { isValid: false, reason: 'Invalid signal price' };
-      }
-
-      const entryPrice = signalPrice * (1 + (config.entry_offset_percent || 0.1) / 100);
-      const takeProfitPrice = entryPrice * (1 + (config.take_profit_percent || 2.0) / 100);
-      const quantity = await TradeValidator.calculateQuantity(
-        signal.symbol, 
-        config.max_order_amount_usd || 100, 
-        entryPrice, 
-        config
-      );
-
-      // Validate calculated parameters with proper async handling
-      const isValidTrade = await TradeValidator.validateTradeParameters(signal.symbol, quantity, entryPrice, config);
+      // Step 5: Validate trade parameters with Bybit precision
+      const isValidTrade = await TradeValidator.validateTradeParameters(signal.symbol, calculatedQuantity, entryPrice, config);
       if (!isValidTrade) {
-        return { isValid: false, reason: 'Trade parameters validation failed' };
+        return { isValid: false, reason: 'Trade validation failed - order does not meet Bybit requirements' };
       }
 
-      const orderValue = quantity * entryPrice;
+      // Step 6: Final order validation using formatted values
+      const formattedPrice = await BybitPrecisionFormatter.formatPrice(signal.symbol, entryPrice);
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(signal.symbol, calculatedQuantity);
+      
+      const finalPrice = parseFloat(formattedPrice);
+      const finalQuantity = parseFloat(formattedQuantity);
+      const orderValue = finalPrice * finalQuantity;
 
-      console.log(`✅ Signal validation passed for ${signal.symbol}:`, {
-        entryPrice: entryPrice.toFixed(6),
-        takeProfitPrice: takeProfitPrice.toFixed(6),
-        quantity: quantity.toFixed(6),
-        orderValue: orderValue.toFixed(2)
+      const isBybitValid = await BybitPrecisionFormatter.validateOrder(signal.symbol, finalPrice, finalQuantity);
+      if (!isBybitValid) {
+        return { isValid: false, reason: 'Final Bybit order validation failed' };
+      }
+
+      console.log(`✅ Signal validation passed for ${signal.symbol}: Order value $${orderValue.toFixed(2)}`);
+
+      await this.logger.logSuccess(`Signal validation passed for ${signal.symbol}`, {
+        signalId: signal.id,
+        symbol: signal.symbol,
+        entryPrice: finalPrice,
+        quantity: finalQuantity,
+        orderValue,
+        takeProfitPrice
       });
 
       return {
         isValid: true,
         calculatedData: {
-          quantity,
-          entryPrice,
+          quantity: finalQuantity,
+          entryPrice: finalPrice,
           takeProfitPrice,
           orderValue
         }
@@ -116,7 +110,10 @@ export class SignalValidationService {
 
     } catch (error) {
       console.error(`❌ Error validating signal for ${signal.symbol}:`, error);
-      await this.logger.logError(`Signal validation error for ${signal.symbol}`, error);
+      await this.logger.logError(`Signal validation failed for ${signal.symbol}`, error, {
+        signalId: signal.id,
+        signal
+      });
       return { isValid: false, reason: `Validation error: ${error.message}` };
     }
   }

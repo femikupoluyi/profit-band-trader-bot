@@ -1,7 +1,7 @@
 
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { OrderFormatter } from './OrderFormatter';
+import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
 
 export interface OrderExecutionResult {
   success: boolean;
@@ -29,22 +29,33 @@ export class OrderExecutor {
     try {
       console.log(`🔄 Executing BUY order for ${symbol}: ${quantity} @ ${entryPrice}`);
 
-      // Format the order using OrderFormatter
-      const formattedOrder = await OrderFormatter.formatBuyOrder(symbol, quantity, entryPrice);
+      // Clear cache and format using Bybit precision formatter
+      BybitPrecisionFormatter.clearCache();
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+      const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
       
-      console.log(`📊 Placing BUY order with formatted values:
+      console.log(`📊 Placing BUY order with FORMATTED values:
         - Symbol: ${symbol}
-        - Quantity: ${formattedOrder.quantity}
-        - Price: ${formattedOrder.price}`);
+        - Quantity: "${formattedQuantity}" (original: ${quantity})
+        - Price: "${formattedPrice}" (original: ${entryPrice})`);
 
-      // Place the buy order
+      // Final validation with formatted values
+      const finalPrice = parseFloat(formattedPrice);
+      const finalQuantity = parseFloat(formattedQuantity);
+      const isValid = await BybitPrecisionFormatter.validateOrder(symbol, finalPrice, finalQuantity);
+      
+      if (!isValid) {
+        throw new Error(`Order validation failed after formatting: qty=${formattedQuantity}, price=${formattedPrice}`);
+      }
+
+      // Place the buy order with string values
       const buyOrderResult = await this.bybitService.placeOrder({
         category: 'spot',
         symbol: symbol,
         side: 'Buy',
         orderType: 'Limit',
-        qty: formattedOrder.quantity,
-        price: formattedOrder.price,
+        qty: formattedQuantity,
+        price: formattedPrice,
         timeInForce: 'GTC'
       });
 
@@ -61,8 +72,10 @@ export class OrderExecutor {
       await this.logger.logSuccess(`BUY order placed for ${symbol}`, {
         symbol,
         orderId: buyOrderId,
-        quantity: formattedOrder.quantity,
-        price: formattedOrder.price
+        quantity: formattedQuantity,
+        price: formattedPrice,
+        originalQuantity: quantity,
+        originalPrice: entryPrice
       });
 
       return { success: true, orderId: buyOrderId };
@@ -87,22 +100,33 @@ export class OrderExecutor {
     try {
       console.log(`🔄 Executing SELL order for ${symbol}: ${quantity} @ ${price}`);
 
-      // Format the sell order
-      const formattedOrder = await OrderFormatter.formatSellOrder(symbol, quantity, price, instrumentInfo);
+      // Clear cache and format using Bybit precision formatter
+      BybitPrecisionFormatter.clearCache();
+      const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
+      const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
 
-      console.log(`📊 Placing SELL order with formatted values:
+      console.log(`📊 Placing SELL order with FORMATTED values:
         - Symbol: ${symbol}
-        - Quantity: ${formattedOrder.quantity}
-        - Price: ${formattedOrder.price}`);
+        - Quantity: "${formattedQuantity}" (original: ${quantity})
+        - Price: "${formattedPrice}" (original: ${price})`);
 
-      // Place the sell order
+      // Final validation with formatted values
+      const finalPrice = parseFloat(formattedPrice);
+      const finalQuantity = parseFloat(formattedQuantity);
+      const isValid = await BybitPrecisionFormatter.validateOrder(symbol, finalPrice, finalQuantity);
+      
+      if (!isValid) {
+        throw new Error(`Sell order validation failed after formatting: qty=${formattedQuantity}, price=${formattedPrice}`);
+      }
+
+      // Place the sell order with string values
       const sellOrderResult = await this.bybitService.placeOrder({
         category: 'spot',
         symbol: symbol,
         side: 'Sell',
         orderType: 'Limit',
-        qty: formattedOrder.quantity,
-        price: formattedOrder.price,
+        qty: formattedQuantity,
+        price: formattedPrice,
         timeInForce: 'GTC'
       });
 
@@ -119,8 +143,10 @@ export class OrderExecutor {
       await this.logger.logSuccess(`SELL order placed for ${symbol}`, {
         symbol,
         orderId: sellOrderId,
-        quantity: formattedOrder.quantity,
-        price: formattedOrder.price
+        quantity: formattedQuantity,
+        price: formattedPrice,
+        originalQuantity: quantity,
+        originalPrice: price
       });
 
       return { success: true, orderId: sellOrderId };
