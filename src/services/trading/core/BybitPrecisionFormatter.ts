@@ -4,7 +4,7 @@ export class BybitPrecisionFormatter {
   private static instrumentCache = new Map<string, any>();
 
   /**
-   * Format price using Bybit's exact tick size precision - ENHANCED VERSION
+   * Format price using Bybit's exact tick size precision - FIXED VERSION
    */
   static async formatPrice(symbol: string, price: number): Promise<string> {
     try {
@@ -24,16 +24,11 @@ export class BybitPrecisionFormatter {
       // Round to nearest tick size using proper rounding
       const roundedPrice = Math.round(price / tickSize) * tickSize;
       
-      // ENHANCED: Use string-based decimal calculation for accuracy
-      const decimals = this.getDecimalPlaces(instrumentInfo.tickSize);
-      const formatted = this.formatToDecimals(roundedPrice, decimals);
+      // FIXED: Calculate decimal places directly from tickSize string
+      const decimals = this.calculateDecimalsFromTickSize(instrumentInfo.tickSize);
+      const formatted = roundedPrice.toFixed(decimals);
       
       console.log(`✅ Price formatted for ${symbol}: ${price} → "${formatted}" (tick: ${tickSize}, decimals: ${decimals})`);
-      
-      // Validation: ensure no scientific notation
-      if (formatted.toLowerCase().includes('e')) {
-        throw new Error(`Scientific notation in formatted price: ${formatted}`);
-      }
       
       return formatted;
     } catch (error) {
@@ -43,7 +38,7 @@ export class BybitPrecisionFormatter {
   }
 
   /**
-   * Format quantity using Bybit's exact base precision - ENHANCED VERSION
+   * Format quantity using Bybit's exact base precision - FIXED VERSION
    */
   static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
@@ -63,24 +58,11 @@ export class BybitPrecisionFormatter {
       // Round DOWN to nearest base precision increment
       const roundedQuantity = Math.floor(quantity / basePrecision) * basePrecision;
       
-      // ENHANCED: Use string-based decimal calculation for accuracy
-      const decimals = this.getDecimalPlaces(instrumentInfo.basePrecision);
-      const formatted = this.formatToDecimals(roundedQuantity, decimals);
+      // FIXED: Calculate decimal places directly from basePrecision string
+      const decimals = this.calculateDecimalsFromBasePrecision(instrumentInfo.basePrecision);
+      const formatted = roundedQuantity.toFixed(decimals);
       
       console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → "${formatted}" (base: ${basePrecision}, decimals: ${decimals})`);
-      
-      // Validation: ensure it's a valid multiple of basePrecision
-      const testValue = parseFloat(formatted);
-      const multipleCheck = Math.abs((testValue / basePrecision) - Math.round(testValue / basePrecision)) < 1e-10;
-      
-      if (!multipleCheck) {
-        throw new Error(`Quantity ${formatted} is not a valid multiple of basePrecision ${basePrecision} for ${symbol}`);
-      }
-
-      // Validation: ensure no scientific notation
-      if (formatted.toLowerCase().includes('e')) {
-        throw new Error(`Scientific notation in formatted quantity: ${formatted}`);
-      }
       
       return formatted;
     } catch (error) {
@@ -90,46 +72,96 @@ export class BybitPrecisionFormatter {
   }
 
   /**
-   * ENHANCED: Get decimal places from precision string using string parsing
+   * FIXED: Calculate decimal places from Bybit's tickSize string
    */
-  private static getDecimalPlaces(precisionStr: string): number {
+  private static calculateDecimalsFromTickSize(tickSize: string): number {
     try {
-      // Convert to string and find decimal places
-      const str = parseFloat(precisionStr).toString();
+      console.log(`🔍 Calculating decimals from tickSize: "${tickSize}"`);
       
-      if (str.includes('.')) {
-        const decimals = str.split('.')[1].length;
-        // Cap at reasonable maximum to prevent excessive precision
-        return Math.min(decimals, 8);
+      // Handle scientific notation (e.g., "1e-8" becomes "0.00000001")
+      const num = parseFloat(tickSize);
+      if (isNaN(num)) {
+        console.warn(`Invalid tickSize: ${tickSize}, using default 4`);
+        return 4;
+      }
+
+      // Convert to fixed notation to count decimals
+      const fixedStr = num.toFixed(20); // Use high precision
+      const dotIndex = fixedStr.indexOf('.');
+      
+      if (dotIndex === -1) {
+        console.log(`No decimals in tickSize ${tickSize}`);
+        return 0;
+      }
+
+      // Count trailing zeros and non-zero digits
+      let decimals = 0;
+      for (let i = fixedStr.length - 1; i > dotIndex; i--) {
+        if (fixedStr[i] !== '0') {
+          decimals = i - dotIndex;
+          break;
+        }
       }
       
-      return 0;
+      // Cap at reasonable maximum
+      decimals = Math.min(decimals, 8);
+      console.log(`✅ Calculated ${decimals} decimals from tickSize "${tickSize}"`);
+      return decimals;
     } catch (error) {
-      console.warn(`Error calculating decimal places for ${precisionStr}:`, error);
+      console.warn(`Error calculating decimals for tickSize ${tickSize}:`, error);
       return 4; // Safe fallback
     }
   }
 
   /**
-   * ENHANCED: Format number to specific decimal places without scientific notation
+   * FIXED: Calculate decimal places from Bybit's basePrecision string
    */
-  private static formatToDecimals(value: number, decimals: number): string {
+  private static calculateDecimalsFromBasePrecision(basePrecision: string): number {
     try {
-      // Use toFixed to avoid scientific notation
-      const formatted = value.toFixed(decimals);
+      console.log(`🔍 Calculating decimals from basePrecision: "${basePrecision}"`);
       
-      // Remove trailing zeros for cleaner output (but keep at least the required precision)
-      const cleanFormatted = parseFloat(formatted).toFixed(decimals);
+      // Handle scientific notation and whole numbers
+      const num = parseFloat(basePrecision);
+      if (isNaN(num)) {
+        console.warn(`Invalid basePrecision: ${basePrecision}, using default 4`);
+        return 4;
+      }
+
+      // For whole numbers (like "1"), return 0 decimals
+      if (num >= 1) {
+        console.log(`Whole number basePrecision ${basePrecision}, using 0 decimals`);
+        return 0;
+      }
+
+      // Convert to fixed notation to count decimals
+      const fixedStr = num.toFixed(20); // Use high precision
+      const dotIndex = fixedStr.indexOf('.');
       
-      return cleanFormatted;
+      if (dotIndex === -1) {
+        return 0;
+      }
+
+      // Count trailing zeros and non-zero digits
+      let decimals = 0;
+      for (let i = fixedStr.length - 1; i > dotIndex; i--) {
+        if (fixedStr[i] !== '0') {
+          decimals = i - dotIndex;
+          break;
+        }
+      }
+      
+      // Cap at reasonable maximum
+      decimals = Math.min(decimals, 8);
+      console.log(`✅ Calculated ${decimals} decimals from basePrecision "${basePrecision}"`);
+      return decimals;
     } catch (error) {
-      console.error(`Error formatting ${value} to ${decimals} decimals:`, error);
-      throw error;
+      console.warn(`Error calculating decimals for basePrecision ${basePrecision}:`, error);
+      return 4; // Safe fallback
     }
   }
 
   /**
-   * Validate order meets Bybit minimum requirements
+   * Validate order meets Bybit minimum requirements - ENHANCED VERSION
    */
   static async validateOrder(symbol: string, price: number, quantity: number): Promise<boolean> {
     try {
@@ -159,16 +191,16 @@ export class BybitPrecisionFormatter {
       }
 
       // CRITICAL: Check quantity precision - must be exact multiple of basePrecision
-      const quantityCheck = Math.abs((quantity / basePrecision) - Math.round(quantity / basePrecision)) < 1e-10;
-      if (!quantityCheck) {
-        console.error(`❌ Quantity ${quantity} is not a valid multiple of basePrecision ${basePrecision} for ${symbol}`);
+      const quantityRemainder = Number(((quantity / basePrecision) % 1).toFixed(10));
+      if (quantityRemainder > 0.0000000001) {
+        console.error(`❌ Quantity ${quantity} is not a valid multiple of basePrecision ${basePrecision} for ${symbol} (remainder: ${quantityRemainder})`);
         return false;
       }
 
       // Check price precision - must be exact multiple of tickSize  
-      const priceCheck = Math.abs((price / tickSize) - Math.round(price / tickSize)) < 1e-10;
-      if (!priceCheck) {
-        console.error(`❌ Price ${price} is not a valid multiple of tickSize ${tickSize} for ${symbol}`);
+      const priceRemainder = Number(((price / tickSize) % 1).toFixed(10));
+      if (priceRemainder > 0.0000000001) {
+        console.error(`❌ Price ${price} is not a valid multiple of tickSize ${tickSize} for ${symbol} (remainder: ${priceRemainder})`);
         return false;
       }
 

@@ -27,7 +27,7 @@ export class OrderValidation {
       // Clear cache to ensure fresh precision data
       BybitPrecisionFormatter.clearCache();
 
-      // Format with enhanced error handling
+      // Format with FIXED precision calculation
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
 
@@ -42,27 +42,27 @@ export class OrderValidation {
         throw new Error(`Invalid formatted values: price=${finalPrice}, quantity=${finalQuantity}`);
       }
 
-      // Count decimal places manually for safety
+      // Count decimal places from formatted strings (exact count)
       const quantityDecimals = formattedQuantity.includes('.') ? formattedQuantity.split('.')[1].length : 0;
       const priceDecimals = formattedPrice.includes('.') ? formattedPrice.split('.')[1].length : 0;
 
-      console.log(`📊 Decimal validation: quantity=${quantityDecimals} decimals, price=${priceDecimals} decimals`);
+      console.log(`📊 Exact decimal counts: quantity=${quantityDecimals} decimals, price=${priceDecimals} decimals`);
 
-      // Safety checks
+      // Safety checks for reasonable decimal limits
       if (quantityDecimals > 8 || priceDecimals > 8) {
         throw new Error(`Too many decimals: quantity=${quantityDecimals}, price=${priceDecimals}`);
       }
 
-      // Check for scientific notation
+      // Check for scientific notation (Bybit rejects this)
       if (formattedQuantity.toLowerCase().includes('e') || formattedPrice.toLowerCase().includes('e')) {
         throw new Error(`Scientific notation detected: qty="${formattedQuantity}", price="${formattedPrice}"`);
       }
 
-      // Final Bybit validation
+      // Final Bybit validation with exact precision
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, finalPrice, finalQuantity);
       
       if (!isValid) {
-        throw new Error(`Bybit validation failed for ${symbol}`);
+        throw new Error(`Bybit precision validation failed for ${symbol}`);
       }
 
       console.log(`✅ Order validation passed for ${symbol}`);
