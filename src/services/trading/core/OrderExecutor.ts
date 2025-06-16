@@ -133,7 +133,7 @@ export class OrderExecutor {
         validationPassed: true
       });
 
-      return { success: true,OrderId: buyOrderId };
+      return { success: true, orderId: buyOrderId };
 
     } catch (error) {
       console.error(`❌ CRITICAL ERROR placing BUY order for ${symbol}:`, error);
