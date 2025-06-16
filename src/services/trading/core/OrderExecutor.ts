@@ -27,28 +27,73 @@ export class OrderExecutor {
     entryPrice: number
   ): Promise<{ success: boolean; orderId?: string; error?: string }> {
     try {
-      console.log(`🔄 Executing BUY order for ${symbol}: ${quantity} @ ${entryPrice}`);
+      console.log(`\n🔄 ===== EXECUTING BUY ORDER FOR ${symbol} =====`);
+      console.log(`📊 Input: ${quantity} @ ${entryPrice}`);
 
-      // Clear cache and format using Bybit precision formatter
+      // CRITICAL: Clear cache and get fresh precision data
       BybitPrecisionFormatter.clearCache();
+      
+      // CRITICAL: Format using Bybit precision formatter with enhanced validation
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
       
-      console.log(`📊 Placing BUY order with FORMATTED values:
-        - Symbol: ${symbol}
+      console.log(`🔧 FORMATTED VALUES for ${symbol}:
         - Quantity: "${formattedQuantity}" (original: ${quantity})
         - Price: "${formattedPrice}" (original: ${entryPrice})`);
 
-      // Final validation with formatted values
+      // CRITICAL: Pre-flight validation with formatted values
       const finalPrice = parseFloat(formattedPrice);
       const finalQuantity = parseFloat(formattedQuantity);
+      
+      console.log(`🔍 PRE-FLIGHT VALIDATION for ${symbol}:`);
+      
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, finalPrice, finalQuantity);
       
       if (!isValid) {
-        throw new Error(`Order validation failed after formatting: qty=${formattedQuantity}, price=${formattedPrice}`);
+        const errorMsg = `PRE-FLIGHT VALIDATION FAILED: qty="${formattedQuantity}", price="${formattedPrice}"`;
+        console.error(`❌ ${errorMsg}`);
+        throw new Error(errorMsg);
       }
 
+      console.log(`✅ PRE-FLIGHT VALIDATION PASSED for ${symbol}`);
+
+      // CRITICAL: Additional manual validation checks
+      console.log(`🔍 MANUAL VALIDATION CHECKS for ${symbol}:`);
+      
+      // Check for scientific notation (should not happen but double-check)
+      if (formattedQuantity.includes('e') || formattedQuantity.includes('E')) {
+        throw new Error(`Quantity in scientific notation: ${formattedQuantity}`);
+      }
+      
+      if (formattedPrice.includes('e') || formattedPrice.includes('E')) {
+        throw new Error(`Price in scientific notation: ${formattedPrice}`);
+      }
+
+      // Check for excessive decimals by counting decimal places
+      const quantityDecimals = formattedQuantity.includes('.') ? formattedQuantity.split('.')[1].length : 0;
+      const priceDecimals = formattedPrice.includes('.') ? formattedPrice.split('.')[1].length : 0;
+      
+      console.log(`📊 Decimal places: quantity=${quantityDecimals}, price=${priceDecimals}`);
+
+      if (quantityDecimals > 8) {
+        throw new Error(`Quantity has too many decimals (${quantityDecimals}): ${formattedQuantity}`);
+      }
+
+      if (priceDecimals > 8) {
+        throw new Error(`Price has too many decimals (${priceDecimals}): ${formattedPrice}`);
+      }
+
+      console.log(`✅ MANUAL VALIDATION PASSED for ${symbol}`);
+
       // Place the buy order with string values
+      console.log(`📤 PLACING ORDER on Bybit for ${symbol}:
+        - Symbol: ${symbol}
+        - Side: Buy
+        - Type: Limit
+        - Quantity: "${formattedQuantity}"
+        - Price: "${formattedPrice}"
+        - Time in Force: GTC`);
+
       const buyOrderResult = await this.bybitService.placeOrder({
         category: 'spot',
         symbol: symbol,
@@ -60,7 +105,15 @@ export class OrderExecutor {
       });
 
       if (buyOrderResult.retCode !== 0) {
-        throw new Error(`Bybit buy order failed: ${buyOrderResult.retMsg}`);
+        const errorMsg = `Bybit buy order failed: ${buyOrderResult.retMsg}`;
+        console.error(`❌ ${errorMsg}`);
+        console.error(`📊 Order details that failed:`, {
+          symbol,
+          qty: formattedQuantity,
+          price: formattedPrice,
+          response: buyOrderResult
+        });
+        throw new Error(errorMsg);
       }
 
       const buyOrderId = buyOrderResult.result?.orderId;
@@ -68,25 +121,36 @@ export class OrderExecutor {
         throw new Error('No order ID returned from Bybit buy order');
       }
 
-      console.log(`✅ BUY order placed successfully: ${buyOrderId}`);
+      console.log(`✅ BUY ORDER PLACED SUCCESSFULLY: ${buyOrderId}`);
+      
       await this.logger.logSuccess(`BUY order placed for ${symbol}`, {
         symbol,
         orderId: buyOrderId,
         quantity: formattedQuantity,
         price: formattedPrice,
         originalQuantity: quantity,
-        originalPrice: entryPrice
+        originalPrice: entryPrice,
+        validationPassed: true
       });
 
-      return { success: true, orderId: buyOrderId };
+      return { success: true,OrderId: buyOrderId };
 
     } catch (error) {
-      console.error(`❌ Error placing BUY order for ${symbol}:`, error);
+      console.error(`❌ CRITICAL ERROR placing BUY order for ${symbol}:`, error);
+      console.error(`📊 Failed order details:`, {
+        symbol,
+        originalQuantity: quantity,
+        originalPrice: entryPrice,
+        error: error.message
+      });
+      
       await this.logger.logError(`BUY order failed for ${symbol}`, error, {
         symbol,
         quantity,
-        entryPrice
+        entryPrice,
+        errorType: 'order_execution_failed'
       });
+      
       return { success: false, error: error.message };
     }
   }
@@ -98,25 +162,25 @@ export class OrderExecutor {
     instrumentInfo: any
   ): Promise<{ success: boolean; orderId?: string; error?: string }> {
     try {
-      console.log(`🔄 Executing SELL order for ${symbol}: ${quantity} @ ${price}`);
+      console.log(`\n🔄 ===== EXECUTING SELL ORDER FOR ${symbol} =====`);
+      console.log(`📊 Input: ${quantity} @ ${price}`);
 
-      // Clear cache and format using Bybit precision formatter
+      // CRITICAL: Clear cache and format using Bybit precision formatter
       BybitPrecisionFormatter.clearCache();
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
 
-      console.log(`📊 Placing SELL order with FORMATTED values:
-        - Symbol: ${symbol}
+      console.log(`🔧 FORMATTED VALUES for ${symbol}:
         - Quantity: "${formattedQuantity}" (original: ${quantity})
         - Price: "${formattedPrice}" (original: ${price})`);
 
-      // Final validation with formatted values
+      // CRITICAL: Pre-flight validation with formatted values
       const finalPrice = parseFloat(formattedPrice);
       const finalQuantity = parseFloat(formattedQuantity);
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, finalPrice, finalQuantity);
       
       if (!isValid) {
-        throw new Error(`Sell order validation failed after formatting: qty=${formattedQuantity}, price=${formattedPrice}`);
+        throw new Error(`Sell order pre-flight validation failed: qty="${formattedQuantity}", price="${formattedPrice}"`);
       }
 
       // Place the sell order with string values
@@ -139,7 +203,7 @@ export class OrderExecutor {
         throw new Error('No order ID returned from Bybit sell order');
       }
 
-      console.log(`✅ SELL order placed successfully: ${sellOrderId}`);
+      console.log(`✅ SELL ORDER PLACED SUCCESSFULLY: ${sellOrderId}`);
       await this.logger.logSuccess(`SELL order placed for ${symbol}`, {
         symbol,
         orderId: sellOrderId,
@@ -152,7 +216,7 @@ export class OrderExecutor {
       return { success: true, orderId: sellOrderId };
 
     } catch (error) {
-      console.error(`❌ Error placing SELL order for ${symbol}:`, error);
+      console.error(`❌ ERROR placing SELL order for ${symbol}:`, error);
       await this.logger.logError(`SELL order failed for ${symbol}`, error, {
         symbol,
         quantity,

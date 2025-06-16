@@ -31,6 +31,7 @@ export class BybitPrecisionFormatter {
 
   /**
    * Format quantity using Bybit's exact base precision - ALWAYS returns string
+   * FIXED: No trailing zero removal - use exact precision from basePrecision
    */
   static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
@@ -42,36 +43,24 @@ export class BybitPrecisionFormatter {
       // Round DOWN to nearest base precision increment to avoid "too many decimals"
       const roundedQuantity = Math.floor(quantity / basePrecision) * basePrecision;
       
-      // Format with correct decimal places based on base precision
+      // CRITICAL FIX: Use exact decimal places from basePrecision, no trailing zero removal
       const decimals = this.getDecimalPlaces(basePrecision.toString());
       const formatted = roundedQuantity.toFixed(decimals);
       
-      // Remove trailing zeros but preserve minimum required decimals
-      const finalFormatted = this.removeTrailingZeros(formatted, decimals);
+      console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → "${formatted}" (base: ${basePrecision}, decimals: ${decimals})`);
+      console.log(`📊 Precision check: ${roundedQuantity} / ${basePrecision} = ${roundedQuantity / basePrecision} (should be integer)`);
       
-      console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → "${finalFormatted}" (base: ${basePrecision}, decimals: ${decimals})`);
-      return finalFormatted;
+      // Validation: Ensure the result is a valid multiple of basePrecision
+      const validationCheck = Math.abs((roundedQuantity / basePrecision) - Math.round(roundedQuantity / basePrecision)) < 1e-10;
+      if (!validationCheck) {
+        throw new Error(`Quantity ${formatted} is not a valid multiple of basePrecision ${basePrecision} for ${symbol}`);
+      }
+      
+      return formatted;
     } catch (error) {
       console.error(`❌ Error formatting quantity for ${symbol}:`, error);
       throw error;
     }
-  }
-
-  /**
-   * Remove trailing zeros while preserving minimum required decimals
-   */
-  private static removeTrailingZeros(value: string, minDecimals: number): string {
-    if (value.indexOf('.') === -1) return value;
-    
-    const [integerPart, decimalPart] = value.split('.');
-    let trimmedDecimals = decimalPart.replace(/0+$/, '');
-    
-    // Ensure we have at least the minimum required decimals
-    if (trimmedDecimals.length < minDecimals) {
-      trimmedDecimals = trimmedDecimals.padEnd(minDecimals, '0');
-    }
-    
-    return trimmedDecimals.length > 0 ? `${integerPart}.${trimmedDecimals}` : integerPart;
   }
 
   /**
@@ -83,17 +72,38 @@ export class BybitPrecisionFormatter {
       
       const minOrderQty = parseFloat(instrumentInfo.minOrderQty);
       const minOrderAmt = parseFloat(instrumentInfo.minOrderAmt);
+      const basePrecision = parseFloat(instrumentInfo.basePrecision);
+      const tickSize = parseFloat(instrumentInfo.tickSize);
       const orderValue = price * quantity;
 
-      console.log(`🔍 Validating order for ${symbol}: qty=${quantity} (min=${minOrderQty}), value=${orderValue} (min=${minOrderAmt})`);
+      console.log(`🔍 Validating order for ${symbol}:`);
+      console.log(`  - Quantity: ${quantity} (min: ${minOrderQty}, precision: ${basePrecision})`);
+      console.log(`  - Price: ${price} (tick: ${tickSize})`);
+      console.log(`  - Order value: ${orderValue} (min: ${minOrderAmt})`);
 
+      // Check minimum quantity
       if (quantity < minOrderQty) {
         console.error(`❌ Quantity ${quantity} below minimum ${minOrderQty} for ${symbol}`);
         return false;
       }
 
+      // Check minimum order amount
       if (orderValue < minOrderAmt) {
         console.error(`❌ Order value ${orderValue} below minimum ${minOrderAmt} for ${symbol}`);
+        return false;
+      }
+
+      // CRITICAL: Check quantity precision - must be exact multiple of basePrecision
+      const quantityCheck = Math.abs((quantity / basePrecision) - Math.round(quantity / basePrecision)) < 1e-10;
+      if (!quantityCheck) {
+        console.error(`❌ Quantity ${quantity} is not a valid multiple of basePrecision ${basePrecision} for ${symbol}`);
+        return false;
+      }
+
+      // Check price precision - must be exact multiple of tickSize  
+      const priceCheck = Math.abs((price / tickSize) - Math.round(price / tickSize)) < 1e-10;
+      if (!priceCheck) {
+        console.error(`❌ Price ${price} is not a valid multiple of tickSize ${tickSize} for ${symbol}`);
         return false;
       }
 
