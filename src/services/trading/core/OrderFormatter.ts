@@ -14,24 +14,24 @@ export class OrderFormatter {
     entryPrice: number
   ): Promise<FormattedOrderData> {
     try {
-      console.log(`📋 Formatting buy order for ${symbol}: qty=${quantity}, price=${entryPrice}`);
+      console.log(`📋 OrderFormatter: Formatting buy order for ${symbol}: qty=${quantity}, price=${entryPrice}`);
 
-      // Clear any cached data first to ensure fresh precision
+      // CRITICAL: Use ONLY BybitPrecisionFormatter - clear cache first
       BybitPrecisionFormatter.clearCache();
 
-      // Use Bybit precision formatter for exact formatting - ensure strings are returned
+      // Use BybitPrecisionFormatter for exact formatting - ensure strings are returned
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, entryPrice);
 
-      console.log(`🔧 Formatted values - Quantity: "${formattedQuantity}", Price: "${formattedPrice}"`);
+      console.log(`🔧 OrderFormatter formatted values - Quantity: "${formattedQuantity}", Price: "${formattedPrice}"`);
 
       // Validate the order meets Bybit requirements using the formatted values
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
       if (!isValid) {
-        throw new Error(`Order validation failed for ${symbol} - qty: ${formattedQuantity}, price: ${formattedPrice}`);
+        throw new Error(`OrderFormatter validation failed for ${symbol} - qty: ${formattedQuantity}, price: ${formattedPrice}`);
       }
 
-      // Get instrument info for reference
+      // Get instrument info for reference (using the same service as BybitPrecisionFormatter)
       const { BybitInstrumentService } = await import('./BybitInstrumentService');
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
 
@@ -41,7 +41,7 @@ export class OrderFormatter {
         instrumentInfo
       };
     } catch (error) {
-      console.error(`❌ Error formatting buy order for ${symbol}:`, error);
+      console.error(`❌ OrderFormatter error formatting buy order for ${symbol}:`, error);
       throw error;
     }
   }
@@ -53,21 +53,21 @@ export class OrderFormatter {
     instrumentInfo: any
   ): Promise<FormattedOrderData> {
     try {
-      console.log(`📋 Formatting sell order for ${symbol}: qty=${quantity}, price=${price}`);
+      console.log(`📋 OrderFormatter: Formatting sell order for ${symbol}: qty=${quantity}, price=${price}`);
 
-      // Clear any cached data first to ensure fresh precision
+      // CRITICAL: Use ONLY BybitPrecisionFormatter - clear cache first
       BybitPrecisionFormatter.clearCache();
 
-      // Use Bybit precision formatter for exact formatting - ensure strings are returned
+      // Use BybitPrecisionFormatter for exact formatting - ensure strings are returned
       const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
       const formattedQuantity = await BybitPrecisionFormatter.formatQuantity(symbol, quantity);
       
-      console.log(`🔧 Formatted values - Quantity: "${formattedQuantity}", Price: "${formattedPrice}"`);
+      console.log(`🔧 OrderFormatter formatted values - Quantity: "${formattedQuantity}", Price: "${formattedPrice}"`);
       
       // Validate the formatted sell order using the formatted values
       const isValid = await BybitPrecisionFormatter.validateOrder(symbol, parseFloat(formattedPrice), parseFloat(formattedQuantity));
       if (!isValid) {
-        throw new Error(`Sell order validation failed for ${symbol} - qty: ${formattedQuantity}, price: ${formattedPrice}`);
+        throw new Error(`OrderFormatter sell validation failed for ${symbol} - qty: ${formattedQuantity}, price: ${formattedPrice}`);
       }
 
       return {
@@ -76,7 +76,7 @@ export class OrderFormatter {
         instrumentInfo
       };
     } catch (error) {
-      console.error(`❌ Error formatting sell order for ${symbol}:`, error);
+      console.error(`❌ OrderFormatter error formatting sell order for ${symbol}:`, error);
       throw error;
     }
   }

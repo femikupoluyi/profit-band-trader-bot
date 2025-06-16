@@ -17,8 +17,8 @@ export class BybitPrecisionFormatter {
       // Round to nearest tick size using proper rounding
       const roundedPrice = Math.round(price / tickSize) * tickSize;
       
-      // Format with correct decimal places based on tick size
-      const decimals = this.getDecimalPlaces(tickSize.toString());
+      // CRITICAL FIX: Use proper decimal places calculation based on tick size
+      const decimals = this.calculatePrecisionDecimals(tickSize);
       const formatted = roundedPrice.toFixed(decimals);
       
       console.log(`✅ Price formatted for ${symbol}: ${price} → "${formatted}" (tick: ${tickSize}, decimals: ${decimals})`);
@@ -31,7 +31,6 @@ export class BybitPrecisionFormatter {
 
   /**
    * Format quantity using Bybit's exact base precision - ALWAYS returns string
-   * FIXED: No trailing zero removal - use exact precision from basePrecision
    */
   static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
@@ -43,8 +42,8 @@ export class BybitPrecisionFormatter {
       // Round DOWN to nearest base precision increment to avoid "too many decimals"
       const roundedQuantity = Math.floor(quantity / basePrecision) * basePrecision;
       
-      // CRITICAL FIX: Use exact decimal places from basePrecision, no trailing zero removal
-      const decimals = this.getDecimalPlaces(basePrecision.toString());
+      // CRITICAL FIX: Use proper decimal places calculation based on base precision
+      const decimals = this.calculatePrecisionDecimals(basePrecision);
       const formatted = roundedQuantity.toFixed(decimals);
       
       console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → "${formatted}" (base: ${basePrecision}, decimals: ${decimals})`);
@@ -61,6 +60,20 @@ export class BybitPrecisionFormatter {
       console.error(`❌ Error formatting quantity for ${symbol}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * CRITICAL FIX: Proper decimal places calculation using mathematical approach
+   * Instead of string parsing, use logarithmic calculation for precision
+   */
+  private static calculatePrecisionDecimals(precision: number): number {
+    if (precision >= 1) return 0;
+    
+    // Use logarithmic approach for precise decimal calculation
+    const decimals = Math.ceil(-Math.log10(precision));
+    
+    // Cap at reasonable maximum to prevent excessive precision
+    return Math.min(decimals, 8);
   }
 
   /**
@@ -147,11 +160,6 @@ export class BybitPrecisionFormatter {
       throw new Error(`Could not get instrument info for ${symbol}`);
     }
     return instrumentInfo;
-  }
-
-  private static getDecimalPlaces(value: string): number {
-    if (value.indexOf('.') === -1) return 0;
-    return value.split('.')[1].length;
   }
 
   /**
