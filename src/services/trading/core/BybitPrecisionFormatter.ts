@@ -1,27 +1,40 @@
-
 import { BybitInstrumentService } from './BybitInstrumentService';
 
 export class BybitPrecisionFormatter {
   private static instrumentCache = new Map<string, any>();
 
   /**
-   * Format price using Bybit's exact tick size precision - ALWAYS returns string
+   * Format price using Bybit's exact tick size precision - ENHANCED VERSION
    */
   static async formatPrice(symbol: string, price: number): Promise<string> {
     try {
       console.log(`🔧 Formatting price for ${symbol}: ${price}`);
       
+      if (!symbol || typeof price !== 'number' || isNaN(price) || price <= 0) {
+        throw new Error(`Invalid price parameters: symbol=${symbol}, price=${price}`);
+      }
+
       const instrumentInfo = await this.getInstrumentInfo(symbol);
       const tickSize = parseFloat(instrumentInfo.tickSize);
       
+      if (isNaN(tickSize) || tickSize <= 0) {
+        throw new Error(`Invalid tick size for ${symbol}: ${instrumentInfo.tickSize}`);
+      }
+
       // Round to nearest tick size using proper rounding
       const roundedPrice = Math.round(price / tickSize) * tickSize;
       
-      // CRITICAL FIX: Use proper decimal places calculation based on tick size
-      const decimals = this.calculatePrecisionDecimals(tickSize);
-      const formatted = roundedPrice.toFixed(decimals);
+      // ENHANCED: Use string-based decimal calculation for accuracy
+      const decimals = this.getDecimalPlaces(instrumentInfo.tickSize);
+      const formatted = this.formatToDecimals(roundedPrice, decimals);
       
       console.log(`✅ Price formatted for ${symbol}: ${price} → "${formatted}" (tick: ${tickSize}, decimals: ${decimals})`);
+      
+      // Validation: ensure no scientific notation
+      if (formatted.toLowerCase().includes('e')) {
+        throw new Error(`Scientific notation in formatted price: ${formatted}`);
+      }
+      
       return formatted;
     } catch (error) {
       console.error(`❌ Error formatting price for ${symbol}:`, error);
@@ -30,29 +43,43 @@ export class BybitPrecisionFormatter {
   }
 
   /**
-   * Format quantity using Bybit's exact base precision - ALWAYS returns string
+   * Format quantity using Bybit's exact base precision - ENHANCED VERSION
    */
   static async formatQuantity(symbol: string, quantity: number): Promise<string> {
     try {
       console.log(`🔧 Formatting quantity for ${symbol}: ${quantity}`);
       
+      if (!symbol || typeof quantity !== 'number' || isNaN(quantity) || quantity <= 0) {
+        throw new Error(`Invalid quantity parameters: symbol=${symbol}, quantity=${quantity}`);
+      }
+
       const instrumentInfo = await this.getInstrumentInfo(symbol);
       const basePrecision = parseFloat(instrumentInfo.basePrecision);
       
-      // Round DOWN to nearest base precision increment to avoid "too many decimals"
+      if (isNaN(basePrecision) || basePrecision <= 0) {
+        throw new Error(`Invalid base precision for ${symbol}: ${instrumentInfo.basePrecision}`);
+      }
+
+      // Round DOWN to nearest base precision increment
       const roundedQuantity = Math.floor(quantity / basePrecision) * basePrecision;
       
-      // CRITICAL FIX: Use proper decimal places calculation based on base precision
-      const decimals = this.calculatePrecisionDecimals(basePrecision);
-      const formatted = roundedQuantity.toFixed(decimals);
+      // ENHANCED: Use string-based decimal calculation for accuracy
+      const decimals = this.getDecimalPlaces(instrumentInfo.basePrecision);
+      const formatted = this.formatToDecimals(roundedQuantity, decimals);
       
       console.log(`✅ Quantity formatted for ${symbol}: ${quantity} → "${formatted}" (base: ${basePrecision}, decimals: ${decimals})`);
-      console.log(`📊 Precision check: ${roundedQuantity} / ${basePrecision} = ${roundedQuantity / basePrecision} (should be integer)`);
       
-      // Validation: Ensure the result is a valid multiple of basePrecision
-      const validationCheck = Math.abs((roundedQuantity / basePrecision) - Math.round(roundedQuantity / basePrecision)) < 1e-10;
-      if (!validationCheck) {
+      // Validation: ensure it's a valid multiple of basePrecision
+      const testValue = parseFloat(formatted);
+      const multipleCheck = Math.abs((testValue / basePrecision) - Math.round(testValue / basePrecision)) < 1e-10;
+      
+      if (!multipleCheck) {
         throw new Error(`Quantity ${formatted} is not a valid multiple of basePrecision ${basePrecision} for ${symbol}`);
+      }
+
+      // Validation: ensure no scientific notation
+      if (formatted.toLowerCase().includes('e')) {
+        throw new Error(`Scientific notation in formatted quantity: ${formatted}`);
       }
       
       return formatted;
@@ -63,17 +90,42 @@ export class BybitPrecisionFormatter {
   }
 
   /**
-   * CRITICAL FIX: Proper decimal places calculation using mathematical approach
-   * Instead of string parsing, use logarithmic calculation for precision
+   * ENHANCED: Get decimal places from precision string using string parsing
    */
-  private static calculatePrecisionDecimals(precision: number): number {
-    if (precision >= 1) return 0;
-    
-    // Use logarithmic approach for precise decimal calculation
-    const decimals = Math.ceil(-Math.log10(precision));
-    
-    // Cap at reasonable maximum to prevent excessive precision
-    return Math.min(decimals, 8);
+  private static getDecimalPlaces(precisionStr: string): number {
+    try {
+      // Convert to string and find decimal places
+      const str = parseFloat(precisionStr).toString();
+      
+      if (str.includes('.')) {
+        const decimals = str.split('.')[1].length;
+        // Cap at reasonable maximum to prevent excessive precision
+        return Math.min(decimals, 8);
+      }
+      
+      return 0;
+    } catch (error) {
+      console.warn(`Error calculating decimal places for ${precisionStr}:`, error);
+      return 4; // Safe fallback
+    }
+  }
+
+  /**
+   * ENHANCED: Format number to specific decimal places without scientific notation
+   */
+  private static formatToDecimals(value: number, decimals: number): string {
+    try {
+      // Use toFixed to avoid scientific notation
+      const formatted = value.toFixed(decimals);
+      
+      // Remove trailing zeros for cleaner output (but keep at least the required precision)
+      const cleanFormatted = parseFloat(formatted).toFixed(decimals);
+      
+      return cleanFormatted;
+    } catch (error) {
+      console.error(`Error formatting ${value} to ${decimals} decimals:`, error);
+      throw error;
+    }
   }
 
   /**

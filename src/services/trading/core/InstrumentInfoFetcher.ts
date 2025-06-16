@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 
 export type BybitInstrumentInfo = {
@@ -13,7 +12,7 @@ export type BybitInstrumentInfo = {
 
 export class InstrumentInfoFetcher {
   /**
-   * Fetch instrument information from Bybit API
+   * ENHANCED: Fetch instrument information from Bybit API with better validation
    */
   static async fetchInstrumentInfo(symbol: string): Promise<BybitInstrumentInfo | null> {
     try {
@@ -54,9 +53,15 @@ export class InstrumentInfoFetcher {
 
       const instrument = instrumentList[0];
       
-      // Parse precision information from Bybit response
-      const priceDecimals = this.calculateDecimals(instrument.tickSize || '0.01');
-      const quantityDecimals = this.calculateDecimals(instrument.basePrecision || '0.0001');
+      // ENHANCED: Validate instrument data before processing
+      if (!instrument.tickSize || !instrument.basePrecision) {
+        console.error(`❌ Invalid instrument data for ${symbol}:`, instrument);
+        return null;
+      }
+
+      // ENHANCED: Use string-based decimal calculation for accuracy
+      const priceDecimals = this.calculateDecimalsFromString(instrument.tickSize || '0.01');
+      const quantityDecimals = this.calculateDecimalsFromString(instrument.basePrecision || '0.0001');
 
       const instrumentInfo: BybitInstrumentInfo = {
         symbol: instrument.symbol,
@@ -68,7 +73,11 @@ export class InstrumentInfoFetcher {
         basePrecision: instrument.basePrecision || '0.0001'
       };
 
-      console.log(`✅ Fetched instrument info for ${symbol}:`, instrumentInfo);
+      console.log(`✅ Fetched and validated instrument info for ${symbol}:`, instrumentInfo);
+      
+      // ENHANCED: Additional validation
+      this.validateInstrumentInfo(instrumentInfo);
+      
       return instrumentInfo;
     } catch (error) {
       console.error(`❌ Exception fetching instrument info for ${symbol}:`, error);
@@ -77,25 +86,53 @@ export class InstrumentInfoFetcher {
   }
 
   /**
-   * Calculate decimal places from a tick size or precision string
+   * ENHANCED: Calculate decimal places from precision string using string parsing
    */
-  private static calculateDecimals(value: string): number {
+  private static calculateDecimalsFromString(value: string): number {
     try {
+      // Parse as number first to handle scientific notation
       const num = parseFloat(value);
       if (isNaN(num) || num <= 0) {
-        return 4; // Default fallback
+        console.warn(`Invalid precision value: ${value}, using default 4`);
+        return 4;
       }
 
-      // Count decimal places
+      // Convert back to string to count decimals
       const str = num.toString();
-      if (str.indexOf('.') !== -1) {
-        return str.split('.')[1].length;
+      if (str.includes('.')) {
+        const decimals = str.split('.')[1].length;
+        // Cap at reasonable maximum
+        return Math.min(decimals, 8);
       }
       return 0;
     } catch (error) {
       console.warn(`Error calculating decimals for value ${value}:`, error);
-      return 4; // Default fallback
+      return 4; // Safe fallback
     }
+  }
+
+  /**
+   * ENHANCED: Validate instrument info has required fields
+   */
+  private static validateInstrumentInfo(info: BybitInstrumentInfo): void {
+    const requiredFields = ['symbol', 'tickSize', 'basePrecision', 'minOrderQty', 'minOrderAmt'];
+    
+    for (const field of requiredFields) {
+      if (!info[field as keyof BybitInstrumentInfo]) {
+        throw new Error(`Missing required field ${field} in instrument info for ${info.symbol}`);
+      }
+    }
+
+    // Validate numeric fields can be parsed
+    const numericFields = ['tickSize', 'basePrecision', 'minOrderQty', 'minOrderAmt'];
+    for (const field of numericFields) {
+      const value = parseFloat(info[field as keyof BybitInstrumentInfo] as string);
+      if (isNaN(value) || value <= 0) {
+        throw new Error(`Invalid numeric value for ${field}: ${info[field as keyof BybitInstrumentInfo]} in ${info.symbol}`);
+      }
+    }
+
+    console.log(`✅ Instrument info validation passed for ${info.symbol}`);
   }
 
   /**
