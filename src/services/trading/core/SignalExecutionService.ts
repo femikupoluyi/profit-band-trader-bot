@@ -6,6 +6,12 @@ import { SignalProcessor } from './SignalProcessor';
 import { SignalFetcher } from './SignalFetcher';
 import { ExecutionResultsTracker } from './ExecutionResultsTracker';
 
+interface EnhancedSignalProcessingResult {
+  success: boolean;
+  reason?: string;
+  orderId?: string;
+}
+
 export class SignalExecutionService {
   private userId: string;
   private logger: TradingLogger;
@@ -84,20 +90,20 @@ export class SignalExecutionService {
         
         try {
           console.log(`⚡ Step 2: Processing signal for ${signal.symbol}...`);
-          const result = await this.signalProcessor.processSingleSignal(signal, config);
+          const result = await this.signalProcessor.processSingleSignal(signal, config) as EnhancedSignalProcessingResult;
           
           console.log(`📊 Signal processing result for ${signal.symbol}:`, {
             success: result.success,
             reason: result.reason,
-            orderId: result.orderId
+            orderId: result.orderId || 'N/A'
           });
           
           if (result.success) {
             this.resultsTracker.recordSuccess();
-            console.log(`✅ Signal processed successfully for ${signal.symbol} - Order ID: ${result.orderId}`);
+            console.log(`✅ Signal processed successfully for ${signal.symbol} - Order ID: ${result.orderId || 'N/A'}`);
             await this.logger.logSuccess(`Signal processed successfully for ${signal.symbol}`, {
               signalId: signal.id,
-              orderId: result.orderId,
+              orderId: result.orderId || 'N/A',
               symbol: signal.symbol
             });
           } else {
@@ -141,7 +147,7 @@ export class SignalExecutionService {
       console.log('\n📊 ===== SIGNAL EXECUTION SUMMARY =====');
       console.log('📈 Execution Statistics:', executionSummary);
       
-      if (executionSummary.failures > 0) {
+      if (executionSummary.failed > 0) {
         console.log('❌ Failure Details:', executionSummary.failureReasons);
       }
       
@@ -161,6 +167,43 @@ export class SignalExecutionService {
       console.error('❌ Critical error in signal execution:', error);
       await this.logger.logError('Critical error in signal execution', error);
       throw error;
+    }
+  }
+
+  // TESTING: Method to test signal execution pipeline with a single test signal
+  async testSignalExecution(config: TradingConfigData): Promise<boolean> {
+    try {
+      console.log('\n🧪 ===== TESTING SIGNAL EXECUTION PIPELINE =====');
+      
+      // Get all unprocessed signals for testing
+      const signals = await this.signalFetcher.getUnprocessedSignals();
+      
+      if (signals.length === 0) {
+        console.log('📭 No test signals found for execution testing');
+        return false;
+      }
+
+      console.log(`🧪 Testing with ${signals.length} signal(s)`);
+      
+      // Test with first signal only
+      const testSignal = signals[0];
+      console.log(`🧪 Testing signal execution for ${testSignal.symbol}`);
+      
+      const result = await this.signalProcessor.processSingleSignal(testSignal, config) as EnhancedSignalProcessingResult;
+      
+      console.log(`🧪 Test result:`, {
+        success: result.success,
+        reason: result.reason,
+        orderId: result.orderId || 'N/A'
+      });
+      
+      // Mark as processed to clean up
+      await this.signalFetcher.markSignalAsProcessed(testSignal.id);
+      
+      return result.success;
+    } catch (error) {
+      console.error('❌ Error testing signal execution:', error);
+      return false;
     }
   }
 }

@@ -8,6 +8,7 @@ import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
 import { InstrumentCache } from './InstrumentCache';
 import { ConfigurableFormatter } from './ConfigurableFormatter';
+import { TradingPipelineTest } from './TradingPipelineTest';
 
 export class MainTradingEngine {
   private userId: string;
@@ -19,6 +20,7 @@ export class MainTradingEngine {
   private positionMonitorService: PositionMonitorService;
   private reconciliationService: TransactionReconciliationService;
   private positionSyncService: PositionSyncService;
+  private pipelineTest: TradingPipelineTest;
   private mainLoopInterval: NodeJS.Timeout | null = null;
   private isRunning = false;
 
@@ -34,6 +36,7 @@ export class MainTradingEngine {
     this.positionMonitorService = new PositionMonitorService(userId, this.bybitService);
     this.reconciliationService = new TransactionReconciliationService(userId, this.bybitService);
     this.positionSyncService = new PositionSyncService(userId, this.bybitService);
+    this.pipelineTest = new TradingPipelineTest(userId, this.bybitService);
   }
 
   async initialize(): Promise<boolean> {
@@ -321,5 +324,34 @@ export class MainTradingEngine {
     
     // Reinitialize enhanced signal analysis service with new config
     this.signalAnalysisService = new EnhancedSignalAnalysisService(this.userId, this.bybitService);
+  }
+
+  // TESTING: Run pipeline tests
+  async runPipelineTests(): Promise<boolean> {
+    try {
+      console.log('\n🧪 ===== RUNNING TRADING PIPELINE TESTS =====');
+      
+      // Phase 3: Test simple signal generation
+      const simpleTestSuccess = await this.pipelineTest.testSimpleSignalGeneration(this.config);
+      if (!simpleTestSuccess) {
+        console.log('❌ Simple signal generation test failed');
+        return false;
+      }
+      
+      // Phase 4: Test full trading logic
+      const fullTestSuccess = await this.pipelineTest.testFullTradingLogic(this.config);
+      if (!fullTestSuccess) {
+        console.log('❌ Full trading logic test failed');
+        return false;
+      }
+      
+      console.log('✅ All pipeline tests passed successfully');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Error running pipeline tests:', error);
+      await this.logger.logError('Pipeline tests failed', error);
+      return false;
+    }
   }
 }

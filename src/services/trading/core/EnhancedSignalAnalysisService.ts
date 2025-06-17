@@ -1,9 +1,11 @@
+
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { SignalAnalysisCore } from './SignalAnalysisCore';
 import { AveragingDownAnalyzer } from './AveragingDownAnalyzer';
 import { NewPositionAnalyzer } from './NewPositionAnalyzer';
 import { SignalCreationService } from './SignalCreationService';
+import { SystemHealthChecker } from './SystemHealthChecker';
 import { TradingLogger } from './TradingLogger';
 
 export interface SignalAnalysisResult {
@@ -26,6 +28,7 @@ export class EnhancedSignalAnalysisService {
   private averagingAnalyzer: AveragingDownAnalyzer;
   private newPositionAnalyzer: NewPositionAnalyzer;
   private signalCreator: SignalCreationService;
+  private healthChecker: SystemHealthChecker;
   private logger: TradingLogger;
 
   constructor(userId: string, bybitService: BybitService) {
@@ -35,6 +38,7 @@ export class EnhancedSignalAnalysisService {
     this.averagingAnalyzer = new AveragingDownAnalyzer();
     this.newPositionAnalyzer = new NewPositionAnalyzer(userId, bybitService);
     this.signalCreator = new SignalCreationService(userId);
+    this.healthChecker = new SystemHealthChecker(userId, bybitService);
     this.logger = new TradingLogger(userId);
   }
 
@@ -56,15 +60,18 @@ export class EnhancedSignalAnalysisService {
         maxOrderAmount: config.max_order_amount_usd
       });
 
-      // ENHANCED: Configuration health check
-      const healthCheck = await this.performSystemHealthCheck(config);
+      // ENHANCED: System health check with comprehensive logging
+      console.log('\n🏥 ===== COMPREHENSIVE SYSTEM HEALTH CHECK =====');
+      const healthCheck = await this.healthChecker.performComprehensiveHealthCheck(config);
+      
       if (!healthCheck.isHealthy) {
         console.error('❌ System health check failed:', healthCheck.issues);
+        console.log('📋 Health check details:', healthCheck.details);
         await this.logger.logError('System health check failed', new Error('Health check failed'), healthCheck);
         return;
       }
 
-      console.log('✅ System health check passed');
+      console.log('✅ System health check passed - all systems operational');
 
       if (!config.is_active) {
         console.log('⚠️ Trading configuration is INACTIVE - skipping signal analysis');
@@ -133,61 +140,6 @@ export class EnhancedSignalAnalysisService {
     }
   }
 
-  private async performSystemHealthCheck(config: TradingConfigData): Promise<{isHealthy: boolean, issues: string[]}> {
-    const issues: string[] = [];
-    
-    console.log('\n🏥 ===== SYSTEM HEALTH CHECK =====');
-    
-    // Check 1: Configuration validation
-    if (!config.trading_pairs || config.trading_pairs.length === 0) {
-      issues.push('No trading pairs configured');
-    }
-    if (!config.max_order_amount_usd || config.max_order_amount_usd <= 0) {
-      issues.push('Invalid max order amount');
-    }
-    if (!config.take_profit_percent || config.take_profit_percent <= 0) {
-      issues.push('Invalid take profit percentage');
-    }
-    
-    console.log(`📋 Configuration Check: ${issues.length === 0 ? 'PASSED' : 'FAILED'}`);
-    if (issues.length > 0) {
-      console.log('❌ Configuration Issues:', issues);
-    }
-    
-    // Check 2: Bybit service connectivity
-    try {
-      console.log('🔌 Testing Bybit connectivity...');
-      const testSymbol = config.trading_pairs[0] || 'BTCUSDT';
-      const marketPrice = await this.bybitService.getMarketPrice(testSymbol);
-      
-      if (!marketPrice || !marketPrice.price || marketPrice.price <= 0) {
-        issues.push(`Bybit connectivity test failed for ${testSymbol}`);
-        console.log(`❌ Bybit connectivity test failed for ${testSymbol}`);
-      } else {
-        console.log(`✅ Bybit connectivity test passed: ${testSymbol} = $${marketPrice.price}`);
-      }
-    } catch (error) {
-      issues.push(`Bybit service error: ${error.message}`);
-      console.log('❌ Bybit service error:', error);
-    }
-    
-    // Check 3: Database connectivity (basic check)
-    try {
-      console.log('💾 Testing database connectivity...');
-      await this.logger.logSystemInfo('Health check database test');
-      console.log('✅ Database connectivity test passed');
-    } catch (error) {
-      issues.push(`Database connectivity error: ${error.message}`);
-      console.log('❌ Database connectivity error:', error);
-    }
-    
-    const isHealthy = issues.length === 0;
-    console.log(`🏥 Overall Health Status: ${isHealthy ? 'HEALTHY' : 'UNHEALTHY'}`);
-    console.log('===== SYSTEM HEALTH CHECK COMPLETE =====\n');
-    
-    return { isHealthy, issues };
-  }
-
   private async analyzeSymbolWithDetailedLogging(symbol: string, config: TradingConfigData): Promise<SignalAnalysisResult | null> {
     try {
       console.log(`\n🔍 ===== DETAILED ANALYSIS FOR ${symbol} =====`);
@@ -202,9 +154,9 @@ export class EnhancedSignalAnalysisService {
 
       console.log(`✅ ${symbol}: Signal context obtained`);
       console.log(`📊 ${symbol}: Context details:`, {
-        hasExistingPositions: context.existingPositions?.length > 0,
-        isAveragingDown: context.isAveragingDown,
-        maxPositionsReached: context.maxPositionsReached
+        hasExistingPositions: context.existingPositions?.length > 0 || false,
+        isAveragingDown: context.isAveragingDown || false,
+        maxPositionsReached: context.maxPositionsReached || false
       });
 
       // Get current market price with enhanced logging
@@ -313,6 +265,42 @@ export class EnhancedSignalAnalysisService {
     } catch (error) {
       console.error('Error storing signal in database:', error);
       throw error;
+    }
+  }
+
+  // TESTING: Method to create a simple test signal for pipeline verification
+  async createTestSignal(symbol: string, config: TradingConfigData): Promise<boolean> {
+    try {
+      console.log(`\n🧪 ===== CREATING TEST SIGNAL FOR ${symbol} =====`);
+      
+      // Get current market price
+      const marketPrice = await this.bybitService.getMarketPrice(symbol);
+      if (!marketPrice || !marketPrice.price) {
+        console.log(`❌ Cannot get market price for ${symbol}`);
+        return false;
+      }
+
+      // Create a simple test signal
+      const testSignal: SignalAnalysisResult = {
+        symbol,
+        action: 'buy',
+        confidence: 0.75,
+        entryPrice: marketPrice.price * 0.999, // Slightly below current price
+        quantity: (config.max_order_amount_usd || 100) / marketPrice.price,
+        reasoning: 'Test signal for pipeline verification',
+        orderValue: config.max_order_amount_usd || 100,
+        isAveragingDown: false
+      };
+
+      console.log(`🧪 Test signal created:`, testSignal);
+      
+      await this.storeSignal(testSignal, config);
+      console.log(`✅ Test signal stored successfully for ${symbol}`);
+      
+      return true;
+    } catch (error) {
+      console.error(`❌ Error creating test signal for ${symbol}:`, error);
+      return false;
     }
   }
 }
