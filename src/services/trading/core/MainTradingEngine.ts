@@ -64,7 +64,7 @@ export class MainTradingEngine {
       this.reconciliationService = new TransactionReconciliationService(this.userId, this.bybitService);
       this.positionSyncService = new PositionSyncService(this.userId, this.bybitService);
 
-      // Log trading configuration details
+      // ENHANCED: Log detailed trading configuration
       console.log('📋 ===== ENHANCED TRADING CONFIGURATION SUMMARY =====');
       console.log(`🧠 Selected Trading Logic: ${this.config.trading_logic_type}`);
       console.log(`📊 Trading Pairs: ${this.config.trading_pairs.join(', ')}`);
@@ -73,6 +73,7 @@ export class MainTradingEngine {
       console.log(`📈 Entry Offset: ${this.config.entry_offset_percent}%`);
       console.log(`🔄 Max Positions Per Pair: ${this.config.max_positions_per_pair}`);
       console.log(`⚙️ Configuration Active: ${this.config.is_active ? 'YES' : 'NO'}`);
+      console.log(`⏰ Main Loop Interval: ${this.config.main_loop_interval_seconds}s`);
       
       if (this.config.trading_logic_type === 'logic2_data_driven') {
         console.log('🎯 ===== LOGIC 2 DETERMINISTIC PARAMETERS =====');
@@ -89,6 +90,7 @@ export class MainTradingEngine {
         tradingPairs: this.config.trading_pairs,
         maxOrderAmount: this.config.max_order_amount_usd,
         isActive: this.config.is_active,
+        mainLoopInterval: this.config.main_loop_interval_seconds,
         logic2Parameters: this.config.trading_logic_type === 'logic2_data_driven' ? {
           swingAnalysisBars: this.config.swing_analysis_bars,
           volumeLookbackPeriods: this.config.volume_lookback_periods,
@@ -148,7 +150,7 @@ export class MainTradingEngine {
       console.log('✅ Enhanced MainTradingEngine started successfully');
       await this.logger.logSuccess('Enhanced MainTradingEngine started successfully');
       
-    } catch (error) {
+    } catch (error)  {
       console.error('❌ Error starting Enhanced MainTradingEngine:', error);
       await this.logger.logError('Failed to start Enhanced MainTradingEngine', error);
       this.isRunning = false;
@@ -194,73 +196,113 @@ export class MainTradingEngine {
   }
 
   private async executeMainLoop(): Promise<void> {
+    const loopStartTime = Date.now();
+    const cycleId = Math.floor(Date.now() / 1000);
+    
     try {
       console.log('\n🔄 ===== ENHANCED MAIN LOOP EXECUTION START =====');
+      console.log(`🆔 Cycle ID: ${cycleId}`);
       console.log(`⏰ Loop Time: ${new Date().toISOString()}`);
       console.log(`🧠 Active Trading Logic: ${this.config.trading_logic_type}`);
       console.log(`📊 Trading Pairs: [${this.config.trading_pairs.join(', ')}]`);
       console.log(`🔄 Configuration Active: ${this.config.is_active ? 'YES' : 'NO'}`);
+      console.log(`💰 Max Order Amount: $${this.config.max_order_amount_usd}`);
+      console.log(`🎯 Take Profit: ${this.config.take_profit_percent}%`);
       
       if (!this.config.is_active) {
         console.log('⚠️ Configuration is INACTIVE - skipping trading loop');
+        await this.logger.logSystemInfo('Trading loop skipped - configuration inactive', { cycleId });
         return;
       }
       
-      await this.logger.logCycleStart(Date.now(), this.config);
+      await this.logger.logCycleStart(cycleId, this.config);
       
       // 1. Quick sync positions with exchange first
       console.log('\n📊 STEP 1: Quick Position Synchronization');
+      const step1StartTime = Date.now();
       try {
         await Promise.race([
           this.positionSyncService.syncAllPositionsWithExchange(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 15000))
         ]);
+        console.log(`✅ Step 1 completed in ${Date.now() - step1StartTime}ms`);
       } catch (error) {
-        console.warn('⚠️ Position sync took too long, continuing anyway:', error);
+        console.warn(`⚠️ Step 1 took ${Date.now() - step1StartTime}ms and failed, continuing anyway:`, error);
       }
       
       // 2. Monitor and check order fills
       console.log('\n👀 STEP 2: Position Monitoring & Order Fill Checks');
-      await this.positionMonitorService.checkOrderFills(this.config);
+      const step2StartTime = Date.now();
+      try {
+        await this.positionMonitorService.checkOrderFills(this.config);
+        console.log(`✅ Step 2 completed in ${Date.now() - step2StartTime}ms`);
+      } catch (error) {
+        console.error(`❌ Step 2 failed after ${Date.now() - step2StartTime}ms:`, error);
+      }
       
       // 3. ENHANCED SIGNAL ANALYSIS
       console.log('\n🧠 STEP 3: Enhanced Signal Analysis & Generation');
       console.log(`🎯 Using Trading Logic: ${this.config.trading_logic_type}`);
+      const step3StartTime = Date.now();
+      
       if (this.config.trading_logic_type === 'logic2_data_driven') {
         console.log('🔥 LOGIC 2 DETERMINISTIC MODE - Comprehensive analysis starting...');
         console.log('📊 This will analyze swing lows, volume profiles, and ATR-based bounds');
         console.log('✅ Enhanced logging will show every step of the process');
       }
-      await this.signalAnalysisService.analyzeAndCreateSignals(this.config);
+      
+      try {
+        await this.signalAnalysisService.analyzeAndCreateSignals(this.config);
+        console.log(`✅ Step 3 completed in ${Date.now() - step3StartTime}ms`);
+      } catch (error) {
+        console.error(`❌ Step 3 failed after ${Date.now() - step3StartTime}ms:`, error);
+      }
       
       // 4. Execute signals
       console.log('\n⚡ STEP 4: Signal Execution & Order Placement');
-      await this.signalExecutionService.executeSignal(this.config);
+      const step4StartTime = Date.now();
+      try {
+        await this.signalExecutionService.executeSignal(this.config);
+        console.log(`✅ Step 4 completed in ${Date.now() - step4StartTime}ms`);
+      } catch (error) {
+        console.error(`❌ Step 4 failed after ${Date.now() - step4StartTime}ms:`, error);
+      }
       
       // 5. Reconcile transactions every few loops (reduced frequency)
       if (Math.random() < 0.05) { // 5% chance each loop (reduced from 10%)
         console.log('\n🔍 STEP 5: Quick Transaction Reconciliation');
+        const step5StartTime = Date.now();
         try {
           await Promise.race([
             this.reconciliationService.reconcileWithBybitHistory(3), // 3 hours lookback (reduced from 6)
             new Promise((_, reject) => setTimeout(() => reject(new Error('Reconciliation timeout')), 20000))
           ]);
+          console.log(`✅ Step 5 completed in ${Date.now() - step5StartTime}ms`);
         } catch (error) {
-          console.warn('⚠️ Reconciliation took too long, skipping:', error);
+          console.warn(`⚠️ Step 5 took ${Date.now() - step5StartTime}ms and failed, skipping:`, error);
         }
       }
       
+      const totalLoopTime = Date.now() - loopStartTime;
+      console.log(`⏱️  Total loop execution time: ${totalLoopTime}ms`);
       console.log('✅ ===== ENHANCED MAIN LOOP EXECUTION COMPLETE =====\n');
       
-      await this.logger.logCycleComplete(Date.now(), {
+      await this.logger.logCycleComplete(cycleId, {
         tradingLogicUsed: this.config.trading_logic_type,
         tradingPairsProcessed: this.config.trading_pairs.length,
-        configurationActive: this.config.is_active
+        configurationActive: this.config.is_active,
+        executionTimeMs: totalLoopTime,
+        timestamp: new Date().toISOString()
       });
       
     } catch (error) {
-      console.error('❌ Error in enhanced main loop execution:', error);
-      await this.logger.logError('Enhanced main loop execution failed', error);
+      const totalLoopTime = Date.now() - loopStartTime;
+      console.error(`❌ Error in enhanced main loop execution after ${totalLoopTime}ms:`, error);
+      await this.logger.logError('Enhanced main loop execution failed', error, {
+        cycleId,
+        executionTimeMs: totalLoopTime,
+        tradingLogicType: this.config.trading_logic_type
+      });
     }
   }
 
