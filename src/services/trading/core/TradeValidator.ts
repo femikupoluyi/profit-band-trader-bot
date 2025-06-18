@@ -102,7 +102,7 @@ export class TradeValidator {
     try {
       // Validate types first
       const validatedCurrentPrice = TypeConverter.toPrice(currentPrice, 'currentPrice');
-      const validatedEntryPrice = TypeConverter.toPrice(entryPrice,VALIDATOR 'entryPrice');
+      const validatedEntryPrice = TypeConverter.toPrice(entryPrice, 'entryPrice');
       
       const deviation = Math.abs((validatedEntryPrice - validatedCurrentPrice) / validatedCurrentPrice) * 100;
       

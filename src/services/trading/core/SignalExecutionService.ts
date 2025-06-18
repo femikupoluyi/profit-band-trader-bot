@@ -1,10 +1,10 @@
-
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
 import { SignalProcessor } from './SignalProcessor';
 import { SignalFetcher } from './SignalFetcher';
 import { ExecutionResultsTracker } from './ExecutionResultsTracker';
+import { ServiceContainer } from './ServiceContainer';
 
 interface EnhancedSignalProcessingResult {
   success: boolean;
@@ -21,7 +21,7 @@ export class SignalExecutionService {
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
-    this.logger = new TradingLogger(userId);
+    this.logger = ServiceContainer.getLogger(userId);
     this.signalProcessor = new SignalProcessor(userId, bybitService);
     this.signalFetcher = new SignalFetcher(userId);
     this.resultsTracker = new ExecutionResultsTracker();
