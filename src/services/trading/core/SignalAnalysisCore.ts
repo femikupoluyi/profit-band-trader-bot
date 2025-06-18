@@ -2,6 +2,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitInstrumentService } from './BybitInstrumentService';
+import { DatabaseQueryHelper } from './DatabaseQueryHelper';
+import { TypeConverter } from './TypeConverter';
 
 export interface SignalContext {
   symbol: string;
@@ -16,78 +18,81 @@ export interface SignalContext {
 
 export class SignalAnalysisCore {
   private userId: string;
+  private dbHelper: DatabaseQueryHelper;
 
   constructor(userId: string) {
     this.userId = userId;
+    this.dbHelper = new DatabaseQueryHelper(userId);
   }
 
   async getSignalContext(symbol: string, config: TradingConfigData): Promise<SignalContext | null> {
-    // Get instrument info FIRST for consistent formatting
-    const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-    if (!instrumentInfo) {
-      console.error(`❌ Could not get instrument info for ${symbol}`);
+    try {
+      // Get instrument info FIRST for consistent formatting
+      const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
+      if (!instrumentInfo) {
+        console.error(`❌ Could not get instrument info for ${symbol}`);
+        return null;
+      }
+
+      // Use type-safe database queries
+      const existingSignals = await this.dbHelper.getSignals(this.userId, {
+        symbol,
+        processed: false
+      });
+
+      const activeTrades = await this.dbHelper.getTrades(this.userId, {
+        symbol,
+        status: ['pending', 'filled', 'partial_filled']
+      });
+
+      // Filter to only buy trades for averaging down logic
+      const buyTrades = activeTrades.filter(trade => trade.side === 'buy');
+
+      const totalActiveCount = existingSignals.length + buyTrades.length;
+      const maxPositionsReached = totalActiveCount >= config.max_positions_per_pair;
+      
+      if (maxPositionsReached) {
+        console.log(`❌ ${symbol}: Max positions reached (${totalActiveCount}/${config.max_positions_per_pair})`);
+        return null;
+      }
+
+      const isAveragingDown = buyTrades.length > 0;
+      const existingPositions = buyTrades;
+
+      return {
+        symbol,
+        currentPrice: 0, // Will be set by caller
+        instrumentInfo,
+        activeTrades: buyTrades,
+        existingSignals,
+        existingPositions,
+        isAveragingDown,
+        maxPositionsReached
+      };
+    } catch (error) {
+      console.error(`❌ Error getting signal context for ${symbol}:`, error);
       return null;
     }
-
-    // Check existing signals and positions
-    const { data: existingSignals } = await supabase
-      .from('trading_signals')
-      .select('id, signal_type, price, created_at')
-      .eq('user_id', this.userId)
-      .eq('symbol', symbol)
-      .eq('processed', false);
-
-    const { data: activeTrades } = await supabase
-      .from('trades')
-      .select('id, status, side, price, quantity, created_at')
-      .eq('user_id', this.userId)
-      .eq('symbol', symbol)
-      .eq('side', 'buy')
-      .in('status', ['pending', 'filled', 'partial_filled']);
-
-    const totalActiveCount = (existingSignals?.length || 0) + (activeTrades?.length || 0);
-    const maxPositionsReached = totalActiveCount >= config.max_positions_per_pair;
-    
-    if (maxPositionsReached) {
-      console.log(`❌ ${symbol}: Max positions reached (${totalActiveCount}/${config.max_positions_per_pair})`);
-      return null;
-    }
-
-    const isAveragingDown = activeTrades && activeTrades.length > 0;
-    const existingPositions = activeTrades || [];
-
-    return {
-      symbol,
-      currentPrice: 0, // Will be set by caller
-      instrumentInfo,
-      activeTrades: activeTrades || [],
-      existingSignals: existingSignals || [],
-      existingPositions,
-      isAveragingDown,
-      maxPositionsReached
-    };
   }
 
   async storeSignal(symbol: string, action: string, entryPrice: number, confidence: number, reasoning: string): Promise<any> {
-    const { data: signal, error } = await supabase
-      .from('trading_signals')
-      .insert({
+    try {
+      console.log(`📝 Storing signal for ${symbol}: ${action} at ${entryPrice}`);
+
+      const signal = await this.dbHelper.createSignal({
         user_id: this.userId,
-        symbol: symbol,
+        symbol,
         signal_type: action,
         price: entryPrice,
-        confidence: confidence,
-        reasoning: reasoning,
-        processed: false
-      })
-      .select()
-      .single();
+        confidence,
+        reasoning
+      });
 
-    if (error) {
+      console.log(`✅ Signal stored successfully: ${signal.id}`);
+      return signal;
+    } catch (error) {
       console.error(`❌ Database error creating signal for ${symbol}:`, error);
       throw error;
     }
-
-    return signal;
   }
 }
