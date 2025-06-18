@@ -9,7 +9,9 @@ export interface SignalContext {
   instrumentInfo: any;
   activeTrades: any[];
   existingSignals: any[];
+  existingPositions: any[];
   isAveragingDown: boolean;
+  maxPositionsReached: boolean;
 }
 
 export class SignalAnalysisCore {
@@ -44,13 +46,15 @@ export class SignalAnalysisCore {
       .in('status', ['pending', 'filled', 'partial_filled']);
 
     const totalActiveCount = (existingSignals?.length || 0) + (activeTrades?.length || 0);
+    const maxPositionsReached = totalActiveCount >= config.max_positions_per_pair;
     
-    if (totalActiveCount >= config.max_positions_per_pair) {
+    if (maxPositionsReached) {
       console.log(`❌ ${symbol}: Max positions reached (${totalActiveCount}/${config.max_positions_per_pair})`);
       return null;
     }
 
     const isAveragingDown = activeTrades && activeTrades.length > 0;
+    const existingPositions = activeTrades || [];
 
     return {
       symbol,
@@ -58,7 +62,9 @@ export class SignalAnalysisCore {
       instrumentInfo,
       activeTrades: activeTrades || [],
       existingSignals: existingSignals || [],
-      isAveragingDown
+      existingPositions,
+      isAveragingDown,
+      maxPositionsReached
     };
   }
 

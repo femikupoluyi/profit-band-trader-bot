@@ -90,3 +90,28 @@ export interface BybitApiResponse {
   result?: any;
   time?: number;
 }
+
+// Enhanced Signal Analysis Types
+export interface SignalAnalysisResult {
+  symbol: string;
+  action: 'buy' | 'sell' | 'hold';
+  confidence: number;
+  entryPrice: number;
+  quantity: number;
+  reasoning: string;
+  supportLevel?: number;
+  trend?: string;
+  orderValue: number;
+  isAveragingDown?: boolean;
+}
+
+export interface SignalContext {
+  symbol: string;
+  currentPrice: number;
+  instrumentInfo: any;
+  activeTrades: any[];
+  existingSignals: any[];
+  existingPositions: any[];
+  isAveragingDown: boolean;
+  maxPositionsReached: boolean;
+}

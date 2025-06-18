@@ -1,25 +1,13 @@
 
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { SignalAnalysisCore } from './SignalAnalysisCore';
+import { SignalAnalysisCore, SignalContext } from './SignalAnalysisCore';
 import { AveragingDownAnalyzer } from './AveragingDownAnalyzer';
 import { NewPositionAnalyzer } from './NewPositionAnalyzer';
 import { SignalCreationService } from './SignalCreationService';
 import { SystemHealthChecker } from './SystemHealthChecker';
 import { TradingLogger } from './TradingLogger';
-
-export interface SignalAnalysisResult {
-  symbol: string;
-  action: 'buy' | 'sell' | 'hold';
-  confidence: number;
-  entryPrice: number;
-  quantity: number;
-  reasoning: string;
-  supportLevel?: number;
-  trend?: string;
-  orderValue: number;
-  isAveragingDown?: boolean;
-}
+import { SignalAnalysisResult } from './TypeDefinitions';
 
 export class EnhancedSignalAnalysisService {
   private userId: string;
