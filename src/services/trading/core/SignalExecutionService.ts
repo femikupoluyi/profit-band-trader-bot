@@ -1,3 +1,4 @@
+
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -5,6 +6,8 @@ import { SignalProcessor } from './SignalProcessor';
 import { SignalFetcher } from './SignalFetcher';
 import { ExecutionResultsTracker } from './ExecutionResultsTracker';
 import { ServiceContainer } from './ServiceContainer';
+import { ExecutionOrchestrator } from './execution/ExecutionOrchestrator';
+import { SignalProcessorCore } from './execution/SignalProcessor';
 
 interface EnhancedSignalProcessingResult {
   success: boolean;
@@ -18,6 +21,8 @@ export class SignalExecutionService {
   private signalProcessor: SignalProcessor;
   private signalFetcher: SignalFetcher;
   private resultsTracker: ExecutionResultsTracker;
+  private executionOrchestrator: ExecutionOrchestrator;
+  private signalProcessorCore: SignalProcessorCore;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
@@ -25,36 +30,21 @@ export class SignalExecutionService {
     this.signalProcessor = new SignalProcessor(userId, bybitService);
     this.signalFetcher = new SignalFetcher(userId);
     this.resultsTracker = new ExecutionResultsTracker();
+    this.executionOrchestrator = new ExecutionOrchestrator(userId);
+    this.signalProcessorCore = new SignalProcessorCore(userId);
   }
 
   async executeSignal(config: TradingConfigData): Promise<void> {
     try {
-      console.log('\n⚡ ===== SIGNAL EXECUTION START =====');
-      console.log('🔧 Execution Configuration:', {
-        maxOrderAmount: config.max_order_amount_usd,
-        takeProfitPercent: config.take_profit_percent,
-        entryOffsetPercent: config.entry_offset_percent,
-        maxPositionsPerPair: config.max_positions_per_pair,
-        configurationActive: config.is_active
-      });
+      await this.executionOrchestrator.logExecutionStart();
       
-      await this.logger.logSystemInfo('Starting signal execution', {
-        configSnapshot: {
-          maxOrderAmount: config.max_order_amount_usd,
-          tradingPairs: config.trading_pairs,
-          maxPositionsPerPair: config.max_positions_per_pair,
-          isActive: config.is_active
-        }
-      });
-
-      // ENHANCED: Configuration health check for execution
-      if (!config.is_active) {
-        console.log('⚠️ Configuration is INACTIVE - skipping signal execution');
-        await this.logger.logSystemInfo('Signal execution skipped - configuration inactive');
+      // Validate execution configuration
+      const canExecute = await this.executionOrchestrator.validateExecution(config);
+      if (!canExecute) {
         return;
       }
 
-      // ENHANCED: Get unprocessed signals with detailed logging
+      // Get unprocessed signals
       console.log('📋 Step 1: Fetching unprocessed signals from database...');
       const signals = await this.signalFetcher.getUnprocessedSignals();
       
@@ -66,27 +56,14 @@ export class SignalExecutionService {
         return;
       }
 
-      console.log(`📊 Found ${signals.length} unprocessed signals for execution:`);
-      signals.forEach((signal, index) => {
-        console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${parseFloat(signal.price).toFixed(6)} (ID: ${signal.id})`);
-        console.log(`      Created: ${signal.created_at}, Confidence: ${signal.confidence}, Processed: ${signal.processed}`);
-      });
-
       this.resultsTracker.initializeResults(signals.length);
 
-      // ENHANCED: Process each signal with detailed logging
+      // Process signals using the core processor
+      const processingResults = await this.signalProcessorCore.processSignals(signals);
+      
+      // Process each signal with detailed logging
       for (let i = 0; i < signals.length; i++) {
         const signal = signals[i];
-        console.log(`\n🎯 ===== PROCESSING SIGNAL ${i + 1}/${signals.length}: ${signal.symbol} =====`);
-        console.log(`📊 Signal Details:`, {
-          id: signal.id,
-          symbol: signal.symbol,
-          type: signal.signal_type,
-          price: parseFloat(signal.price),
-          confidence: signal.confidence,
-          reasoning: signal.reasoning,
-          created: signal.created_at
-        });
         
         try {
           console.log(`⚡ Step 2: Processing signal for ${signal.symbol}...`);
@@ -119,7 +96,7 @@ export class SignalExecutionService {
             });
           }
 
-          // ENHANCED: Mark signal as processed with logging
+          // Mark signal as processed
           console.log(`📋 Step 3: Marking signal ${signal.id} as processed...`);
           await this.signalFetcher.markSignalAsProcessed(signal.id);
           console.log(`✅ ${signal.symbol}: Signal marked as processed in database`);
@@ -142,7 +119,7 @@ export class SignalExecutionService {
         }
       }
 
-      // ENHANCED: Detailed execution summary
+      // Log execution summary
       const executionSummary = this.resultsTracker.getResults();
       console.log('\n📊 ===== SIGNAL EXECUTION SUMMARY =====');
       console.log('📈 Execution Statistics:', executionSummary);
@@ -162,7 +139,7 @@ export class SignalExecutionService {
         }
       });
       
-      console.log('✅ ===== SIGNAL EXECUTION COMPLETE =====\n');
+      await this.executionOrchestrator.logExecutionComplete();
     } catch (error) {
       console.error('❌ Critical error in signal execution:', error);
       await this.logger.logError('Critical error in signal execution', error);
@@ -170,12 +147,10 @@ export class SignalExecutionService {
     }
   }
 
-  // TESTING: Method to test signal execution pipeline with a single test signal
   async testSignalExecution(config: TradingConfigData): Promise<boolean> {
     try {
       console.log('\n🧪 ===== TESTING SIGNAL EXECUTION PIPELINE =====');
       
-      // Get all unprocessed signals for testing
       const signals = await this.signalFetcher.getUnprocessedSignals();
       
       if (signals.length === 0) {
@@ -185,7 +160,6 @@ export class SignalExecutionService {
 
       console.log(`🧪 Testing with ${signals.length} signal(s)`);
       
-      // Test with first signal only
       const testSignal = signals[0];
       console.log(`🧪 Testing signal execution for ${testSignal.symbol}`);
       
@@ -197,7 +171,6 @@ export class SignalExecutionService {
         orderId: result.orderId || 'N/A'
       });
       
-      // Mark as processed to clean up
       await this.signalFetcher.markSignalAsProcessed(testSignal.id);
       
       return result.success;

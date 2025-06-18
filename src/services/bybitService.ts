@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { TradingLogger } from './trading/core/TradingLogger';
 
@@ -28,6 +27,39 @@ export class BybitService {
 
   setLogger(logger: TradingLogger): void {
     this.logger = logger;
+  }
+
+  async getTickers(symbol: string): Promise<any> {
+    try {
+      console.log(`📊 [BYBIT] Getting ticker for ${symbol}...`);
+      await this.logger?.logSuccess(`[BYBIT] Getting ticker for ${symbol}`);
+      
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/market/tickers',
+        method: 'GET',
+        params: {
+          category: 'spot',
+          symbol: symbol
+        }
+      });
+      
+      console.log(`📈 [BYBIT] Ticker response for ${symbol}:`, response);
+      
+      if (response.retCode === 0) {
+        console.log(`✅ [BYBIT] Ticker retrieved successfully for ${symbol}`);
+        await this.logger?.logSuccess(`[BYBIT] Ticker retrieved successfully for ${symbol}`, { symbol, response });
+        return response;
+      } else {
+        const errorMsg = `Failed to get ticker for ${symbol}: ${response.retMsg || 'Unknown error'}`;
+        console.error(`❌ [BYBIT] ${errorMsg}`, response);
+        await this.logger?.logError(`[BYBIT] ${errorMsg}`, new Error(errorMsg), { response });
+        throw new Error(errorMsg);
+      }
+    } catch (error) {
+      console.error(`❌ [BYBIT] Error getting ticker for ${symbol}:`, error);
+      await this.logger?.logError(`[BYBIT] Error getting ticker for ${symbol}`, error);
+      throw error;
+    }
   }
 
   async getAccountBalance(): Promise<any> {
