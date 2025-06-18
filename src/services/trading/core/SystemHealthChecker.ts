@@ -1,348 +1,192 @@
 
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+import { ServiceContainer } from './ServiceContainer';
+import { ValidationChain } from './ValidationChain';
 import { BybitService } from '../../bybitService';
-import { TradingLogger } from './TradingLogger';
-import { supabase } from '@/integrations/supabase/client';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 
-export interface HealthCheckResult {
-  isHealthy: boolean;
-  issues: string[];
+export interface SystemHealthReport {
+  overall: 'healthy' | 'warning' | 'critical';
   checks: {
-    configuration: boolean;
-    bybitConnectivity: boolean;
-    databaseConnectivity: boolean;
-    marketDataAvailability: boolean;
-    instrumentInfo: boolean;
+    database: { status: 'pass' | 'fail'; message: string };
+    bybitConnection: { status: 'pass' | 'fail'; message: string };
+    configuration: { status: 'pass' | 'fail'; message: string; errors?: string[] };
+    services: { status: 'pass' | 'fail'; message: string };
+    precision: { status: 'pass' | 'fail'; message: string };
   };
-  details: {
-    configurationDetails?: any;
-    bybitTestResults?: any;
-    databaseTestResults?: any;
-    marketDataTestResults?: any;
-    instrumentTestResults?: any;
-  };
+  timestamp: string;
 }
 
 export class SystemHealthChecker {
   private userId: string;
-  private logger: TradingLogger;
   private bybitService: BybitService;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.bybitService = bybitService;
-    this.logger = new TradingLogger(userId);
   }
 
-  async performComprehensiveHealthCheck(config: TradingConfigData): Promise<HealthCheckResult> {
-    const issues: string[] = [];
+  async performHealthCheck(config: TradingConfigData): Promise<SystemHealthReport> {
+    console.log(`🏥 ===== SYSTEM HEALTH CHECK START =====`);
+    
     const checks = {
-      configuration: false,
-      bybitConnectivity: false,
-      databaseConnectivity: false,
-      marketDataAvailability: false,
-      instrumentInfo: false
+      database: await this.checkDatabase(),
+      bybitConnection: await this.checkBybitConnection(),
+      configuration: await this.checkConfiguration(config),
+      services: await this.checkServices(),
+      precision: await this.checkPrecisionServices(config)
     };
-    const details: any = {};
 
-    console.log('\n🏥 ===== COMPREHENSIVE SYSTEM HEALTH CHECK =====');
+    // Determine overall health
+    const failedChecks = Object.values(checks).filter(check => check.status === 'fail');
+    let overall: 'healthy' | 'warning' | 'critical';
     
-    // Check 1: Configuration validation
-    console.log('📋 Check 1: Configuration Validation');
-    try {
-      const configResult = await this.checkConfiguration(config);
-      checks.configuration = configResult.isValid;
-      details.configurationDetails = configResult;
-      
-      if (!configResult.isValid) {
-        issues.push(...configResult.issues);
-        console.log('❌ Configuration check failed:', configResult.issues);
-      } else {
-        console.log('✅ Configuration validation passed');
-      }
-    } catch (error) {
-      issues.push(`Configuration check error: ${error.message}`);
-      console.log('❌ Configuration check error:', error);
+    if (failedChecks.length === 0) {
+      overall = 'healthy';
+    } else if (failedChecks.length <= 2) {
+      overall = 'warning';
+    } else {
+      overall = 'critical';
     }
-    
-    // Check 2: Bybit service connectivity
-    console.log('🔌 Check 2: Bybit Service Connectivity');
-    try {
-      const bybitResult = await this.checkBybitConnectivity(config.trading_pairs);
-      checks.bybitConnectivity = bybitResult.isConnected;
-      details.bybitTestResults = bybitResult;
-      
-      if (!bybitResult.isConnected) {
-        issues.push(...bybitResult.issues);
-        console.log('❌ Bybit connectivity check failed:', bybitResult.issues);
-      } else {
-        console.log('✅ Bybit connectivity check passed');
-      }
-    } catch (error) {
-      issues.push(`Bybit connectivity error: ${error.message}`);
-      console.log('❌ Bybit connectivity error:', error);
-    }
-    
-    // Check 3: Database connectivity
-    console.log('💾 Check 3: Database Connectivity');
-    try {
-      const dbResult = await this.checkDatabaseConnectivity();
-      checks.databaseConnectivity = dbResult.isConnected;
-      details.databaseTestResults = dbResult;
-      
-      if (!dbResult.isConnected) {
-        issues.push(...dbResult.issues);
-        console.log('❌ Database connectivity check failed:', dbResult.issues);
-      } else {
-        console.log('✅ Database connectivity check passed');
-      }
-    } catch (error) {
-      issues.push(`Database connectivity error: ${error.message}`);
-      console.log('❌ Database connectivity error:', error);
-    }
-    
-    // Check 4: Market data availability
-    console.log('📈 Check 4: Market Data Availability');
-    try {
-      const marketResult = await this.checkMarketDataAvailability(config.trading_pairs);
-      checks.marketDataAvailability = marketResult.isAvailable;
-      details.marketDataTestResults = marketResult;
-      
-      if (!marketResult.isAvailable) {
-        issues.push(...marketResult.issues);
-        console.log('❌ Market data availability check failed:', marketResult.issues);
-      } else {
-        console.log('✅ Market data availability check passed');
-      }
-    } catch (error) {
-      issues.push(`Market data availability error: ${error.message}`);
-      console.log('❌ Market data availability error:', error);
-    }
-    
-    // Check 5: Instrument information
-    console.log('🔧 Check 5: Instrument Information');
-    try {
-      const instrumentResult = await this.checkInstrumentInfo(config.trading_pairs);
-      checks.instrumentInfo = instrumentResult.isAvailable;
-      details.instrumentTestResults = instrumentResult;
-      
-      if (!instrumentResult.isAvailable) {
-        issues.push(...instrumentResult.issues);
-        console.log('❌ Instrument info check failed:', instrumentResult.issues);
-      } else {
-        console.log('✅ Instrument info check passed');
-      }
-    } catch (error) {
-      issues.push(`Instrument info error: ${error.message}`);
-      console.log('❌ Instrument info error:', error);
-    }
-    
-    const isHealthy = issues.length === 0;
-    console.log(`🏥 Overall Health Status: ${isHealthy ? 'HEALTHY ✅' : 'UNHEALTHY ❌'}`);
-    
-    if (!isHealthy) {
-      console.log('📋 Issues Summary:', issues);
-    }
-    
-    console.log('===== COMPREHENSIVE SYSTEM HEALTH CHECK COMPLETE =====\n');
-    
-    const result: HealthCheckResult = {
-      isHealthy,
-      issues,
+
+    const report: SystemHealthReport = {
+      overall,
       checks,
-      details
+      timestamp: new Date().toISOString()
     };
-    
-    await this.logger.logSystemInfo('System health check completed', result);
-    
-    return result;
+
+    console.log(`🏥 Health Check Complete: ${overall.toUpperCase()}`);
+    console.log(`📊 Passed: ${Object.values(checks).filter(c => c.status === 'pass').length}/5`);
+    console.log(`❌ Failed: ${failedChecks.length}/5`);
+
+    return report;
   }
 
-  private async checkConfiguration(config: TradingConfigData): Promise<{isValid: boolean, issues: string[], details: any}> {
-    const issues: string[] = [];
-    const details: any = {
-      tradingPairs: config.trading_pairs?.length || 0,
-      maxOrderAmount: config.max_order_amount_usd,
-      takeProfitPercent: config.take_profit_percent,
-      isActive: config.is_active,
-      tradingLogicType: config.trading_logic_type
-    };
-    
-    if (!config.trading_pairs || config.trading_pairs.length === 0) {
-      issues.push('No trading pairs configured');
-    }
-    if (!config.max_order_amount_usd || config.max_order_amount_usd <= 0) {
-      issues.push('Invalid max order amount');
-    }
-    if (!config.take_profit_percent || config.take_profit_percent <= 0) {
-      issues.push('Invalid take profit percentage');
-    }
-    if (!config.trading_logic_type) {
-      issues.push('No trading logic type specified');
-    }
-    
-    return {
-      isValid: issues.length === 0,
-      issues,
-      details
-    };
-  }
-
-  private async checkBybitConnectivity(tradingPairs: string[]): Promise<{isConnected: boolean, issues: string[], results: any[]}> {
-    const issues: string[] = [];
-    const results: any[] = [];
-    const testSymbols = tradingPairs.slice(0, 3); // Test first 3 pairs
-    
-    for (const symbol of testSymbols) {
-      try {
-        const marketPrice = await this.bybitService.getMarketPrice(symbol);
-        
-        if (!marketPrice || !marketPrice.price || marketPrice.price <= 0) {
-          issues.push(`Invalid market price for ${symbol}: ${marketPrice?.price}`);
-          results.push({ symbol, success: false, price: marketPrice?.price, error: 'Invalid price' });
-        } else {
-          results.push({ symbol, success: true, price: marketPrice.price });
-        }
-      } catch (error) {
-        issues.push(`Market price fetch failed for ${symbol}: ${error.message}`);
-        results.push({ symbol, success: false, error: error.message });
-      }
-    }
-    
-    return {
-      isConnected: issues.length === 0,
-      issues,
-      results
-    };
-  }
-
-  private async checkDatabaseConnectivity(): Promise<{isConnected: boolean, issues: string[], testResults: any}> {
-    const issues: string[] = [];
-    const testResults: any = {};
-    
+  private async checkDatabase(): Promise<{ status: 'pass' | 'fail'; message: string }> {
     try {
-      // Test trading_signals table
-      const { data: signals, error: signalsError } = await supabase
-        .from('trading_signals')
-        .select('count')
-        .eq('user_id', this.userId)
-        .limit(1);
+      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
       
-      if (signalsError) {
-        issues.push(`Trading signals table access failed: ${signalsError.message}`);
-        testResults.signals = { success: false, error: signalsError.message };
-      } else {
-        testResults.signals = { success: true, count: signals?.length || 0 };
-      }
+      // Test basic database operations
+      const signals = await dbHelper.getSignals(this.userId, { limit: 1 });
+      const trades = await dbHelper.getTrades(this.userId, { limit: 1 });
       
-      // Test trading_logs table
-      const { data: logs, error: logsError } = await supabase
-        .from('trading_logs')
-        .select('count')
-        .eq('user_id', this.userId)
-        .limit(1);
-      
-      if (logsError) {
-        issues.push(`Trading logs table access failed: ${logsError.message}`);
-        testResults.logs = { success: false, error: logsError.message };
-      } else {
-        testResults.logs = { success: true, count: logs?.length || 0 };
-      }
-      
-      // Test trades table
-      const { data: trades, error: tradesError } = await supabase
-        .from('trades')
-        .select('count')
-        .eq('user_id', this.userId)
-        .limit(1);
-      
-      if (tradesError) {
-        issues.push(`Trades table access failed: ${tradesError.message}`);
-        testResults.trades = { success: false, error: tradesError.message };
-      } else {
-        testResults.trades = { success: true, count: trades?.length || 0 };
-      }
-      
+      return {
+        status: 'pass',
+        message: `Database accessible. Found ${signals.length} recent signals, ${trades.length} recent trades.`
+      };
     } catch (error) {
-      issues.push(`Database connectivity test failed: ${error.message}`);
-      testResults.general = { success: false, error: error.message };
+      return {
+        status: 'fail',
+        message: `Database connection failed: ${error.message}`
+      };
     }
-    
-    return {
-      isConnected: issues.length === 0,
-      issues,
-      testResults
-    };
   }
 
-  private async checkMarketDataAvailability(tradingPairs: string[]): Promise<{isAvailable: boolean, issues: string[], results: any[]}> {
-    const issues: string[] = [];
-    const results: any[] = [];
-    const testSymbols = tradingPairs.slice(0, 2); // Test first 2 pairs
-    
-    for (const symbol of testSymbols) {
-      try {
-        // Test both current price and historical data if available
-        const marketPrice = await this.bybitService.getMarketPrice(symbol);
-        
-        if (!marketPrice || !marketPrice.price) {
-          issues.push(`No market data available for ${symbol}`);
-          results.push({ symbol, success: false, error: 'No market data' });
-        } else {
-          results.push({ 
-            symbol, 
-            success: true, 
-            currentPrice: marketPrice.price,
-            timestamp: new Date().toISOString()
-          });
-        }
-      } catch (error) {
-        issues.push(`Market data fetch failed for ${symbol}: ${error.message}`);
-        results.push({ symbol, success: false, error: error.message });
+  private async checkBybitConnection(): Promise<{ status: 'pass' | 'fail'; message: string }> {
+    try {
+      // Test basic Bybit API connectivity
+      const response = await this.bybitService.getTickers('BTCUSDT');
+      
+      if (response.retCode === 0) {
+        return {
+          status: 'pass',
+          message: 'Bybit API connection successful'
+        };
+      } else {
+        return {
+          status: 'fail',
+          message: `Bybit API error: ${response.retMsg}`
+        };
       }
+    } catch (error) {
+      return {
+        status: 'fail',
+        message: `Bybit connection failed: ${error.message}`
+      };
     }
-    
-    return {
-      isAvailable: issues.length === 0,
-      issues,
-      results
-    };
   }
 
-  private async checkInstrumentInfo(tradingPairs: string[]): Promise<{isAvailable: boolean, issues: string[], results: any[]}> {
-    const issues: string[] = [];
-    const results: any[] = [];
-    const testSymbols = tradingPairs.slice(0, 2); // Test first 2 pairs
-    
-    for (const symbol of testSymbols) {
-      try {
-        // Import here to avoid circular dependency
-        const { BybitInstrumentService } = await import('./BybitInstrumentService');
-        const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
-        
-        if (!instrumentInfo) {
-          issues.push(`No instrument info available for ${symbol}`);
-          results.push({ symbol, success: false, error: 'No instrument info' });
-        } else {
-          results.push({ 
-            symbol, 
-            success: true, 
-            tickSize: instrumentInfo.tickSize,
-            basePrecision: instrumentInfo.basePrecision,
-            minOrderQty: instrumentInfo.minOrderQty,
-            minOrderAmt: instrumentInfo.minOrderAmt
-          });
-        }
-      } catch (error) {
-        issues.push(`Instrument info fetch failed for ${symbol}: ${error.message}`);
-        results.push({ symbol, success: false, error: error.message });
+  private async checkConfiguration(config: TradingConfigData): Promise<{ status: 'pass' | 'fail'; message: string; errors?: string[] }> {
+    try {
+      const validation = ValidationChain.validateConfig(config);
+      
+      if (validation.isValid) {
+        return {
+          status: 'pass',
+          message: `Configuration valid. Active pairs: ${config.trading_pairs.length}, Max order: $${config.max_order_amount_usd}`
+        };
+      } else {
+        return {
+          status: 'fail',
+          message: `Configuration validation failed`,
+          errors: validation.errors
+        };
       }
+    } catch (error) {
+      return {
+        status: 'fail',
+        message: `Configuration check failed: ${error.message}`
+      };
     }
-    
-    return {
-      isAvailable: issues.length === 0,
-      issues,
-      results
-    };
+  }
+
+  private async checkServices(): Promise<{ status: 'pass' | 'fail'; message: string }> {
+    try {
+      // Test service container instantiation
+      const logger = ServiceContainer.getLogger(this.userId);
+      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
+      const signalCore = ServiceContainer.getSignalAnalysisCore(this.userId);
+      const orderExecution = ServiceContainer.getOrderExecution(this.userId, this.bybitService);
+      
+      // Test basic service functionality
+      await logger.logSystemInfo('Health check test');
+      
+      return {
+        status: 'pass',
+        message: 'All core services initialized successfully'
+      };
+    } catch (error) {
+      return {
+        status: 'fail',
+        message: `Service initialization failed: ${error.message}`
+      };
+    }
+  }
+
+  private async checkPrecisionServices(config: TradingConfigData): Promise<{ status: 'pass' | 'fail'; message: string }> {
+    try {
+      if (config.trading_pairs.length === 0) {
+        return {
+          status: 'fail',
+          message: 'No trading pairs configured for precision testing'
+        };
+      }
+
+      // Test precision formatting for first trading pair
+      const testSymbol = config.trading_pairs[0];
+      
+      const validation = await ValidationChain.validateTrade(
+        testSymbol,
+        1.0, // test quantity
+        100.0, // test price
+        config
+      );
+
+      if (validation.isValid) {
+        return {
+          status: 'pass',
+          message: `Precision services working. Tested with ${testSymbol}`
+        };
+      } else {
+        return {
+          status: 'fail',
+          message: `Precision validation failed: ${validation.errors.join(', ')}`
+        };
+      }
+    } catch (error) {
+      return {
+        status: 'fail',
+        message: `Precision services check failed: ${error.message}`
+      };
+    }
   }
 }

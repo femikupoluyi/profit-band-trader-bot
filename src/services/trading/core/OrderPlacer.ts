@@ -1,32 +1,20 @@
 
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { TradeRecorder } from './TradeRecorder';
-import { OrderExecutor } from './OrderExecutor';
-import { BybitPrecisionFormatter } from './BybitPrecisionFormatter';
-
-export interface OrderPlacementResult {
-  success: boolean;
-  buyOrderId?: string;
-  sellOrderId?: string;
-  error?: string;
-}
+import { OrderExecution } from './OrderExecution';
+import { ServiceContainer } from './ServiceContainer';
 
 export class OrderPlacer {
   private userId: string;
   private bybitService: BybitService;
   private logger: TradingLogger;
-  private orderExecutor: OrderExecutor;
+  private orderExecution: OrderExecution;
 
   constructor(userId: string, bybitService: BybitService) {
-    if (!userId || typeof userId !== 'string') {
-      throw new Error('Valid userId is required for OrderPlacer');
-    }
-    
     this.userId = userId;
     this.bybitService = bybitService;
-    this.logger = new TradingLogger(userId);
-    this.orderExecutor = new OrderExecutor(userId, bybitService);
+    this.logger = ServiceContainer.getLogger(userId);
+    this.orderExecution = ServiceContainer.getOrderExecution(userId, bybitService);
   }
 
   async placeRealBybitOrder(
@@ -35,71 +23,78 @@ export class OrderPlacer {
     entryPrice: number,
     takeProfitPrice: number
   ): Promise<void> {
-    // Validate inputs
-    if (!signal || !signal.symbol || !signal.signal_type) {
-      throw new Error('Invalid signal: missing required properties (symbol, signal_type)');
-    }
-    
-    if (quantity <= 0 || entryPrice <= 0 || takeProfitPrice <= 0) {
-      throw new Error('Invalid order parameters: quantity, entryPrice, and takeProfitPrice must be positive');
-    }
-
-    if (takeProfitPrice <= entryPrice) {
-      throw new Error('Invalid order parameters: takeProfitPrice must be greater than entryPrice');
-    }
-
     try {
-      console.log(`\n🎯 ===== PLACING REAL BYBIT ORDERS =====`);
-      console.log(`📊 Signal: ${signal.symbol} ${signal.signal_type}`);
-      console.log(`📈 Entry Price: ${entryPrice}`);
-      console.log(`📈 Take-Profit Price: ${takeProfitPrice}`);
-      console.log(`📦 Quantity: ${quantity}`);
+      console.log(`\n🎯 ===== PLACING REAL BYBIT ORDERS FOR ${signal.symbol} =====`);
+      console.log(`📊 Signal ID: ${signal.id}`);
+      console.log(`📊 Order Parameters:
+        - Symbol: ${signal.symbol}
+        - Quantity: ${quantity}
+        - Entry Price: $${entryPrice.toFixed(6)}
+        - Take Profit: $${takeProfitPrice.toFixed(6)}`);
 
-      // Clear any cached precision data to ensure fresh formatting
-      BybitPrecisionFormatter.clearCache();
-
-      await this.logger.logSuccess(`Starting order placement for ${signal.symbol}`, {
-        signal: signal.signal_type,
-        entryPrice,
-        takeProfitPrice,
-        quantity
-      });
-
-      // Execute buy order with proper precision formatting
-      const buyResult = await this.orderExecutor.executeBuyOrder(signal.symbol, quantity, entryPrice);
+      // Step 1: Place BUY order
+      const buyResult = await this.orderExecution.executeBuyOrder(signal.symbol, quantity, entryPrice);
       
       if (!buyResult.success) {
         throw new Error(`Buy order failed: ${buyResult.error}`);
       }
 
-      console.log(`✅ Buy order placed successfully: ${buyResult.orderId}`);
+      console.log(`✅ BUY order placed successfully: ${buyResult.orderId}`);
 
-      // Record the trade in database
-      const tradeRecorder = new TradeRecorder(this.userId);
-      await tradeRecorder.recordBuyOrder(
-        signal.symbol,
-        quantity,
-        entryPrice,
-        buyResult.orderId!,
-        signal.id
-      );
-
-      console.log(`🎉 Order placement completed successfully for ${signal.symbol}`);
-      await this.logger.logSuccess(`Order placement completed for ${signal.symbol}`, {
-        buyOrderId: buyResult.orderId,
+      // Step 2: Store the trade in database
+      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
+      const tradeRecord = await dbHelper.createTrade({
+        user_id: this.userId,
         symbol: signal.symbol,
+        side: 'buy',
+        price: entryPrice,
         quantity,
-        entryPrice,
-        takeProfitPrice
+        order_type: 'limit',
+        status: 'pending',
+        bybit_order_id: buyResult.orderId
       });
 
+      console.log(`✅ Trade recorded in database: ${tradeRecord.id}`);
+
+      // Step 3: Place SELL order (take profit)
+      const sellResult = await this.orderExecution.executeSellOrder(signal.symbol, quantity, takeProfitPrice);
+      
+      if (!sellResult.success) {
+        console.warn(`⚠️ Take profit order failed: ${sellResult.error}`);
+        await this.logger.logError(`Take profit order failed for ${signal.symbol}`, new Error(sellResult.error!), {
+          signalId: signal.id,
+          buyOrderId: buyResult.orderId
+        });
+      } else {
+        console.log(`✅ SELL order placed successfully: ${sellResult.orderId}`);
+        
+        // Store sell order in database
+        await dbHelper.createTrade({
+          user_id: this.userId,
+          symbol: signal.symbol,
+          side: 'sell',
+          price: takeProfitPrice,
+          quantity,
+          order_type: 'limit',
+          status: 'pending',
+          bybit_order_id: sellResult.orderId
+        });
+      }
+
+      await this.logger.logSuccess(`Orders placed for ${signal.symbol}`, {
+        signalId: signal.id,
+        buyOrderId: buyResult.orderId,
+        sellOrderId: sellResult.orderId || 'N/A',
+        tradeRecordId: tradeRecord.id
+      });
+
+      console.log(`✅ ===== ORDER PLACEMENT COMPLETE FOR ${signal.symbol} =====\n`);
+
     } catch (error) {
-      console.error(`❌ Error placing orders for ${signal.symbol}:`, error);
+      console.error(`❌ CRITICAL ERROR placing orders for ${signal.symbol}:`, error);
       await this.logger.logError(`Order placement failed for ${signal.symbol}`, error, {
-        signal: signal.signal_type,
-        entryPrice,
-        takeProfitPrice,
-        quantity
+        signalId: signal.id,
+        orderParameters: { quantity, entryPrice, takeProfitPrice }
       });
       throw error;
     }
