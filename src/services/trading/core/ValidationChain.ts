@@ -1,107 +1,100 @@
 
-import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { TradeValidator } from './TradeValidator';
-import { TypeConverter } from './TypeConverter';
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
 
-/**
- * Centralized validation chain for all trading operations
- */
 export class ValidationChain {
-  /**
-   * Complete validation chain for trade parameters
-   */
-  static async validateTrade(
-    symbol: string,
-    quantity: number,
-    entryPrice: number,
-    config: TradingConfigData
-  ): Promise<{ isValid: boolean; errors: string[] }> {
+  static validateSignal(signal: any, config: any): ValidationResult {
     const errors: string[] = [];
+    const warnings: string[] = [];
 
-    try {
-      // Step 1: Type validation
-      try {
-        TypeConverter.toPrice(entryPrice, 'entryPrice');
-        TypeConverter.toQuantity(quantity, 'quantity');
-      } catch (error) {
-        errors.push(`Type validation failed: ${error.message}`);
-        return { isValid: false, errors };
-      }
-
-      // Step 2: Trade parameter validation
-      const isValidTrade = await TradeValidator.validateTradeParameters(symbol, quantity, entryPrice, config);
-      if (!isValidTrade) {
-        errors.push('Trade parameters validation failed');
-      }
-
-      // Step 3: Precision validation
-      const isValidPrecision = await TradeValidator.validateQuantityPrecision(symbol, quantity);
-      if (!isValidPrecision) {
-        errors.push('Quantity precision validation failed');
-      }
-
-      // Step 4: Price range validation (if current price is available)
-      // This would need current price parameter - skipping for now
-
-      return { isValid: errors.length === 0, errors };
-    } catch (error) {
-      errors.push(`Validation chain error: ${error.message}`);
-      return { isValid: false, errors };
+    // Basic signal validation
+    if (!signal) {
+      errors.push('Signal is null or undefined');
+      return { isValid: false, errors, warnings };
     }
+
+    if (!signal.symbol || typeof signal.symbol !== 'string') {
+      errors.push('Signal must have a valid symbol');
+    }
+
+    if (!signal.price || typeof signal.price !== 'number' || signal.price <= 0) {
+      errors.push('Signal must have a valid price');
+    }
+
+    if (!signal.signal_type || typeof signal.signal_type !== 'string') {
+      errors.push('Signal must have a valid signal type');
+    }
+
+    // Configuration validation
+    if (!config) {
+      errors.push('Configuration is required');
+      return { isValid: false, errors, warnings };
+    }
+
+    if (!config.is_active) {
+      warnings.push('Trading configuration is not active');
+    }
+
+    if (!config.trading_pairs || !Array.isArray(config.trading_pairs)) {
+      errors.push('Trading pairs configuration is invalid');
+    } else if (!config.trading_pairs.includes(signal.symbol)) {
+      errors.push(`Symbol ${signal.symbol} is not in the configured trading pairs`);
+    }
+
+    if (!config.max_order_amount_usd || config.max_order_amount_usd <= 0) {
+      errors.push('Maximum order amount must be greater than 0');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    };
   }
 
-  /**
-   * Quick validation for basic parameters
-   */
-  static validateBasicParameters(symbol: string, quantity: number, price: number): { isValid: boolean; error?: string } {
-    try {
-      if (!symbol || typeof symbol !== 'string') {
-        return { isValid: false, error: 'Invalid symbol' };
-      }
-
-      TypeConverter.toPrice(price, 'price');
-      TypeConverter.toQuantity(quantity, 'quantity');
-
-      return { isValid: true };
-    } catch (error) {
-      return { isValid: false, error: error.message };
-    }
-  }
-
-  /**
-   * Configuration validation
-   */
-  static validateConfig(config: TradingConfigData): { isValid: boolean; errors: string[] } {
+  static validateConfiguration(config: any): ValidationResult {
     const errors: string[] = [];
+    const warnings: string[] = [];
 
-    try {
-      // Validate required fields
-      if (!config.trading_pairs || config.trading_pairs.length === 0) {
-        errors.push('At least one trading pair must be configured');
-      }
-
-      // Validate numeric ranges
-      try {
-        TypeConverter.toPercent(config.take_profit_percent, 'take_profit_percent');
-      } catch (error) {
-        errors.push(`Invalid take profit percentage: ${error.message}`);
-      }
-
-      try {
-        TypeConverter.toPercent(config.max_portfolio_exposure_percent, 'max_portfolio_exposure_percent');
-      } catch (error) {
-        errors.push(`Invalid portfolio exposure percentage: ${error.message}`);
-      }
-
-      // Validate order amount
-      if (config.max_order_amount_usd > 50000) {
-        errors.push('Maximum order amount seems very high (>$50,000)');
-      }
-
-      return { isValid: errors.length === 0, errors };
-    } catch (error) {
-      errors.push(`Config validation error: ${error.message}`);
-      return { isValid: false, errors };
+    if (!config) {
+      errors.push('Configuration is required');
+      return { isValid: false, errors, warnings };
     }
+
+    // Required fields validation
+    const requiredFields = [
+      'max_order_amount_usd',
+      'take_profit_percent',
+      'entry_offset_percent',
+      'trading_pairs'
+    ];
+
+    for (const field of requiredFields) {
+      if (config[field] === undefined || config[field] === null) {
+        errors.push(`Required field '${field}' is missing`);
+      }
+    }
+
+    // Range validations
+    if (config.max_order_amount_usd && config.max_order_amount_usd <= 0) {
+      errors.push('Max order amount must be greater than 0');
+    }
+
+    if (config.take_profit_percent && (config.take_profit_percent <= 0 || config.take_profit_percent > 50)) {
+      warnings.push('Take profit percent should be between 0 and 50');
+    }
+
+    if (!config.is_active) {
+      warnings.push('Configuration is not active');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    };
   }
 }
