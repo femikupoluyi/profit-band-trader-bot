@@ -96,6 +96,37 @@ export class EnhancedSignalAnalysisService {
     }
   }
 
+  async createTestSignal(symbol: string, config: TradingConfigData): Promise<boolean> {
+    try {
+      console.log(`🧪 Creating test signal for ${symbol}`);
+      
+      // Get current market price
+      const currentPrice = await this.getCurrentPrice(symbol);
+      if (!currentPrice) {
+        console.warn(`⚠️ Could not get price for ${symbol}`);
+        return false;
+      }
+
+      // Create a simple test signal at current price
+      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
+      const signal = await dbHelper.createSignal({
+        user_id: this.userId,
+        symbol: symbol,
+        signal_type: 'buy',
+        price: currentPrice,
+        confidence: 0.5,
+        reasoning: `Test signal for ${symbol} at $${currentPrice.toFixed(6)}`
+      });
+
+      console.log(`✅ Test signal created for ${symbol}: ID ${signal.id}`);
+      return true;
+      
+    } catch (error) {
+      console.error(`❌ Error creating test signal for ${symbol}:`, error);
+      return false;
+    }
+  }
+
   private async analyzeSymbolAndCreateSignal(symbol: string, config: TradingConfigData): Promise<boolean> {
     try {
       console.log(`🔍 Analyzing ${symbol} for trading opportunities...`);

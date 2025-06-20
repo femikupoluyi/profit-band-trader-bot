@@ -8,6 +8,7 @@ import { ExecutionOrchestrator } from './execution/ExecutionOrchestrator';
 import { SignalProcessorCore } from './execution/SignalProcessor';
 import { PositionCleanupService } from './PositionCleanupService';
 import { ConfigurationService } from './ConfigurationService';
+import { SignalFetcher } from './SignalFetcher';
 
 export class MainTradingEngine {
   private userId: string;
@@ -18,6 +19,7 @@ export class MainTradingEngine {
   private intervalId: NodeJS.Timeout | null = null;
   private positionCleanupService: PositionCleanupService;
   private configurationService: ConfigurationService;
+  private signalFetcher: SignalFetcher;
 
   constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
@@ -25,6 +27,7 @@ export class MainTradingEngine {
     this.logger = ServiceContainer.getLogger(userId);
     this.positionCleanupService = new PositionCleanupService(userId);
     this.configurationService = new ConfigurationService(userId);
+    this.signalFetcher = new SignalFetcher(userId);
   }
 
   async initialize(): Promise<void> {
@@ -205,9 +208,8 @@ export class MainTradingEngine {
 
       await executionOrchestrator.logExecutionStart();
       
-      // Fetch signals
-      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
-      const signals = await dbHelper.getUnprocessedSignals();
+      // Fetch signals using SignalFetcher
+      const signals = await this.signalFetcher.getUnprocessedSignals();
       
       // Process signals
       const results = await signalProcessor.processSignals(signals);

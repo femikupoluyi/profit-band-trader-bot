@@ -36,6 +36,29 @@ export class ConfigurationService {
         maxPositionsPerPair: config.max_positions_per_pair
       });
 
+      // Helper function to safely convert JSONB to Record<string, number>
+      const safeConvertToRecord = (value: any): Record<string, number> => {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          const result: Record<string, number> = {};
+          for (const [key, val] of Object.entries(value)) {
+            if (typeof key === 'string' && (typeof val === 'number' || typeof val === 'string')) {
+              const numVal = typeof val === 'number' ? val : parseFloat(val.toString());
+              if (!isNaN(numVal)) {
+                result[key] = numVal;
+              }
+            }
+          }
+          return result;
+        }
+        return {};
+      };
+
+      // Helper function to safely convert trading logic type
+      const safeTradingLogicType = (value: any): 'logic1_base' | 'logic2_data_driven' => {
+        if (value === 'logic2_data_driven') return 'logic2_data_driven';
+        return 'logic1_base';
+      };
+
       // Map database config to TradingConfigData format
       const tradingConfig: TradingConfigData = {
         max_active_pairs: config.max_active_pairs || 5,
@@ -56,14 +79,14 @@ export class ConfigurationService {
         manual_close_premium_percent: config.manual_close_premium_percent || 0.1,
         support_lower_bound_percent: config.support_lower_bound_percent || 5.0,
         support_upper_bound_percent: config.support_upper_bound_percent || 2.0,
-        minimum_notional_per_symbol: config.minimum_notional_per_symbol || {},
-        quantity_increment_per_symbol: config.quantity_increment_per_symbol || {},
-        price_decimals_per_symbol: config.price_decimals_per_symbol || {},
-        quantity_decimals_per_symbol: config.quantity_decimals_per_symbol || {},
+        minimum_notional_per_symbol: safeConvertToRecord(config.minimum_notional_per_symbol),
+        quantity_increment_per_symbol: safeConvertToRecord(config.quantity_increment_per_symbol),
+        price_decimals_per_symbol: safeConvertToRecord(config.price_decimals_per_symbol),
+        quantity_decimals_per_symbol: safeConvertToRecord(config.quantity_decimals_per_symbol),
         max_concurrent_trades: config.max_active_pairs || 20,
         max_drawdown_percent: config.max_drawdown_percent || 10.0,
         notes: config.notes || '',
-        trading_logic_type: config.trading_logic_type || 'logic1_base',
+        trading_logic_type: safeTradingLogicType(config.trading_logic_type),
         swing_analysis_bars: config.swing_analysis_bars || 20,
         volume_lookback_periods: config.volume_lookback_periods || 50,
         fibonacci_sensitivity: config.fibonacci_sensitivity || 0.618,
