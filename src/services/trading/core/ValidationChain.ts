@@ -97,4 +97,47 @@ export class ValidationChain {
       warnings
     };
   }
+
+  static validateTrade(symbol: string, quantity: number, price: number, config: any): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Basic validation
+    if (!symbol || typeof symbol !== 'string') {
+      errors.push('Invalid symbol');
+    }
+
+    if (!quantity || quantity <= 0) {
+      errors.push('Quantity must be greater than 0');
+    }
+
+    if (!price || price <= 0) {
+      errors.push('Price must be greater than 0');
+    }
+
+    // Configuration validation
+    if (!config) {
+      errors.push('Configuration is required');
+      return { isValid: false, errors, warnings };
+    }
+
+    if (!config.trading_pairs || !config.trading_pairs.includes(symbol)) {
+      errors.push(`Symbol ${symbol} is not in configured trading pairs`);
+    }
+
+    const orderValue = quantity * price;
+    if (config.max_order_amount_usd && orderValue > config.max_order_amount_usd) {
+      errors.push(`Order value ${orderValue} exceeds maximum order amount ${config.max_order_amount_usd}`);
+    }
+
+    if (orderValue < 10) {
+      warnings.push('Order value is very small and may be rejected by exchange');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
 }

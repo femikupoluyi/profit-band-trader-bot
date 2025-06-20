@@ -10,7 +10,7 @@ interface HealthCheck {
   timestamp: string;
 }
 
-interface HealthReport {
+export interface SystemHealthReport {
   overall: 'healthy' | 'warning' | 'critical';
   checks: Record<string, HealthCheck>;
   timestamp: string;
@@ -28,7 +28,7 @@ export class SystemHealthChecker {
     this.logger = new TradingLogger(userId);
   }
 
-  async performHealthCheck(config: TradingConfigData): Promise<HealthReport> {
+  async performHealthCheck(config: TradingConfigData): Promise<SystemHealthReport> {
     const timestamp = new Date().toISOString();
     const checks: Record<string, HealthCheck> = {};
     
@@ -39,7 +39,7 @@ export class SystemHealthChecker {
       checks.database = await this.checkDatabaseConnectivity();
       
       // Check 2: Bybit API connectivity
-      checks.bybitApi = await this.checkBybitApiConnectivity();
+      checks.bybitConnection = await this.checkBybitApiConnectivity();
       
       // Check 3: Configuration validation
       checks.configuration = await this.checkConfigurationHealth(config);
@@ -56,7 +56,7 @@ export class SystemHealthChecker {
       // Generate recommendations
       const recommendations = this.generateHealthRecommendations(checks);
       
-      const report: HealthReport = {
+      const report: SystemHealthReport = {
         overall,
         checks,
         timestamp,
@@ -125,7 +125,7 @@ export class SystemHealthChecker {
 
   private async checkBybitApiConnectivity(): Promise<HealthCheck> {
     try {
-      // Simple API connectivity test
+      // Simple API connectivity test using getAccountBalance
       const result = await this.bybitService.getAccountBalance();
       
       if (result && result.retCode === 0) {
@@ -204,15 +204,15 @@ export class SystemHealthChecker {
         };
       }
       
-      // Test market data for first trading pair
+      // Test market data for first trading pair using getMarketPrice
       const testSymbol = config.trading_pairs[0];
-      const marketData = await this.bybitService.getMarketTicker(testSymbol);
+      const marketData = await this.bybitService.getMarketPrice(testSymbol);
       
-      if (marketData && marketData.retCode === 0 && marketData.result?.list?.length > 0) {
+      if (marketData && marketData.price && marketData.price > 0) {
         return {
           status: 'pass',
           message: 'Market data is available',
-          details: { testedSymbol: testSymbol },
+          details: { testedSymbol: testSymbol, price: marketData.price },
           timestamp: new Date().toISOString()
         };
       } else {
