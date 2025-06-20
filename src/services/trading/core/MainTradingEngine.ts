@@ -1,3 +1,4 @@
+
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
@@ -139,6 +140,15 @@ export class MainTradingEngine {
         return;
       }
 
+      console.log(`📊 Configuration loaded:`, {
+        tradingLogic: this.config.trading_logic_type,
+        tradingPairs: this.config.trading_pairs,
+        maxOrderAmount: this.config.max_order_amount_usd,
+        maxPositionsPerPair: this.config.max_positions_per_pair,
+        supportLowerBound: this.config.support_lower_bound_percent,
+        supportUpperBound: this.config.support_upper_bound_percent
+      });
+
       // Step 1: Position monitoring and cleanup
       console.log('\n📊 STEP 1: Position Monitoring & Cleanup');
       await this.performPositionMonitoring();
@@ -189,10 +199,16 @@ export class MainTradingEngine {
 
   private async performSignalAnalysis(): Promise<void> {
     try {
+      console.log(`🧠 Starting signal analysis with ${this.config.trading_logic_type} logic`);
+      console.log(`📊 Analyzing ${this.config.trading_pairs.length} trading pairs: ${this.config.trading_pairs.join(', ')}`);
+      
       const signalAnalysisService = new EnhancedSignalAnalysisService(this.userId, this.bybitService);
       await signalAnalysisService.analyzeAndCreateSignals(this.config);
+      
+      console.log(`✅ Signal analysis completed`);
     } catch (error) {
       console.error('❌ Error in signal analysis:', error);
+      await this.logger.logError('Signal analysis failed in main loop', error);
     }
   }
 
@@ -203,6 +219,7 @@ export class MainTradingEngine {
       
       const canExecute = await executionOrchestrator.validateExecution(this.config);
       if (!canExecute) {
+        console.log('⚠️ Signal execution validation failed - skipping execution');
         return;
       }
 
@@ -210,6 +227,12 @@ export class MainTradingEngine {
       
       // Fetch signals using SignalFetcher
       const signals = await this.signalFetcher.getUnprocessedSignals();
+      
+      if (signals.length === 0) {
+        console.log('📭 No unprocessed signals found for execution');
+        await executionOrchestrator.logExecutionComplete();
+        return;
+      }
       
       // Process signals
       const results = await signalProcessor.processSignals(signals);
@@ -220,6 +243,7 @@ export class MainTradingEngine {
       
     } catch (error) {
       console.error('❌ Error in signal execution:', error);
+      await this.logger.logError('Signal execution failed in main loop', error);
     }
   }
 

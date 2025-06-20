@@ -5,6 +5,10 @@ import { ServiceContainer } from './ServiceContainer';
 import { SystemHealthChecker } from './SystemHealthChecker';
 import { ValidationChain } from './ValidationChain';
 import { PositionValidator } from './PositionValidator';
+import { SupportResistanceService } from './SupportResistanceService';
+import { DataDrivenSupportAnalyzer } from './DataDrivenSupportAnalyzer';
+import { CandleDataService } from '../candleDataService';
+import { SupportLevelProcessor } from './SupportLevelProcessor';
 
 export class EnhancedSignalAnalysisService {
   private userId: string;
@@ -12,6 +16,9 @@ export class EnhancedSignalAnalysisService {
   private logger: TradingLogger;
   private healthChecker: SystemHealthChecker;
   private positionValidator: PositionValidator;
+  private supportResistanceService: SupportResistanceService;
+  private dataDrivenAnalyzer: DataDrivenSupportAnalyzer;
+  private candleDataService: CandleDataService;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
@@ -19,6 +26,9 @@ export class EnhancedSignalAnalysisService {
     this.logger = ServiceContainer.getLogger(userId);
     this.healthChecker = new SystemHealthChecker(userId, bybitService);
     this.positionValidator = new PositionValidator(userId);
+    this.supportResistanceService = new SupportResistanceService(bybitService);
+    this.dataDrivenAnalyzer = new DataDrivenSupportAnalyzer();
+    this.candleDataService = new CandleDataService();
   }
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
@@ -96,6 +106,235 @@ export class EnhancedSignalAnalysisService {
     }
   }
 
+  private async analyzeSymbolAndCreateSignal(symbol: string, config: TradingConfigData): Promise<boolean> {
+    try {
+      console.log(`\n🔍 ===== ENHANCED ANALYSIS FOR ${symbol} =====`);
+      
+      // Get current market price
+      const currentPrice = await this.getCurrentPrice(symbol);
+      if (!currentPrice) {
+        console.warn(`⚠️ Could not get price for ${symbol}`);
+        return false;
+      }
+
+      console.log(`💰 Current price for ${symbol}: $${currentPrice.toFixed(6)}`);
+
+      // Analyze support levels using historical data
+      const supportAnalysis = await this.performSupportAnalysis(symbol, currentPrice, config);
+      if (!supportAnalysis.isValid) {
+        console.log(`📊 No valid support found for ${symbol}: ${supportAnalysis.reason}`);
+        return false;
+      }
+
+      const supportPrice = supportAnalysis.supportLevel!;
+      console.log(`📈 Support level identified for ${symbol}: $${supportPrice.toFixed(6)} (strength: ${supportAnalysis.strength})`);
+
+      // Calculate entry price - place limit order BELOW current price at support
+      const entryPrice = await SupportLevelProcessor.formatSupportLevel(symbol, supportPrice);
+      
+      // NEW LOGIC: Place proactive limit buy orders at support levels
+      // Only create signal if support is significantly below current price (opportunity exists)
+      const priceDistancePercent = ((currentPrice - entryPrice) / currentPrice) * 100;
+      
+      if (priceDistancePercent < 0.5) {
+        console.log(`📊 ${symbol}: Support too close to current price (${priceDistancePercent.toFixed(2)}% below)`);
+        return false;
+      }
+
+      if (priceDistancePercent > 10) {
+        console.log(`📊 ${symbol}: Support too far from current price (${priceDistancePercent.toFixed(2)}% below)`);
+        return false;
+      }
+
+      // Create buy signal at support level
+      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
+      const signal = await dbHelper.createSignal({
+        user_id: this.userId,
+        symbol: symbol,
+        signal_type: 'buy',
+        price: entryPrice, // Place limit order AT support level
+        confidence: supportAnalysis.strength!,
+        reasoning: `${symbol} support identified at $${entryPrice.toFixed(6)} (${priceDistancePercent.toFixed(2)}% below current price $${currentPrice.toFixed(6)}) - ${config.trading_logic_type} analysis with ${supportAnalysis.touchCount} touches`
+      });
+
+      console.log(`✅ PROACTIVE buy signal created for ${symbol}: ID ${signal.id} at $${entryPrice.toFixed(6)}`);
+      console.log(`📊 Signal Details: ${priceDistancePercent.toFixed(2)}% below market, confidence ${supportAnalysis.strength!.toFixed(3)}`);
+      
+      await this.logger.logSuccess(`Proactive buy signal created for ${symbol}`, {
+        signalId: signal.id,
+        symbol,
+        entryPrice,
+        currentPrice,
+        priceDistancePercent,
+        supportStrength: supportAnalysis.strength,
+        tradingLogic: config.trading_logic_type
+      });
+
+      return true;
+      
+    } catch (error) {
+      console.error(`❌ Error analyzing ${symbol}:`, error);
+      await this.logger.logError(`Analysis failed for ${symbol}`, error);
+      return false;
+    }
+  }
+
+  private async performSupportAnalysis(symbol: string, currentPrice: number, config: TradingConfigData): Promise<{
+    isValid: boolean;
+    supportLevel?: number;
+    strength?: number;
+    touchCount?: number;
+    reason?: string;
+  }> {
+    try {
+      console.log(`🔍 Performing ${config.trading_logic_type} support analysis for ${symbol}`);
+
+      if (config.trading_logic_type === 'logic2_data_driven') {
+        return await this.performDataDrivenAnalysis(symbol, currentPrice, config);
+      } else {
+        return await this.performBasicAnalysis(symbol, currentPrice, config);
+      }
+    } catch (error) {
+      console.error(`❌ Error in support analysis for ${symbol}:`, error);
+      return { isValid: false, reason: `Analysis error: ${error.message}` };
+    }
+  }
+
+  private async performDataDrivenAnalysis(symbol: string, currentPrice: number, config: TradingConfigData): Promise<{
+    isValid: boolean;
+    supportLevel?: number;
+    strength?: number;
+    touchCount?: number;
+    reason?: string;
+  }> {
+    try {
+      console.log(`🧠 Data-driven analysis for ${symbol}`);
+      
+      // Get historical candle data
+      const candles = await this.candleDataService.getCandleData(symbol, config.support_candle_count || 128);
+      
+      if (candles.length < 20) {
+        console.warn(`⚠️ Insufficient candle data for ${symbol}: ${candles.length} candles`);
+        // Fallback to support/resistance service
+        return await this.useSupportResistanceService(symbol, currentPrice, config);
+      }
+
+      // Use DataDrivenSupportAnalyzer
+      const supportLevels = this.dataDrivenAnalyzer.analyzeSupport(candles, config);
+      
+      if (supportLevels.length === 0) {
+        console.log(`📊 No support levels found by data-driven analysis for ${symbol}`);
+        // Fallback to support/resistance service
+        return await this.useSupportResistanceService(symbol, currentPrice, config);
+      }
+
+      // Get the strongest support level
+      const bestSupport = supportLevels[0];
+      console.log(`📈 Data-driven support for ${symbol}: $${bestSupport.price.toFixed(6)} (strength: ${bestSupport.strength.toFixed(3)}, touches: ${bestSupport.touches})`);
+
+      return {
+        isValid: true,
+        supportLevel: bestSupport.price,
+        strength: bestSupport.strength,
+        touchCount: bestSupport.touches
+      };
+
+    } catch (error) {
+      console.error(`❌ Data-driven analysis failed for ${symbol}:`, error);
+      // Fallback to basic analysis
+      return await this.performBasicAnalysis(symbol, currentPrice, config);
+    }
+  }
+
+  private async performBasicAnalysis(symbol: string, currentPrice: number, config: TradingConfigData): Promise<{
+    isValid: boolean;
+    supportLevel?: number;
+    strength?: number;
+    touchCount?: number;
+    reason?: string;
+  }> {
+    try {
+      console.log(`📊 Basic support analysis for ${symbol}`);
+      
+      // Try support/resistance service first
+      const serviceResult = await this.useSupportResistanceService(symbol, currentPrice, config);
+      if (serviceResult.isValid) {
+        return serviceResult;
+      }
+
+      // Fallback to percentage-based support
+      const supportPercent = config.support_lower_bound_percent || 2.0;
+      const supportLevel = currentPrice * (1 - supportPercent / 100);
+      
+      console.log(`📈 Basic support for ${symbol}: $${supportLevel.toFixed(6)} (${supportPercent}% below current price)`);
+
+      return {
+        isValid: true,
+        supportLevel,
+        strength: 0.6, // Default strength for basic analysis
+        touchCount: 2
+      };
+
+    } catch (error) {
+      console.error(`❌ Basic analysis failed for ${symbol}:`, error);
+      return { isValid: false, reason: `Basic analysis error: ${error.message}` };
+    }
+  }
+
+  private async useSupportResistanceService(symbol: string, currentPrice: number, config: TradingConfigData): Promise<{
+    isValid: boolean;
+    supportLevel?: number;
+    strength?: number;
+    touchCount?: number;
+    reason?: string;
+  }> {
+    try {
+      console.log(`🔑 Using SupportResistanceService for ${symbol}`);
+      
+      const analysis = await this.supportResistanceService.getSupportResistanceLevels(
+        symbol,
+        config.chart_timeframe || '4h',
+        config.support_candle_count || 128,
+        config.support_lower_bound_percent || 5.0,
+        config.support_upper_bound_percent || 2.0
+      );
+
+      if (!analysis.currentSupport) {
+        console.log(`📊 No support found by SupportResistanceService for ${symbol}`);
+        return { isValid: false, reason: 'No support levels identified from historical data' };
+      }
+
+      const supportLevel = analysis.currentSupport.price;
+      const volume = analysis.currentSupport.volume;
+      
+      // Calculate strength based on volume and position relative to bounds
+      const strength = Math.min(0.9, 0.3 + (volume / 1000000) * 0.6); // Volume-based strength
+      
+      console.log(`🔑 SupportResistanceService found support for ${symbol}: $${supportLevel.toFixed(6)} (volume: ${volume}, strength: ${strength.toFixed(3)})`);
+
+      return {
+        isValid: true,
+        supportLevel,
+        strength,
+        touchCount: 3 // Estimate based on service analysis
+      };
+
+    } catch (error) {
+      console.error(`❌ SupportResistanceService failed for ${symbol}:`, error);
+      return { isValid: false, reason: `Service error: ${error.message}` };
+    }
+  }
+
+  private async getCurrentPrice(symbol: string): Promise<number | null> {
+    try {
+      const marketData = await this.bybitService.getMarketPrice(symbol);
+      return marketData?.price || null;
+    } catch (error) {
+      console.error(`Error getting price for ${symbol}:`, error);
+      return null;
+    }
+  }
+
   async createTestSignal(symbol: string, config: TradingConfigData): Promise<boolean> {
     try {
       console.log(`🧪 Creating test signal for ${symbol}`);
@@ -124,101 +363,6 @@ export class EnhancedSignalAnalysisService {
     } catch (error) {
       console.error(`❌ Error creating test signal for ${symbol}:`, error);
       return false;
-    }
-  }
-
-  private async analyzeSymbolAndCreateSignal(symbol: string, config: TradingConfigData): Promise<boolean> {
-    try {
-      console.log(`🔍 Analyzing ${symbol} for trading opportunities...`);
-      
-      // Get current market price
-      const currentPrice = await this.getCurrentPrice(symbol);
-      if (!currentPrice) {
-        console.warn(`⚠️ Could not get price for ${symbol}`);
-        return false;
-      }
-
-      console.log(`💰 Current price for ${symbol}: $${currentPrice}`);
-
-      // Calculate support level based on trading logic
-      const supportLevel = await this.calculateSupportLevel(symbol, currentPrice, config);
-      if (!supportLevel) {
-        console.log(`📊 No clear support level found for ${symbol}`);
-        return false;
-      }
-
-      console.log(`📈 Support level for ${symbol}: $${supportLevel}`);
-
-      // Check if current price is near support (within entry range)
-      const entryThreshold = supportLevel * (1 + config.entry_offset_percent / 100);
-      const isNearSupport = currentPrice <= entryThreshold;
-
-      console.log(`🎯 Entry threshold: $${entryThreshold}, Near support: ${isNearSupport}`);
-
-      if (isNearSupport) {
-        // Create buy signal
-        const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
-        const signal = await dbHelper.createSignal({
-          user_id: this.userId,
-          symbol: symbol,
-          signal_type: 'buy',
-          price: supportLevel, // Use support level as entry price
-          confidence: 0.8,
-          reasoning: `${symbol} near support at $${supportLevel.toFixed(6)}, current price $${currentPrice.toFixed(6)} - ${config.trading_logic_type} analysis`
-        });
-
-        console.log(`✅ Buy signal created for ${symbol}: ID ${signal.id} at $${supportLevel}`);
-        
-        await this.logger.logSuccess(`Buy signal created for ${symbol}`, {
-          signalId: signal.id,
-          symbol,
-          price: supportLevel,
-          currentPrice,
-          entryThreshold
-        });
-
-        return true;
-      }
-
-      return false;
-      
-    } catch (error) {
-      console.error(`❌ Error analyzing ${symbol}:`, error);
-      await this.logger.logError(`Analysis failed for ${symbol}`, error);
-      return false;
-    }
-  }
-
-  private async getCurrentPrice(symbol: string): Promise<number | null> {
-    try {
-      const marketData = await this.bybitService.getMarketPrice(symbol);
-      return marketData?.price || null;
-    } catch (error) {
-      console.error(`Error getting price for ${symbol}:`, error);
-      return null;
-    }
-  }
-
-  private async calculateSupportLevel(symbol: string, currentPrice: number, config: TradingConfigData): Promise<number | null> {
-    try {
-      // Implement support level calculation based on trading logic
-      switch (config.trading_logic_type) {
-        case 'logic1_base':
-          // Simple percentage-based support
-          return currentPrice * (1 - config.support_lower_bound_percent / 100);
-          
-        case 'logic2_data_driven':
-          // More sophisticated analysis would go here
-          // For now, use swing low analysis simulation
-          const swingLowMultiplier = 0.95; // 5% below current price as swing low
-          return currentPrice * swingLowMultiplier;
-          
-        default:
-          return currentPrice * 0.98; // Default 2% below current price
-      }
-    } catch (error) {
-      console.error(`Error calculating support for ${symbol}:`, error);
-      return null;
     }
   }
 

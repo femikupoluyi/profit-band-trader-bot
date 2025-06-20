@@ -1,54 +1,73 @@
 
-import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { DatabaseQueryHelper } from './DatabaseQueryHelper';
-import { SignalAnalysisCore } from './SignalAnalysisCore';
+import { DatabaseHelper } from './DatabaseHelper';
 import { OrderExecution } from './OrderExecution';
+import { ConfigurationService } from './ConfigurationService';
+import { SignalFetcher } from './SignalFetcher';
+import { BybitService } from '../../bybitService';
 
-/**
- * Centralized service container to reduce circular dependencies
- */
 export class ServiceContainer {
-  private static instances = new Map<string, any>();
+  private static loggers: Map<string, TradingLogger> = new Map();
+  private static databaseHelpers: Map<string, DatabaseHelper> = new Map();
+  private static orderExecutions: Map<string, OrderExecution> = new Map();
+  private static configurationServices: Map<string, ConfigurationService> = new Map();
+  private static signalFetchers: Map<string, SignalFetcher> = new Map();
 
   static getLogger(userId: string): TradingLogger {
-    const key = `logger_${userId}`;
-    if (!this.instances.has(key)) {
-      this.instances.set(key, new TradingLogger(userId));
+    if (!this.loggers.has(userId)) {
+      this.loggers.set(userId, new TradingLogger(userId));
     }
-    return this.instances.get(key);
+    return this.loggers.get(userId)!;
   }
 
-  static getDatabaseHelper(userId: string): DatabaseQueryHelper {
-    const key = `db_${userId}`;
-    if (!this.instances.has(key)) {
-      this.instances.set(key, new DatabaseQueryHelper(userId));
+  static getDatabaseHelper(userId: string): DatabaseHelper {
+    if (!this.databaseHelpers.has(userId)) {
+      this.databaseHelpers.set(userId, new DatabaseHelper(userId));
     }
-    return this.instances.get(key);
-  }
-
-  static getSignalAnalysisCore(userId: string): SignalAnalysisCore {
-    const key = `signal_core_${userId}`;
-    if (!this.instances.has(key)) {
-      this.instances.set(key, new SignalAnalysisCore(userId));
-    }
-    return this.instances.get(key);
+    return this.databaseHelpers.get(userId)!;
   }
 
   static getOrderExecution(userId: string, bybitService: BybitService): OrderExecution {
-    const key = `order_exec_${userId}`;
-    if (!this.instances.has(key)) {
-      this.instances.set(key, new OrderExecution(userId, bybitService));
+    const key = `${userId}_${bybitService.constructor.name}`;
+    if (!this.orderExecutions.has(key)) {
+      this.orderExecutions.set(key, new OrderExecution(userId, bybitService));
     }
-    return this.instances.get(key);
+    return this.orderExecutions.get(key)!;
   }
 
-  static clearInstances(): void {
-    this.instances.clear();
+  static getConfigurationService(userId: string): ConfigurationService {
+    if (!this.configurationServices.has(userId)) {
+      this.configurationServices.set(userId, new ConfigurationService(userId));
+    }
+    return this.configurationServices.get(userId)!;
   }
 
-  static clearUserInstances(userId: string): void {
-    const keysToDelete = Array.from(this.instances.keys()).filter(key => key.includes(userId));
-    keysToDelete.forEach(key => this.instances.delete(key));
+  static getSignalFetcher(userId: string): SignalFetcher {
+    if (!this.signalFetchers.has(userId)) {
+      this.signalFetchers.set(userId, new SignalFetcher(userId));
+    }
+    return this.signalFetchers.get(userId)!;
+  }
+
+  static clearCache(userId?: string): void {
+    if (userId) {
+      this.loggers.delete(userId);
+      this.databaseHelpers.delete(userId);
+      this.configurationServices.delete(userId);
+      this.signalFetchers.delete(userId);
+      
+      // Clear order executions for this user
+      for (const key of this.orderExecutions.keys()) {
+        if (key.startsWith(userId)) {
+          this.orderExecutions.delete(key);
+        }
+      }
+    } else {
+      this.loggers.clear();
+      this.databaseHelpers.clear();
+      this.orderExecutions.clear();
+      this.configurationServices.clear();
+      this.signalFetchers.clear();
+    }
   }
 }
