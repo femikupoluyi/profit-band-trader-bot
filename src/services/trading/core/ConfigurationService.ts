@@ -1,0 +1,100 @@
+
+import { supabase } from '@/integrations/supabase/client';
+import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
+
+export class ConfigurationService {
+  private userId: string;
+
+  constructor(userId: string) {
+    this.userId = userId;
+  }
+
+  async loadUserConfig(): Promise<TradingConfigData | null> {
+    try {
+      console.log(`🔧 Loading configuration for user: ${this.userId}`);
+      
+      const { data: config, error } = await supabase
+        .from('trading_configs')
+        .select('*')
+        .eq('user_id', this.userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('❌ Error loading configuration:', error);
+        return null;
+      }
+
+      if (!config) {
+        console.warn('⚠️ No configuration found for user');
+        return null;
+      }
+
+      console.log(`✅ Configuration loaded successfully:`, {
+        isActive: config.is_active,
+        tradingPairs: config.trading_pairs?.length || 0,
+        maxOrderAmount: config.max_order_amount_usd,
+        maxPositionsPerPair: config.max_positions_per_pair
+      });
+
+      // Map database config to TradingConfigData format
+      const tradingConfig: TradingConfigData = {
+        max_active_pairs: config.max_active_pairs || 5,
+        max_order_amount_usd: config.max_order_amount_usd || 50,
+        max_portfolio_exposure_percent: config.max_portfolio_exposure_percent || 20,
+        daily_reset_time: config.daily_reset_time || '00:00:00',
+        chart_timeframe: config.chart_timeframe || '4h',
+        entry_offset_percent: config.entry_offset_percent || 0.5,
+        take_profit_percent: config.take_profit_percent || 1.0,
+        support_candle_count: config.support_candle_count || 128,
+        max_positions_per_pair: config.max_positions_per_pair || 2,
+        new_support_threshold_percent: config.new_support_threshold_percent || 1.0,
+        trading_pairs: Array.isArray(config.trading_pairs) ? config.trading_pairs : ['BTCUSDT', 'ETHUSDT'],
+        is_active: Boolean(config.is_active),
+        main_loop_interval_seconds: config.main_loop_interval_seconds || 30,
+        auto_close_at_end_of_day: Boolean(config.auto_close_at_end_of_day),
+        eod_close_premium_percent: config.eod_close_premium_percent || 0.1,
+        manual_close_premium_percent: config.manual_close_premium_percent || 0.1,
+        support_lower_bound_percent: config.support_lower_bound_percent || 5.0,
+        support_upper_bound_percent: config.support_upper_bound_percent || 2.0,
+        minimum_notional_per_symbol: config.minimum_notional_per_symbol || {},
+        quantity_increment_per_symbol: config.quantity_increment_per_symbol || {},
+        price_decimals_per_symbol: config.price_decimals_per_symbol || {},
+        quantity_decimals_per_symbol: config.quantity_decimals_per_symbol || {},
+        max_concurrent_trades: config.max_active_pairs || 20,
+        max_drawdown_percent: config.max_drawdown_percent || 10.0,
+        notes: config.notes || '',
+        trading_logic_type: config.trading_logic_type || 'logic1_base',
+        swing_analysis_bars: config.swing_analysis_bars || 20,
+        volume_lookback_periods: config.volume_lookback_periods || 50,
+        fibonacci_sensitivity: config.fibonacci_sensitivity || 0.618,
+        atr_multiplier: config.atr_multiplier || 1.0
+      };
+
+      return tradingConfig;
+    } catch (error) {
+      console.error('❌ Critical error loading configuration:', error);
+      return null;
+    }
+  }
+
+  async validateConfigurationAccess(): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('trading_configs')
+        .select('id')
+        .eq('user_id', this.userId)
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Configuration access validation failed:', error);
+        return false;
+      }
+
+      console.log(`✅ Configuration access validated for user: ${this.userId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error validating configuration access:', error);
+      return false;
+    }
+  }
+}

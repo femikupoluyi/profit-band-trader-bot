@@ -1,357 +1,249 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
-import { SignalExecutionService } from './SignalExecutionService';
-import { EnhancedSignalAnalysisService } from './EnhancedSignalAnalysisService';
-import { PositionMonitorService } from './PositionMonitorService';
-import { TransactionReconciliationService } from './TransactionReconciliationService';
-import { PositionSyncService } from './PositionSyncService';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { InstrumentCache } from './InstrumentCache';
-import { ConfigurableFormatter } from './ConfigurableFormatter';
-import { TradingPipelineTest } from './TradingPipelineTest';
+import { ServiceContainer } from './ServiceContainer';
+import { CredentialsManager } from '../credentialsManager';
+import { EnhancedSignalAnalysisService } from './EnhancedSignalAnalysisService';
+import { ExecutionOrchestrator } from './execution/ExecutionOrchestrator';
+import { SignalProcessorCore } from './execution/SignalProcessor';
+import { PositionCleanupService } from './PositionCleanupService';
+import { ConfigurationService } from './ConfigurationService';
 
 export class MainTradingEngine {
   private userId: string;
   private config: TradingConfigData;
   private bybitService: BybitService;
   private logger: TradingLogger;
-  private signalAnalysisService: EnhancedSignalAnalysisService;
-  private signalExecutionService: SignalExecutionService;
-  private positionMonitorService: PositionMonitorService;
-  private reconciliationService: TransactionReconciliationService;
-  private positionSyncService: PositionSyncService;
-  private pipelineTest: TradingPipelineTest;
-  private mainLoopInterval: NodeJS.Timeout | null = null;
-  private isRunning = false;
+  private isRunning: boolean = false;
+  private intervalId: NodeJS.Timeout | null = null;
+  private positionCleanupService: PositionCleanupService;
+  private configurationService: ConfigurationService;
 
   constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
     this.config = config;
-    this.bybitService = new BybitService('', '', true); // Will be initialized with proper credentials
-    this.logger = new TradingLogger(userId);
-    
-    // Initialize services with ENHANCED signal analysis service
-    this.signalAnalysisService = new EnhancedSignalAnalysisService(userId, this.bybitService);
-    this.signalExecutionService = new SignalExecutionService(userId, this.bybitService);
-    this.positionMonitorService = new PositionMonitorService(userId, this.bybitService);
-    this.reconciliationService = new TransactionReconciliationService(userId, this.bybitService);
-    this.positionSyncService = new PositionSyncService(userId, this.bybitService);
-    this.pipelineTest = new TradingPipelineTest(userId, this.bybitService);
+    this.logger = ServiceContainer.getLogger(userId);
+    this.positionCleanupService = new PositionCleanupService(userId);
+    this.configurationService = new ConfigurationService(userId);
   }
 
-  async initialize(): Promise<boolean> {
+  async initialize(): Promise<void> {
     try {
-      console.log('🔧 Initializing Enhanced MainTradingEngine...');
-      await this.logger.logSuccess('Enhanced MainTradingEngine initialization started');
-
-      // Clear all trading caches on startup
-      console.log('🧹 Clearing trading caches on startup...');
-      InstrumentCache.clearAllTradingCache();
-      ConfigurableFormatter.clearAllTradingCache();
-
-      // Get proper credentials and reinitialize BybitService
-      const { CredentialsManager } = await import('../credentialsManager');
+      console.log('🚀 Initializing Enhanced Main Trading Engine...');
+      
+      // Initialize BybitService
       const credentialsManager = new CredentialsManager(this.userId);
-      const bybitServiceWithCredentials = await credentialsManager.fetchCredentials();
+      this.bybitService = await credentialsManager.fetchCredentials();
       
-      if (!bybitServiceWithCredentials) {
-        throw new Error('Failed to get Bybit credentials');
-      }
-      
-      this.bybitService = bybitServiceWithCredentials;
-      
-      // Reinitialize services with proper credentials - USING ENHANCED SERVICE
-      this.signalAnalysisService = new EnhancedSignalAnalysisService(this.userId, this.bybitService);
-      this.signalExecutionService = new SignalExecutionService(this.userId, this.bybitService);
-      this.positionMonitorService = new PositionMonitorService(this.userId, this.bybitService);
-      this.reconciliationService = new TransactionReconciliationService(this.userId, this.bybitService);
-      this.positionSyncService = new PositionSyncService(this.userId, this.bybitService);
-
-      // ENHANCED: Log detailed trading configuration
-      console.log('📋 ===== ENHANCED TRADING CONFIGURATION SUMMARY =====');
-      console.log(`🧠 Selected Trading Logic: ${this.config.trading_logic_type}`);
-      console.log(`📊 Trading Pairs: ${this.config.trading_pairs.join(', ')}`);
-      console.log(`💰 Max Order Amount: $${this.config.max_order_amount_usd}`);
-      console.log(`🎯 Take Profit: ${this.config.take_profit_percent}%`);
-      console.log(`📈 Entry Offset: ${this.config.entry_offset_percent}%`);
-      console.log(`🔄 Max Positions Per Pair: ${this.config.max_positions_per_pair}`);
-      console.log(`⚙️ Configuration Active: ${this.config.is_active ? 'YES' : 'NO'}`);
-      console.log(`⏰ Main Loop Interval: ${this.config.main_loop_interval_seconds}s`);
-      
-      if (this.config.trading_logic_type === 'logic2_data_driven') {
-        console.log('🎯 ===== LOGIC 2 DETERMINISTIC PARAMETERS =====');
-        console.log(`📊 Swing Analysis Bars: ${this.config.swing_analysis_bars}`);
-        console.log(`📈 Volume Lookback Periods: ${this.config.volume_lookback_periods}`);
-        console.log(`🔢 Fibonacci Sensitivity: ${this.config.fibonacci_sensitivity}`);
-        console.log(`📏 ATR Multiplier: ${this.config.atr_multiplier}`);
-        console.log('🔥 Logic 2 DETERMINISTIC MODE - Trades WILL be placed when market data exists');
-        console.log('✅ Enhanced logging will show exactly why trades are/aren\'t placed');
-      }
-      
-      await this.logger.logConfigurationChange({
-        tradingLogicType: this.config.trading_logic_type,
-        tradingPairs: this.config.trading_pairs,
-        maxOrderAmount: this.config.max_order_amount_usd,
-        isActive: this.config.is_active,
-        mainLoopInterval: this.config.main_loop_interval_seconds,
-        logic2Parameters: this.config.trading_logic_type === 'logic2_data_driven' ? {
-          swingAnalysisBars: this.config.swing_analysis_bars,
-          volumeLookbackPeriods: this.config.volume_lookback_periods,
-          fibonacciSensitivity: this.config.fibonacci_sensitivity,
-          atrMultiplier: this.config.atr_multiplier
-        } : null
-      });
-
-      // FAST startup position sync - reduced scope
-      console.log('🔄 Performing quick startup position synchronization...');
-      try {
-        await Promise.race([
-          this.positionSyncService.performStartupSync(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 10000))
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Startup sync took too long or failed, continuing anyway:', error);
+      if (!this.bybitService) {
+        throw new Error('Failed to initialize Bybit service - check API credentials');
       }
 
-      // FAST startup reconciliation - reduced scope
-      console.log('🔄 Performing quick startup reconciliation...');
-      try {
-        await Promise.race([
-          this.reconciliationService.performStartupReconciliation(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Reconciliation timeout')), 10000))
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Startup reconciliation took too long or failed, continuing anyway:', error);
+      // Load fresh configuration
+      const freshConfig = await this.configurationService.loadUserConfig();
+      if (freshConfig) {
+        this.config = freshConfig;
+        console.log(`✅ Loaded fresh configuration with ${this.config.trading_pairs.length} trading pairs`);
       }
 
-      console.log('✅ Enhanced MainTradingEngine initialized successfully');
-      await this.logger.logSuccess('Enhanced MainTradingEngine initialized successfully');
+      // Perform initial position cleanup
+      await this.performInitialCleanup();
+
+      console.log('✅ Enhanced Main Trading Engine initialized successfully');
       
-      return true;
     } catch (error) {
-      console.error('❌ Failed to initialize Enhanced MainTradingEngine:', error);
-      await this.logger.logError('Enhanced MainTradingEngine initialization failed', error);
-      return false;
+      console.error('❌ Failed to initialize Enhanced Main Trading Engine:', error);
+      throw error;
+    }
+  }
+
+  private async performInitialCleanup(): Promise<void> {
+    try {
+      console.log('🧹 Performing initial position cleanup...');
+      
+      // Audit current positions
+      const audit = await this.positionCleanupService.auditPositions();
+      
+      if (audit.excessivePositions.length > 0) {
+        console.log(`⚠️ Found excessive positions in: ${audit.excessivePositions.join(', ')}`);
+        await this.positionCleanupService.cleanupAllExcessivePositions(this.config.max_positions_per_pair);
+      } else {
+        console.log('✅ No excessive positions found');
+      }
+
+    } catch (error) {
+      console.error('❌ Error in initial cleanup:', error);
     }
   }
 
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log('⚠️ Enhanced MainTradingEngine is already running');
+      console.log('⚠️ Trading engine is already running');
       return;
     }
 
     try {
-      console.log('🚀 Starting Enhanced MainTradingEngine...');
-      await this.logger.logSuccess('Enhanced MainTradingEngine starting');
+      console.log('🚀 Starting Enhanced Main Trading Engine...');
       
+      // Refresh configuration before starting
+      const freshConfig = await this.configurationService.loadUserConfig();
+      if (freshConfig) {
+        this.config = freshConfig;
+      }
+
+      if (!this.config.is_active) {
+        console.log('⚠️ Trading configuration is not active - engine will not start');
+        return;
+      }
+
       this.isRunning = true;
       
-      // Start the main trading loop
-      await this.startMainLoop();
+      // Execute first cycle immediately
+      await this.executeMainLoop();
       
-      console.log('✅ Enhanced MainTradingEngine started successfully');
-      await this.logger.logSuccess('Enhanced MainTradingEngine started successfully');
+      // Schedule subsequent cycles
+      const intervalMs = this.config.main_loop_interval_seconds * 1000;
+      this.intervalId = setInterval(() => {
+        this.executeMainLoop().catch(error => {
+          console.error('❌ Error in scheduled main loop:', error);
+        });
+      }, intervalMs);
+
+      console.log(`✅ Enhanced Main Trading Engine started with ${intervalMs}ms interval`);
       
-    } catch (error)  {
-      console.error('❌ Error starting Enhanced MainTradingEngine:', error);
-      await this.logger.logError('Failed to start Enhanced MainTradingEngine', error);
+    } catch (error) {
+      console.error('❌ Failed to start Enhanced Main Trading Engine:', error);
       this.isRunning = false;
       throw error;
+    }
+  }
+
+  async executeMainLoop(): Promise<void> {
+    const startTime = Date.now();
+    const cycleId = Date.now();
+    
+    try {
+      console.log(`\n🔄 ===== ENHANCED MAIN LOOP EXECUTION START (Cycle #${cycleId}) =====`);
+      
+      // Refresh configuration at start of each cycle
+      const freshConfig = await this.configurationService.loadUserConfig();
+      if (freshConfig) {
+        this.config = freshConfig;
+      }
+
+      if (!this.config.is_active) {
+        console.log('⚠️ Trading is not active - skipping cycle');
+        return;
+      }
+
+      // Step 1: Position monitoring and cleanup
+      console.log('\n📊 STEP 1: Position Monitoring & Cleanup');
+      await this.performPositionMonitoring();
+      
+      // Step 2: Signal analysis and creation
+      console.log('\n🧠 STEP 2: Enhanced Signal Analysis & Creation');
+      await this.performSignalAnalysis();
+      
+      // Step 3: Signal execution
+      console.log('\n⚡ STEP 3: Signal Execution & Order Placement');
+      await this.performSignalExecution();
+      
+      const executionTime = Date.now() - startTime;
+      console.log(`⏱️  Total loop execution time: ${executionTime}ms`);
+      console.log('✅ ===== ENHANCED MAIN LOOP EXECUTION COMPLETE =====\n');
+
+      await this.logger.logSystemInfo('Enhanced main loop cycle completed', {
+        cycleId,
+        tradingLogicUsed: this.config.trading_logic_type,
+        tradingPairsProcessed: this.config.trading_pairs.length,
+        configurationActive: this.config.is_active,
+        executionTimeMs: executionTime,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error(`❌ Error in enhanced main loop execution:`, error);
+      await this.logger.logError('Enhanced main loop execution failed', error);
+    }
+  }
+
+  private async performPositionMonitoring(): Promise<void> {
+    try {
+      // Audit and cleanup positions
+      const audit = await this.positionCleanupService.auditPositions();
+      
+      if (audit.excessivePositions.length > 0) {
+        console.log(`⚠️ Cleaning up excessive positions: ${audit.excessivePositions.join(', ')}`);
+        await this.positionCleanupService.cleanupAllExcessivePositions(this.config.max_positions_per_pair);
+      }
+
+      console.log(`📊 Position Status: ${audit.totalPositions} total positions across ${Object.keys(audit.positionsBySymbol).length} symbols`);
+      
+    } catch (error) {
+      console.error('❌ Error in position monitoring:', error);
+    }
+  }
+
+  private async performSignalAnalysis(): Promise<void> {
+    try {
+      const signalAnalysisService = new EnhancedSignalAnalysisService(this.userId, this.bybitService);
+      await signalAnalysisService.analyzeAndCreateSignals(this.config);
+    } catch (error) {
+      console.error('❌ Error in signal analysis:', error);
+    }
+  }
+
+  private async performSignalExecution(): Promise<void> {
+    try {
+      const executionOrchestrator = new ExecutionOrchestrator(this.userId);
+      const signalProcessor = new SignalProcessorCore(this.userId);
+      
+      const canExecute = await executionOrchestrator.validateExecution(this.config);
+      if (!canExecute) {
+        return;
+      }
+
+      await executionOrchestrator.logExecutionStart();
+      
+      // Fetch signals
+      const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
+      const signals = await dbHelper.getUnprocessedSignals();
+      
+      // Process signals
+      const results = await signalProcessor.processSignals(signals);
+      
+      console.log(`📊 Signal Execution Results: ${results.success} successful, ${results.failed} failed`);
+      
+      await executionOrchestrator.logExecutionComplete();
+      
+    } catch (error) {
+      console.error('❌ Error in signal execution:', error);
     }
   }
 
   async stop(): Promise<void> {
+    if (!this.isRunning) {
+      console.log('⚠️ Trading engine is not running');
+      return;
+    }
+
     try {
-      console.log('🛑 Stopping Enhanced MainTradingEngine...');
-      await this.logger.logSuccess('Enhanced MainTradingEngine stopping');
-      
       this.isRunning = false;
       
-      if (this.mainLoopInterval) {
-        clearInterval(this.mainLoopInterval);
-        this.mainLoopInterval = null;
+      if (this.intervalId) {
+        clearInterval(this.intervalId);
+        this.intervalId = null;
       }
-      
-      console.log('✅ Enhanced MainTradingEngine stopped successfully');
-      await this.logger.logSuccess('Enhanced MainTradingEngine stopped successfully');
+
+      console.log('✅ Enhanced Main Trading Engine stopped');
       
     } catch (error) {
-      console.error('❌ Error stopping Enhanced MainTradingEngine:', error);
-      await this.logger.logError('Failed to stop Enhanced MainTradingEngine', error);
+      console.error('❌ Error stopping Enhanced Main Trading Engine:', error);
       throw error;
-    }
-  }
-
-  private async startMainLoop(): Promise<void> {
-    const intervalMs = (this.config.main_loop_interval_seconds || 30) * 1000;
-    console.log(`⏰ Starting enhanced main loop with ${intervalMs / 1000}s interval`);
-
-    // Run immediately
-    await this.executeMainLoop();
-
-    // Then run on interval
-    this.mainLoopInterval = setInterval(async () => {
-      if (this.isRunning) {
-        await this.executeMainLoop();
-      }
-    }, intervalMs);
-  }
-
-  private async executeMainLoop(): Promise<void> {
-    const loopStartTime = Date.now();
-    const cycleId = Math.floor(Date.now() / 1000);
-    
-    try {
-      console.log('\n🔄 ===== ENHANCED MAIN LOOP EXECUTION START =====');
-      console.log(`🆔 Cycle ID: ${cycleId}`);
-      console.log(`⏰ Loop Time: ${new Date().toISOString()}`);
-      console.log(`🧠 Active Trading Logic: ${this.config.trading_logic_type}`);
-      console.log(`📊 Trading Pairs: [${this.config.trading_pairs.join(', ')}]`);
-      console.log(`🔄 Configuration Active: ${this.config.is_active ? 'YES' : 'NO'}`);
-      console.log(`💰 Max Order Amount: $${this.config.max_order_amount_usd}`);
-      console.log(`🎯 Take Profit: ${this.config.take_profit_percent}%`);
-      
-      if (!this.config.is_active) {
-        console.log('⚠️ Configuration is INACTIVE - skipping trading loop');
-        await this.logger.logSystemInfo('Trading loop skipped - configuration inactive', { cycleId });
-        return;
-      }
-      
-      await this.logger.logCycleStart(cycleId, this.config);
-      
-      // 1. Quick sync positions with exchange first
-      console.log('\n📊 STEP 1: Quick Position Synchronization');
-      const step1StartTime = Date.now();
-      try {
-        await Promise.race([
-          this.positionSyncService.syncAllPositionsWithExchange(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 15000))
-        ]);
-        console.log(`✅ Step 1 completed in ${Date.now() - step1StartTime}ms`);
-      } catch (error) {
-        console.warn(`⚠️ Step 1 took ${Date.now() - step1StartTime}ms and failed, continuing anyway:`, error);
-      }
-      
-      // 2. Monitor and check order fills
-      console.log('\n👀 STEP 2: Position Monitoring & Order Fill Checks');
-      const step2StartTime = Date.now();
-      try {
-        await this.positionMonitorService.checkOrderFills(this.config);
-        console.log(`✅ Step 2 completed in ${Date.now() - step2StartTime}ms`);
-      } catch (error) {
-        console.error(`❌ Step 2 failed after ${Date.now() - step2StartTime}ms:`, error);
-      }
-      
-      // 3. ENHANCED SIGNAL ANALYSIS
-      console.log('\n🧠 STEP 3: Enhanced Signal Analysis & Generation');
-      console.log(`🎯 Using Trading Logic: ${this.config.trading_logic_type}`);
-      const step3StartTime = Date.now();
-      
-      if (this.config.trading_logic_type === 'logic2_data_driven') {
-        console.log('🔥 LOGIC 2 DETERMINISTIC MODE - Comprehensive analysis starting...');
-        console.log('📊 This will analyze swing lows, volume profiles, and ATR-based bounds');
-        console.log('✅ Enhanced logging will show every step of the process');
-      }
-      
-      try {
-        await this.signalAnalysisService.analyzeAndCreateSignals(this.config);
-        console.log(`✅ Step 3 completed in ${Date.now() - step3StartTime}ms`);
-      } catch (error) {
-        console.error(`❌ Step 3 failed after ${Date.now() - step3StartTime}ms:`, error);
-      }
-      
-      // 4. Execute signals
-      console.log('\n⚡ STEP 4: Signal Execution & Order Placement');
-      const step4StartTime = Date.now();
-      try {
-        await this.signalExecutionService.executeSignal(this.config);
-        console.log(`✅ Step 4 completed in ${Date.now() - step4StartTime}ms`);
-      } catch (error) {
-        console.error(`❌ Step 4 failed after ${Date.now() - step4StartTime}ms:`, error);
-      }
-      
-      // 5. Reconcile transactions every few loops (reduced frequency)
-      if (Math.random() < 0.05) { // 5% chance each loop (reduced from 10%)
-        console.log('\n🔍 STEP 5: Quick Transaction Reconciliation');
-        const step5StartTime = Date.now();
-        try {
-          await Promise.race([
-            this.reconciliationService.reconcileWithBybitHistory(3), // 3 hours lookback (reduced from 6)
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Reconciliation timeout')), 20000))
-          ]);
-          console.log(`✅ Step 5 completed in ${Date.now() - step5StartTime}ms`);
-        } catch (error) {
-          console.warn(`⚠️ Step 5 took ${Date.now() - step5StartTime}ms and failed, skipping:`, error);
-        }
-      }
-      
-      const totalLoopTime = Date.now() - loopStartTime;
-      console.log(`⏱️  Total loop execution time: ${totalLoopTime}ms`);
-      console.log('✅ ===== ENHANCED MAIN LOOP EXECUTION COMPLETE =====\n');
-      
-      await this.logger.logCycleComplete(cycleId, {
-        tradingLogicUsed: this.config.trading_logic_type,
-        tradingPairsProcessed: this.config.trading_pairs.length,
-        configurationActive: this.config.is_active,
-        executionTimeMs: totalLoopTime,
-        timestamp: new Date().toISOString()
-      });
-      
-    } catch (error) {
-      const totalLoopTime = Date.now() - loopStartTime;
-      console.error(`❌ Error in enhanced main loop execution after ${totalLoopTime}ms:`, error);
-      await this.logger.logError('Enhanced main loop execution failed', error, {
-        cycleId,
-        executionTimeMs: totalLoopTime,
-        tradingLogicType: this.config.trading_logic_type
-      });
     }
   }
 
   isEngineRunning(): boolean {
     return this.isRunning;
-  }
-
-  updateConfig(newConfig: TradingConfigData): void {
-    this.config = newConfig;
-    console.log('📋 Enhanced trading configuration updated');
-    console.log(`🧠 New Trading Logic: ${newConfig.trading_logic_type}`);
-    console.log(`⚙️ New Configuration Active: ${newConfig.is_active ? 'YES' : 'NO'}`);
-    if (newConfig.trading_logic_type === 'logic2_data_driven') {
-      console.log('🎯 Logic 2 Parameters Updated - Enhanced deterministic mode active');
-    }
-    
-    // Reinitialize enhanced signal analysis service with new config
-    this.signalAnalysisService = new EnhancedSignalAnalysisService(this.userId, this.bybitService);
-  }
-
-  // TESTING: Run pipeline tests
-  async runPipelineTests(): Promise<boolean> {
-    try {
-      console.log('\n🧪 ===== RUNNING TRADING PIPELINE TESTS =====');
-      
-      // Phase 3: Test simple signal generation
-      const simpleTestSuccess = await this.pipelineTest.testSimpleSignalGeneration(this.config);
-      if (!simpleTestSuccess) {
-        console.log('❌ Simple signal generation test failed');
-        return false;
-      }
-      
-      // Phase 4: Test full trading logic
-      const fullTestSuccess = await this.pipelineTest.testFullTradingLogic(this.config);
-      if (!fullTestSuccess) {
-        console.log('❌ Full trading logic test failed');
-        return false;
-      }
-      
-      console.log('✅ All pipeline tests passed successfully');
-      return true;
-      
-    } catch (error) {
-      console.error('❌ Error running pipeline tests:', error);
-      await this.logger.logError('Pipeline tests failed', error);
-      return false;
-    }
   }
 }
