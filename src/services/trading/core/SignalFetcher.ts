@@ -35,7 +35,7 @@ export class SignalFetcher {
 
       console.log(`📡 Found ${signals.length} unprocessed signals:`);
       signals.forEach((signal, index) => {
-        console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${parseFloat(signal.price).toFixed(6)} (ID: ${signal.id})`);
+        console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${parseFloat(signal.price.toString()).toFixed(6)} (ID: ${signal.id})`);
         console.log(`      Created: ${signal.created_at}, Confidence: ${signal.confidence}`);
       });
 

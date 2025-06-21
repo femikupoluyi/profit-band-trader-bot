@@ -75,7 +75,69 @@ export class TradingLogger {
     }
   }
 
-  private async log(logType: string, message: string, data?: any): Promise<void> {
+  async logTradeAction(action: string, symbol: string, data?: any): Promise<void> {
+    try {
+      await this.log('trade_action', `${action} for ${symbol}`, {
+        action,
+        symbol,
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to log trade action:', error);
+    }
+  }
+
+  async logSignalRejected(symbol: string, reason: string, data?: any): Promise<void> {
+    try {
+      await this.log('signal_rejected', `Signal rejected for ${symbol}: ${reason}`, {
+        symbol,
+        reason,
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to log signal rejected:', error);
+    }
+  }
+
+  async logEngineStatusChange(status: string, data?: any): Promise<void> {
+    try {
+      await this.log('engine_status', `Engine status changed to: ${status}`, {
+        status,
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to log engine status change:', error);
+    }
+  }
+
+  async logConfigurationChange(data: any): Promise<void> {
+    try {
+      await this.log('configuration_change', 'Configuration changed', {
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to log configuration change:', error);
+    }
+  }
+
+  async logMarketDataUpdate(symbol: string, data: any): Promise<void> {
+    try {
+      await this.log('market_data_update', `Market data updated for ${symbol}`, {
+        symbol,
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to log market data update:', error);
+    }
+  }
+
+  // Make log method public so other services can use it
+  async log(logType: string, message: string, data?: any): Promise<void> {
     const { error } = await supabase
       .from('trading_logs')
       .insert({
