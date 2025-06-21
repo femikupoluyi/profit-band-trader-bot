@@ -124,10 +124,11 @@ export class TradingLogger {
     }
   }
 
-  async logMarketDataUpdate(symbol: string, data: any): Promise<void> {
+  async logMarketDataUpdate(symbol: string, data: any, source?: string): Promise<void> {
     try {
       await this.log('market_data_update', `Market data updated for ${symbol}`, {
         symbol,
+        source: source || 'unknown',
         ...data,
         timestamp: new Date().toISOString()
       });
