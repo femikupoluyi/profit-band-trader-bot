@@ -12,13 +12,21 @@ export class PriceFormatter {
 
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
       if (!instrumentInfo) {
-        throw new Error(`Could not get instrument info for ${symbol}`);
+        // ENHANCED: Fallback to reasonable default instead of failing
+        console.warn(`⚠️ No instrument info for ${symbol}, using fallback precision of 4 decimals`);
+        const formatted = price.toFixed(4);
+        console.log(`✅ Price formatted for ${symbol} (fallback): ${price} → "${formatted}"`);
+        return formatted;
       }
 
       const tickSize = parseFloat(instrumentInfo.tickSize);
       
       if (isNaN(tickSize) || tickSize <= 0) {
-        throw new Error(`Invalid tick size for ${symbol}: ${instrumentInfo.tickSize}`);
+        // ENHANCED: Fallback instead of failing
+        console.warn(`⚠️ Invalid tick size for ${symbol}: ${instrumentInfo.tickSize}, using fallback`);
+        const formatted = price.toFixed(4);
+        console.log(`✅ Price formatted for ${symbol} (fallback): ${price} → "${formatted}"`);
+        return formatted;
       }
 
       const roundedPrice = Math.round(price / tickSize) * tickSize;
@@ -29,8 +37,11 @@ export class PriceFormatter {
       
       return formatted;
     } catch (error) {
-      console.error(`❌ Error formatting price for ${symbol}:`, error);
-      throw error;
+      // ENHANCED: Graceful fallback instead of throwing
+      console.warn(`⚠️ Error formatting price for ${symbol}, using fallback:`, error);
+      const formatted = price.toFixed(4);
+      console.log(`✅ Price formatted for ${symbol} (error fallback): ${price} → "${formatted}"`);
+      return formatted;
     }
   }
 

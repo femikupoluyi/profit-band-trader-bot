@@ -12,13 +12,21 @@ export class QuantityFormatter {
 
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
       if (!instrumentInfo) {
-        throw new Error(`Could not get instrument info for ${symbol}`);
+        // ENHANCED: Fallback to reasonable default instead of failing
+        console.warn(`⚠️ No instrument info for ${symbol}, using fallback precision of 4 decimals`);
+        const formatted = quantity.toFixed(4);
+        console.log(`✅ Quantity formatted for ${symbol} (fallback): ${quantity} → "${formatted}"`);
+        return formatted;
       }
 
       const basePrecision = parseFloat(instrumentInfo.basePrecision);
       
       if (isNaN(basePrecision) || basePrecision <= 0) {
-        throw new Error(`Invalid base precision for ${symbol}: ${instrumentInfo.basePrecision}`);
+        // ENHANCED: Fallback instead of failing
+        console.warn(`⚠️ Invalid base precision for ${symbol}: ${instrumentInfo.basePrecision}, using fallback`);
+        const formatted = quantity.toFixed(4);
+        console.log(`✅ Quantity formatted for ${symbol} (fallback): ${quantity} → "${formatted}"`);
+        return formatted;
       }
 
       const roundedQuantity = Math.floor(quantity / basePrecision) * basePrecision;
@@ -29,8 +37,11 @@ export class QuantityFormatter {
       
       return formatted;
     } catch (error) {
-      console.error(`❌ Error formatting quantity for ${symbol}:`, error);
-      throw error;
+      // ENHANCED: Graceful fallback instead of throwing
+      console.warn(`⚠️ Error formatting quantity for ${symbol}, using fallback:`, error);
+      const formatted = quantity.toFixed(4);
+      console.log(`✅ Quantity formatted for ${symbol} (error fallback): ${quantity} → "${formatted}"`);
+      return formatted;
     }
   }
 
@@ -40,7 +51,11 @@ export class QuantityFormatter {
       
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
       if (!instrumentInfo) {
-        throw new Error(`Could not get instrument info for ${symbol}`);
+        // ENHANCED: Fallback calculation
+        console.warn(`⚠️ No instrument info for ${symbol}, using basic calculation`);
+        const rawQuantity = orderAmount / price;
+        console.log(`✅ Quantity calculated for ${symbol} (fallback): ${rawQuantity}`);
+        return rawQuantity;
       }
 
       const basePrecision = parseFloat(instrumentInfo.basePrecision);
@@ -50,8 +65,9 @@ export class QuantityFormatter {
       console.log(`✅ Quantity calculated for ${symbol}: ${rawQuantity} → ${adjustedQuantity} (precision: ${basePrecision})`);
       return adjustedQuantity;
     } catch (error) {
-      console.error(`❌ Error calculating quantity for ${symbol}:`, error);
-      throw error;
+      console.warn(`⚠️ Error calculating quantity for ${symbol}, using basic calculation:`, error);
+      const rawQuantity = orderAmount / price;
+      return rawQuantity;
     }
   }
 

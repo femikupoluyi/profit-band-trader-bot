@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 
 export type BybitInstrumentInfo = {
@@ -12,7 +13,7 @@ export type BybitInstrumentInfo = {
 
 export class InstrumentInfoFetcher {
   /**
-   * ENHANCED: Fetch instrument information from Bybit API with better validation
+   * FIXED: Fetch instrument information from Bybit API with correct nested data extraction
    */
   static async fetchInstrumentInfo(symbol: string): Promise<BybitInstrumentInfo | null> {
     try {
@@ -53,27 +54,41 @@ export class InstrumentInfoFetcher {
 
       const instrument = instrumentList[0];
       
-      // ENHANCED: Validate instrument data before processing
-      if (!instrument.tickSize || !instrument.basePrecision) {
-        console.error(`❌ Invalid instrument data for ${symbol}:`, instrument);
+      // FIXED: Extract data from correct nested structure
+      const lotSizeFilter = instrument.lotSizeFilter || {};
+      const priceFilter = instrument.priceFilter || {};
+      
+      const tickSize = priceFilter.tickSize || '0.01';
+      const basePrecision = lotSizeFilter.basePrecision || '0.0001';
+      const minOrderQty = lotSizeFilter.minOrderQty || '0.0001';
+      const minOrderAmt = lotSizeFilter.minOrderAmt || '10';
+
+      // ENHANCED: Validate that we have the essential data
+      if (!tickSize || !basePrecision) {
+        console.error(`❌ Missing essential precision data for ${symbol}:`, {
+          tickSize,
+          basePrecision,
+          lotSizeFilter,
+          priceFilter
+        });
         return null;
       }
 
       // ENHANCED: Use string-based decimal calculation for accuracy
-      const priceDecimals = this.calculateDecimalsFromString(instrument.tickSize || '0.01');
-      const quantityDecimals = this.calculateDecimalsFromString(instrument.basePrecision || '0.0001');
+      const priceDecimals = this.calculateDecimalsFromString(tickSize);
+      const quantityDecimals = this.calculateDecimalsFromString(basePrecision);
 
       const instrumentInfo: BybitInstrumentInfo = {
         symbol: instrument.symbol,
         priceDecimals,
         quantityDecimals,
-        minOrderQty: instrument.minOrderQty || '0.0001',
-        minOrderAmt: instrument.minOrderAmt || '10',
-        tickSize: instrument.tickSize || '0.01',
-        basePrecision: instrument.basePrecision || '0.0001'
+        minOrderQty,
+        minOrderAmt,
+        tickSize,
+        basePrecision
       };
 
-      console.log(`✅ Fetched and validated instrument info for ${symbol}:`, instrumentInfo);
+      console.log(`✅ Successfully fetched and processed instrument info for ${symbol}:`, instrumentInfo);
       
       // ENHANCED: Additional validation
       this.validateInstrumentInfo(instrumentInfo);

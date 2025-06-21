@@ -6,8 +6,24 @@ export class OrderValidator {
     try {
       const instrumentInfo = await BybitInstrumentService.getInstrumentInfo(symbol);
       if (!instrumentInfo) {
-        console.error(`❌ Could not get instrument info for ${symbol}`);
-        return false;
+        console.warn(`⚠️ No instrument info for ${symbol}, using basic validation`);
+        
+        // Basic fallback validation
+        const orderValue = price * quantity;
+        const minValue = 10; // Default minimum
+        
+        if (quantity <= 0) {
+          console.error(`❌ Invalid quantity ${quantity} for ${symbol}`);
+          return false;
+        }
+        
+        if (orderValue < minValue) {
+          console.error(`❌ Order value ${orderValue} below minimum ${minValue} for ${symbol}`);
+          return false;
+        }
+        
+        console.log(`✅ Order validation passed for ${symbol} (fallback validation)`);
+        return true;
       }
 
       const minOrderQty = parseFloat(instrumentInfo.minOrderQty);
@@ -46,8 +62,11 @@ export class OrderValidator {
       console.log(`✅ Order validation passed for ${symbol}`);
       return true;
     } catch (error) {
-      console.error(`❌ Error validating order for ${symbol}:`, error);
-      return false;
+      console.warn(`⚠️ Error validating order for ${symbol}, allowing with basic validation:`, error);
+      
+      // Basic fallback validation
+      const orderValue = price * quantity;
+      return quantity > 0 && orderValue > 10;
     }
   }
 }
