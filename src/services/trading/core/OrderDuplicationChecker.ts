@@ -87,8 +87,8 @@ export class OrderDuplicationChecker {
         };
       }
 
-      // Check if new support is sufficiently lower
-      const supportLowerBoundPercent = config.support_lower_bound_percent || 5.0;
+      // FIXED: Use proper support lower bound percentage (minimum 5%)
+      const supportLowerBoundPercent = Math.max(config.support_lower_bound_percent || 5.0, 5.0);
       const minimumSupportPrice = firstOrderPrice * (1 - supportLowerBoundPercent / 100);
       
       console.log(`📊 Support level validation for ${symbol}:`);
