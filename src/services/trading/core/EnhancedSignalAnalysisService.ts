@@ -9,6 +9,7 @@ import { SupportResistanceService } from './SupportResistanceService';
 import { DataDrivenSupportAnalyzer } from './DataDrivenSupportAnalyzer';
 import { CandleDataService } from '../candleDataService';
 import { SupportLevelProcessor } from './SupportLevelProcessor';
+import { OrderDuplicationChecker } from './OrderDuplicationChecker';
 
 export class EnhancedSignalAnalysisService {
   private userId: string;
@@ -19,6 +20,7 @@ export class EnhancedSignalAnalysisService {
   private supportResistanceService: SupportResistanceService;
   private dataDrivenAnalyzer: DataDrivenSupportAnalyzer;
   private candleDataService: CandleDataService;
+  private orderDuplicationChecker: OrderDuplicationChecker;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
@@ -29,6 +31,7 @@ export class EnhancedSignalAnalysisService {
     this.supportResistanceService = new SupportResistanceService(bybitService);
     this.dataDrivenAnalyzer = new DataDrivenSupportAnalyzer();
     this.candleDataService = new CandleDataService();
+    this.orderDuplicationChecker = new OrderDuplicationChecker(userId);
   }
 
   async analyzeAndCreateSignals(config: TradingConfigData): Promise<void> {
@@ -129,45 +132,73 @@ export class EnhancedSignalAnalysisService {
       const supportPrice = supportAnalysis.supportLevel!;
       console.log(`📈 Support level identified for ${symbol}: $${supportPrice.toFixed(6)} (strength: ${supportAnalysis.strength})`);
 
-      // Calculate entry price - place limit order BELOW current price at support
-      const entryPrice = await SupportLevelProcessor.formatSupportLevel(symbol, supportPrice);
+      // FIXED: Check for order duplication and validate support level placement
+      const orderValidation = await this.orderDuplicationChecker.validateOrderPlacement(symbol, supportPrice, config);
       
-      // NEW LOGIC: Place proactive limit buy orders at support levels
-      // Only create signal if support is significantly below current price (opportunity exists)
+      if (!orderValidation.canPlaceOrder) {
+        console.log(`❌ ${symbol}: Order placement blocked - ${orderValidation.reason}`);
+        return false;
+      }
+
+      if (orderValidation.isSecondOrder) {
+        console.log(`📊 ${symbol}: This will be a second order (EOD scenario) with lower support level`);
+      }
+
+      // FIXED: Calculate entry price with proper offset ABOVE support level
+      const entryOffsetPercent = config.entry_offset_percent || 0.5;
+      const entryPrice = supportPrice * (1 + entryOffsetPercent / 100);
+      
+      console.log(`📊 Entry price calculation for ${symbol}:`);
+      console.log(`  - Support Level: $${supportPrice.toFixed(6)}`);
+      console.log(`  - Entry Offset: +${entryOffsetPercent}%`);
+      console.log(`  - Entry Price: $${entryPrice.toFixed(6)} (${entryOffsetPercent}% above support)`);
+
+      // Validate entry price is reasonable compared to current market
       const priceDistancePercent = ((currentPrice - entryPrice) / currentPrice) * 100;
       
-      if (priceDistancePercent < 0.5) {
-        console.log(`📊 ${symbol}: Support too close to current price (${priceDistancePercent.toFixed(2)}% below)`);
+      if (priceDistancePercent < 0.1) {
+        console.log(`📊 ${symbol}: Entry price too close to current price (${priceDistancePercent.toFixed(2)}% below)`);
         return false;
       }
 
-      if (priceDistancePercent > 10) {
-        console.log(`📊 ${symbol}: Support too far from current price (${priceDistancePercent.toFixed(2)}% below)`);
+      if (priceDistancePercent > 15) {
+        console.log(`📊 ${symbol}: Entry price too far from current price (${priceDistancePercent.toFixed(2)}% below)`);
         return false;
       }
 
-      // Create buy signal at support level
+      // Format entry price with proper precision
+      const formattedEntryPrice = await SupportLevelProcessor.formatSupportLevel(symbol, entryPrice);
+
+      // Create buy signal at calculated entry price (support + offset)
       const dbHelper = ServiceContainer.getDatabaseHelper(this.userId);
       const signal = await dbHelper.createSignal({
         user_id: this.userId,
         symbol: symbol,
         signal_type: 'buy',
-        price: entryPrice, // Place limit order AT support level
+        price: formattedEntryPrice,
         confidence: supportAnalysis.strength!,
-        reasoning: `${symbol} support identified at $${entryPrice.toFixed(6)} (${priceDistancePercent.toFixed(2)}% below current price $${currentPrice.toFixed(6)}) - ${config.trading_logic_type} analysis with ${supportAnalysis.touchCount} touches`
+        reasoning: `${symbol} LIMIT BUY at $${formattedEntryPrice.toFixed(6)} (${entryOffsetPercent}% above support $${supportPrice.toFixed(6)}, ${priceDistancePercent.toFixed(2)}% below market $${currentPrice.toFixed(6)}) - ${config.trading_logic_type} analysis${orderValidation.isSecondOrder ? ' (Second Order - EOD)' : ''}`
       });
 
-      console.log(`✅ PROACTIVE buy signal created for ${symbol}: ID ${signal.id} at $${entryPrice.toFixed(6)}`);
-      console.log(`📊 Signal Details: ${priceDistancePercent.toFixed(2)}% below market, confidence ${supportAnalysis.strength!.toFixed(3)}`);
+      console.log(`✅ ENTRY OFFSET buy signal created for ${symbol}: ID ${signal.id}`);
+      console.log(`📊 Signal Details:`);
+      console.log(`  - Support: $${supportPrice.toFixed(6)}`);
+      console.log(`  - Entry: $${formattedEntryPrice.toFixed(6)} (+${entryOffsetPercent}% above support)`);
+      console.log(`  - Market: $${currentPrice.toFixed(6)} (${priceDistancePercent.toFixed(2)}% above entry)`);
+      console.log(`  - Order Type: ${orderValidation.isSecondOrder ? 'Second Order (EOD)' : 'First Order'}`);
       
-      await this.logger.logSuccess(`Proactive buy signal created for ${symbol}`, {
+      await this.logger.logSuccess(`Entry offset buy signal created for ${symbol}`, {
         signalId: signal.id,
         symbol,
-        entryPrice,
+        supportPrice,
+        entryPrice: formattedEntryPrice,
         currentPrice,
+        entryOffsetPercent,
         priceDistancePercent,
         supportStrength: supportAnalysis.strength,
-        tradingLogic: config.trading_logic_type
+        tradingLogic: config.trading_logic_type,
+        isSecondOrder: orderValidation.isSecondOrder,
+        existingOrders: orderValidation.existingOrders.length
       });
 
       return true;
