@@ -100,4 +100,35 @@ export class TradeValidator {
       throw error;
     }
   }
+
+  // ADDED: Missing method that SignalCreationService and SignalValidationService expect
+  static async calculateQuantity(
+    symbol: string,
+    maxOrderAmountUsd: number,
+    entryPrice: number,
+    config: TradingConfigData
+  ): Promise<number> {
+    return this.calculateOptimalQuantity(symbol, maxOrderAmountUsd, entryPrice);
+  }
+
+  // ADDED: Missing method that SignalCreationService and SignalValidationService expect
+  static async validateTradeParameters(
+    symbol: string,
+    quantity: number,
+    price: number,
+    config: TradingConfigData
+  ): Promise<boolean> {
+    try {
+      const validation = await this.validateTrade(
+        symbol,
+        quantity,
+        price,
+        config.max_order_amount_usd || 100
+      );
+      return validation.isValid;
+    } catch (error) {
+      console.error(`❌ Error validating trade parameters for ${symbol}:`, error);
+      return false;
+    }
+  }
 }
