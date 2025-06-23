@@ -42,8 +42,8 @@ export class EnhancedSignalAnalysisService {
       if (config.trading_pairs.includes('BTCUSDT')) {
         console.log('\n🔍 ===== DEBUGGING BTCUSDT SUPPORT ANALYSIS =====');
         const { SupportAnalysisDebugger } = await import('./SupportAnalysisDebugger');
-        const debugger = new SupportAnalysisDebugger();
-        await debugger.debugSupportAnalysis('BTCUSDT', config);
+        const supportDebugger = new SupportAnalysisDebugger();
+        await supportDebugger.debugSupportAnalysis('BTCUSDT', config);
         console.log('\n🔍 ===== END BTCUSDT DEBUG =====');
       }
       
