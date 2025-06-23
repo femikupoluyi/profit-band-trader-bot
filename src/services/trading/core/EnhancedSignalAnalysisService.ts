@@ -38,6 +38,15 @@ export class EnhancedSignalAnalysisService {
     try {
       console.log('\n🧠 ===== ENHANCED SIGNAL ANALYSIS & CREATION =====');
       
+      // ADDED: Debug support analysis for BTCUSDT specifically
+      if (config.trading_pairs.includes('BTCUSDT')) {
+        console.log('\n🔍 ===== DEBUGGING BTCUSDT SUPPORT ANALYSIS =====');
+        const { SupportAnalysisDebugger } = await import('./SupportAnalysisDebugger');
+        const debugger = new SupportAnalysisDebugger();
+        await debugger.debugSupportAnalysis('BTCUSDT', config);
+        console.log('\n🔍 ===== END BTCUSDT DEBUG =====');
+      }
+      
       await this.logger.logSystemInfo('Starting signal analysis and creation', {
         tradingLogic: config.trading_logic_type,
         activePairs: config.trading_pairs.length,
