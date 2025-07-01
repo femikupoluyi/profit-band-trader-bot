@@ -73,11 +73,12 @@ export class SupportAnalysisDebugger {
     
     for (const price of lowPrices) {
       const key = Math.round(price * 200) / 200; // Round to nearest 0.005
-      if (!priceGroups[key]) {
-        priceGroups[key] = { count: 0, prices: [] };
+      const keyStr = key.toString();
+      if (!priceGroups[keyStr]) {
+        priceGroups[keyStr] = { count: 0, prices: [] };
       }
-      priceGroups[key].count++;
-      priceGroups[key].prices.push(price);
+      priceGroups[keyStr].count++;
+      priceGroups[keyStr].prices.push(price);
     }
 
     // Step 4: Find clusters with most touches
@@ -143,7 +144,7 @@ export class SupportAnalysisDebugger {
       if (marketData && marketData.length > 0) {
         marketData.forEach((entry, i) => {
           const date = new Date(entry.timestamp).toISOString();
-          console.log(`  ${i + 1}. ${date}: $${parseFloat(entry.price).toFixed(2)} (Volume: ${entry.volume || 'N/A'})`);
+          console.log(`  ${i + 1}. ${date}: $${parseFloat(entry.price.toString()).toFixed(2)} (Volume: ${entry.volume || 'N/A'})`);
         });
 
         const prices = marketData.map(d => parseFloat(d.price.toString()));
