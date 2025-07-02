@@ -15,26 +15,29 @@ export class PositionValidator {
       console.log(`📊 Config limits - Max active pairs: ${config.max_active_pairs}, Max positions per pair: ${config.max_positions_per_pair}`);
 
       // PHASE 1: Check max positions per pair for this specific symbol FIRST - MOST CRITICAL
+      // FIXED: Only count BUY orders for position limits (sell orders are take-profit orders)
       const { count: currentPositions } = await supabase
         .from('trades')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
+        .eq('side', 'buy') // CRITICAL FIX: Only count buy orders
         .in('status', ['pending', 'filled', 'partial_filled']);
 
-      console.log(`📈 CRITICAL CHECK: Current positions for ${symbol}: ${currentPositions || 0}/${config.max_positions_per_pair}`);
+      console.log(`📈 CRITICAL CHECK: Current BUY positions for ${symbol}: ${currentPositions || 0}/${config.max_positions_per_pair}`);
 
       if ((currentPositions || 0) >= config.max_positions_per_pair) {
-        console.error(`❌ POSITION LIMIT EXCEEDED: Max positions per pair for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
-        console.error(`🚨 BLOCKING ORDER: This would exceed the configured limit of ${config.max_positions_per_pair} positions for ${symbol}`);
+        console.error(`❌ POSITION LIMIT EXCEEDED: Max buy positions per pair for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
+        console.error(`🚨 BLOCKING ORDER: This would exceed the configured limit of ${config.max_positions_per_pair} buy positions for ${symbol}`);
         return false;
       }
 
-      // PHASE 2: Check max active pairs
+      // PHASE 2: Check max active pairs (only count buy orders)
       const { data: activeTrades } = await supabase
         .from('trades')
         .select('symbol')
         .eq('user_id', this.userId)
+        .eq('side', 'buy') // CRITICAL FIX: Only count buy orders for active pairs
         .in('status', ['pending', 'filled', 'partial_filled']);
 
       const uniquePairs = new Set(activeTrades?.map(trade => trade.symbol) || []);
@@ -67,15 +70,17 @@ export class PositionValidator {
 
   async getCurrentPositionCount(symbol: string): Promise<number> {
     try {
+      // FIXED: Only count buy orders for position limits
       const { count } = await supabase
         .from('trades')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
+        .eq('side', 'buy') // CRITICAL FIX: Only count buy orders
         .in('status', ['pending', 'filled', 'partial_filled']);
 
       const result = count || 0;
-      console.log(`📊 Current position count for ${symbol}: ${result}`);
+      console.log(`📊 Current BUY position count for ${symbol}: ${result}`);
       return result;
     } catch (error) {
       console.error(`❌ Error getting position count for ${symbol}:`, error);
@@ -85,15 +90,17 @@ export class PositionValidator {
 
   async getActivePairsCount(): Promise<number> {
     try {
+      // FIXED: Only count buy orders for active pairs
       const { data: activeTrades } = await supabase
         .from('trades')
         .select('symbol')
         .eq('user_id', this.userId)
+        .eq('side', 'buy') // CRITICAL FIX: Only count buy orders
         .in('status', ['pending', 'filled', 'partial_filled']);
 
       const uniquePairs = new Set(activeTrades?.map(trade => trade.symbol) || []);
       const result = uniquePairs.size;
-      console.log(`📊 Active pairs count: ${result} (${Array.from(uniquePairs).join(', ')})`);
+      console.log(`📊 Active pairs count (buy orders only): ${result} (${Array.from(uniquePairs).join(', ')})`);
       return result;
     } catch (error) {
       console.error('❌ Error getting active pairs count:', error);
@@ -140,12 +147,13 @@ export class PositionValidator {
         };
       }
 
-      // Check active pairs (only if this would be a new pair)
+      // Check active pairs (only if this would be a new pair) - only count buy orders
       const { data: existingForSymbol } = await supabase
         .from('trades')
         .select('id')
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
+        .eq('side', 'buy') // CRITICAL FIX: Only count buy orders
         .in('status', ['pending', 'filled', 'partial_filled'])
         .limit(1);
 

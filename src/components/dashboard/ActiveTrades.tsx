@@ -4,6 +4,8 @@ import { useActiveTrades } from '@/hooks/useActiveTrades';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import BybitSyncButton from '@/components/trading/BybitSyncButton';
+import EmergencySyncButton from '@/components/trading/EmergencySyncButton';
 
 interface ActiveTradesProps {
   onTradeUpdate?: () => void;
@@ -32,16 +34,20 @@ const ActiveTrades = ({ onTradeUpdate }: ActiveTradesProps) => {
               Manual refresh
             </span>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefresh}
-            disabled={isLoading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <BybitSyncButton onSyncComplete={handleRefresh} />
+            <EmergencySyncButton onSyncComplete={handleRefresh} />
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
