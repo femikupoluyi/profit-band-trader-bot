@@ -28,15 +28,14 @@ export class OrderValidator {
 
       const minOrderQty = parseFloat(instrumentInfo.minOrderQty);
       const minOrderAmt = parseFloat(instrumentInfo.minOrderAmt);
-      const basePrecision = parseFloat(instrumentInfo.basePrecision);
-      const tickSize = parseFloat(instrumentInfo.tickSize);
       const orderValue = price * quantity;
 
       console.log(`🔍 Validating order for ${symbol}:`);
-      console.log(`  - Quantity: ${quantity} (min: ${minOrderQty}, precision: ${basePrecision})`);
-      console.log(`  - Price: ${price} (tick: ${tickSize})`);
+      console.log(`  - Quantity: ${quantity} (min: ${minOrderQty})`);
+      console.log(`  - Price: ${price}`);
       console.log(`  - Order value: ${orderValue} (min: ${minOrderAmt})`);
 
+      // Use minimum order requirements from API - these are the actual Bybit requirements
       if (quantity < minOrderQty) {
         console.error(`❌ Quantity ${quantity} below minimum ${minOrderQty} for ${symbol}`);
         return false;
@@ -47,19 +46,29 @@ export class OrderValidator {
         return false;
       }
 
-      const quantityRemainder = Number(((quantity / basePrecision) % 1).toFixed(10));
-      if (quantityRemainder > 0.0000000001) {
-        console.error(`❌ Quantity ${quantity} is not a valid multiple of basePrecision ${basePrecision} for ${symbol} (remainder: ${quantityRemainder})`);
+      // FIXED: Use the exact precision formatters instead of floating-point arithmetic
+      // Format the values using API-derived precision and then validate they match
+      const formattedPrice = price.toFixed(instrumentInfo.priceDecimals);
+      const formattedQuantity = quantity.toFixed(instrumentInfo.quantityDecimals);
+      
+      const parsedPrice = parseFloat(formattedPrice);
+      const parsedQuantity = parseFloat(formattedQuantity);
+      
+      // Check if the formatted values are close enough to the original (tolerance for precision)
+      const priceTolerance = 0.000001;
+      const quantityTolerance = 0.000001;
+      
+      if (Math.abs(price - parsedPrice) > priceTolerance) {
+        console.error(`❌ Price ${price} cannot be properly formatted for ${symbol} (formatted: ${formattedPrice})`);
+        return false;
+      }
+      
+      if (Math.abs(quantity - parsedQuantity) > quantityTolerance) {
+        console.error(`❌ Quantity ${quantity} cannot be properly formatted for ${symbol} (formatted: ${formattedQuantity})`);
         return false;
       }
 
-      const priceRemainder = Number(((price / tickSize) % 1).toFixed(10));
-      if (priceRemainder > 0.0000000001) {
-        console.error(`❌ Price ${price} is not a valid multiple of tickSize ${tickSize} for ${symbol} (remainder: ${priceRemainder})`);
-        return false;
-      }
-
-      console.log(`✅ Order validation passed for ${symbol}`);
+      console.log(`✅ Order validation passed for ${symbol} using API-derived precision`);
       return true;
     } catch (error) {
       console.warn(`⚠️ Error validating order for ${symbol}, allowing with basic validation:`, error);
