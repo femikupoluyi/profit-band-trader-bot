@@ -15,18 +15,30 @@ export class PositionValidator {
       console.log(`📊 Config limits - Max active pairs: ${config.max_active_pairs}, Max positions per pair: ${config.max_positions_per_pair}`);
 
       // PHASE 1: Check max positions per pair for this specific symbol FIRST - MOST CRITICAL
-      // FIXED: Only count BUY orders for position limits (sell orders are take-profit orders)
-      const { count: currentPositions } = await supabase
+      // Get REAL-TIME count with additional safety checks
+      const { data: existingTrades, error } = await supabase
         .from('trades')
-        .select('*', { count: 'exact', head: true })
+        .select('id, status, created_at')
         .eq('user_id', this.userId)
         .eq('symbol', symbol)
-        .eq('side', 'buy') // CRITICAL FIX: Only count buy orders
-        .in('status', ['pending', 'filled', 'partial_filled']);
+        .eq('side', 'buy') // CRITICAL: Only count buy orders
+        .in('status', ['pending', 'filled', 'partial_filled'])
+        .order('created_at', { ascending: false });
 
-      console.log(`📈 CRITICAL CHECK: Current BUY positions for ${symbol}: ${currentPositions || 0}/${config.max_positions_per_pair}`);
+      if (error) {
+        console.error(`❌ Database error checking positions for ${symbol}:`, error);
+        return false; // Fail safe - block if we can't verify
+      }
 
-      if ((currentPositions || 0) >= config.max_positions_per_pair) {
+      const currentPositions = existingTrades?.length || 0;
+      console.log(`📈 REAL-TIME CHECK: Current BUY positions for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
+      
+      // List existing trades for debugging
+      if (existingTrades && existingTrades.length > 0) {
+        console.log(`📋 Existing trades for ${symbol}:`, existingTrades.map(t => `${t.id.slice(0,8)}(${t.status})`).join(', '));
+      }
+
+      if (currentPositions >= config.max_positions_per_pair) {
         console.error(`❌ POSITION LIMIT EXCEEDED: Max buy positions per pair for ${symbol}: ${currentPositions}/${config.max_positions_per_pair}`);
         console.error(`🚨 BLOCKING ORDER: This would exceed the configured limit of ${config.max_positions_per_pair} buy positions for ${symbol}`);
         return false;

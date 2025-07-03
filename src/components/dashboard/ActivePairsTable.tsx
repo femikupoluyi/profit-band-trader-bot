@@ -132,10 +132,13 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
                   onChange={(e) => setAutoRefresh(e.target.checked)}
                   className="rounded"
                 />
-                Auto-refresh (30s)
+                Auto-refresh data (30s)
               </label>
               <span className={`text-xs px-2 py-1 rounded ${autoRefresh ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                {autoRefresh ? 'Auto-refresh: ON' : 'Manual refresh only'}
+                {autoRefresh ? 'UI refresh: ON' : 'Manual refresh only'}
+              </span>
+              <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                ⚠️ This only refreshes UI data, not trading logic
               </span>
             </div>
           </div>

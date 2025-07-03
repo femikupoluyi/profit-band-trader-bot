@@ -10,6 +10,7 @@ import { SignalProcessorCore } from './execution/SignalProcessor';
 import { PositionCleanupService } from './PositionCleanupService';
 import { ConfigurationService } from './ConfigurationService';
 import { SignalFetcher } from './SignalFetcher';
+import { TradingEngineMonitor } from './TradingEngineMonitor';
 
 export class MainTradingEngine {
   private userId: string;
@@ -21,6 +22,7 @@ export class MainTradingEngine {
   private positionCleanupService: PositionCleanupService;
   private configurationService: ConfigurationService;
   private signalFetcher: SignalFetcher;
+  private monitor: TradingEngineMonitor;
 
   constructor(userId: string, config: TradingConfigData) {
     this.userId = userId;
@@ -29,6 +31,7 @@ export class MainTradingEngine {
     this.positionCleanupService = new PositionCleanupService(userId);
     this.configurationService = new ConfigurationService(userId);
     this.signalFetcher = new SignalFetcher(userId);
+    this.monitor = new TradingEngineMonitor(userId);
   }
 
   async initialize(): Promise<void> {
@@ -123,6 +126,21 @@ export class MainTradingEngine {
     try {
       console.log(`\n🔄 ===== ENHANCED MAIN LOOP EXECUTION START (Cycle #${cycleId}) =====`);
       
+      // CRITICAL SAFETY CHECKS FIRST
+      const shouldContinue = await this.monitor.shouldContinueTrading();
+      if (!shouldContinue) {
+        console.log('🛑 SAFETY CHECK FAILED - Stopping trading engine');
+        await this.stop();
+        return;
+      }
+
+      const isRunaway = await this.monitor.detectRunawayTrading();
+      if (isRunaway) {
+        console.error('🚨 RUNAWAY TRADING DETECTED - Emergency stop');
+        await this.stop();
+        return;
+      }
+
       // Refresh configuration at start of each cycle
       const freshConfig = await this.configurationService.loadUserConfig();
       if (freshConfig) {
@@ -130,7 +148,8 @@ export class MainTradingEngine {
       }
 
       if (!this.config.is_active) {
-        console.log('⚠️ Trading is not active - skipping cycle');
+        console.log('⚠️ Trading configuration is not active - stopping engine');
+        await this.stop();
         return;
       }
 

@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { tradingManager } from '@/services/tradingManager';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import EmergencySyncButton from './EmergencySyncButton';
 
 const TradingStatus = () => {
   const { user } = useAuth();
@@ -58,11 +59,26 @@ const TradingStatus = () => {
     
     setIsLoading(true);
     try {
+      // Force stop trading engine
       await tradingManager.stopTradingForUser(user.id);
+      
+      // Also disable trading configuration to ensure complete stop
+      const { error } = await supabase
+        .from('trading_configs')
+        .update({ 
+          is_active: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error disabling config:', error);
+      }
+      
       setIsRunning(false);
       toast({
         title: "Trading Stopped",
-        description: "Your trading bot has been stopped.",
+        description: "Trading bot stopped and configuration disabled for safety.",
       });
     } catch (error) {
       console.error('Failed to stop trading:', error);
@@ -211,7 +227,7 @@ const TradingStatus = () => {
               className="flex items-center gap-2"
             >
               <Square className="h-4 w-4" />
-              {isLoading ? "Stopping..." : "Stop Trading"}
+              {isLoading ? "Stopping..." : "FORCE STOP"}
             </Button>
           )}
           
@@ -224,6 +240,8 @@ const TradingStatus = () => {
             <RotateCcw className="h-4 w-4" />
             {isLoading ? "Restarting..." : "Restart"}
           </Button>
+
+          <EmergencySyncButton onSyncComplete={() => console.log('Emergency sync completed')} />
 
           <Button 
             onClick={handleSimulateEOD} 
@@ -247,7 +265,9 @@ const TradingStatus = () => {
         </div>
 
         <div className="text-sm text-gray-600">
-          <p><strong>Status:</strong> {isRunning ? "Bot is actively monitoring markets and executing trades" : "Bot is stopped - no trading activity"}</p>
+          <p><strong>Status:</strong> {isRunning ? "⚠️ Bot is actively executing trades - Monitor carefully" : "✅ Bot is safely stopped - no trading activity"}</p>
+          <p><strong>FORCE STOP:</strong> Stops trading engine AND disables configuration for complete safety</p>
+          <p><strong>Emergency Sync:</strong> Fixes data inconsistencies by syncing all trades with Bybit</p>
           <p><strong>EOD Simulation:</strong> Forces end-of-day logic to run and close profitable positions</p>
           <p><strong>System Test:</strong> Verifies API credentials, database connection, and configuration</p>
         </div>
