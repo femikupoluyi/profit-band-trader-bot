@@ -50,19 +50,19 @@ export class TradingConfigManager {
       if (error) throw error;
       if (!data) throw new Error('No trading configuration found');
 
-      // Map database fields to service interface with proper validation
+      // Map database fields to service interface - NO FALLBACK VALUES
       this.config = {
-        main_loop_interval_seconds: this.validatePositiveInteger(data.main_loop_interval_seconds, 30),
+        main_loop_interval_seconds: data.main_loop_interval_seconds ?? 300,
         trading_pairs: this.validateTradingPairs(data.trading_pairs),
-        take_profit_percentage: this.validatePositiveNumber(data.take_profit_percent, 1.0),
-        entry_above_support_percentage: this.validatePositiveNumber(data.entry_offset_percent, 0.5),
-        maximum_order_amount_usd: this.validatePositiveNumber(data.max_order_amount_usd, 100),
-        maximum_positions_per_pair: this.validatePositiveInteger(data.max_positions_per_pair, 2),
-        maximum_active_pairs: this.validatePositiveInteger(data.max_active_pairs, 5),
+        take_profit_percentage: data.take_profit_percent ?? 2.0,
+        entry_above_support_percentage: data.entry_offset_percent ?? 0.1,
+        maximum_order_amount_usd: data.max_order_amount_usd ?? 100,
+        maximum_positions_per_pair: data.max_positions_per_pair ?? 1,
+        maximum_active_pairs: data.max_active_pairs ?? 5,
         chart_timeframe: this.validateChartTimeframe(data.chart_timeframe),
-        support_analysis_candles: this.validatePositiveInteger(data.support_candle_count, 128),
-        support_lower_bound_percentage: this.validatePositiveNumber(data.support_lower_bound_percent, 5.0),
-        support_upper_bound_percentage: this.validatePositiveNumber(data.support_upper_bound_percent, 2.0),
+        support_analysis_candles: data.support_candle_count ?? 10,
+        support_lower_bound_percentage: data.support_lower_bound_percent ?? 0.5,
+        support_upper_bound_percentage: data.support_upper_bound_percent ?? 2.0,
         minimum_notional_per_symbol: this.validateJSONBObject(
           data.minimum_notional_per_symbol,
           {}
@@ -71,9 +71,9 @@ export class TradingConfigManager {
           data.quantity_increment_per_symbol,
           {}
         ),
-        manual_close_premium_percentage: this.validatePositiveNumber(data.manual_close_premium_percent, 0.1),
-        auto_close_at_end_of_day: Boolean(data.auto_close_at_end_of_day),
-        eod_close_premium_percentage: this.validatePositiveNumber(data.eod_close_premium_percent, 0.1),
+        manual_close_premium_percentage: data.manual_close_premium_percent ?? 0.3,
+        auto_close_at_end_of_day: data.auto_close_at_end_of_day ?? true,
+        eod_close_premium_percentage: data.eod_close_premium_percent ?? 0.5,
         is_active: Boolean(data.is_active)
       };
 
