@@ -28,8 +28,8 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   const { toast } = useToast();
   const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
   
-  // Enable auto-refresh for dashboard view ONLY
-  const { activeTrades, isLoading, refetch } = useActiveTrades(true);
+  // Disable auto-refresh for better performance - only manual refresh
+  const { activeTrades, isLoading, refetch } = useActiveTrades(false);
 
   const handleCloseTrade = async (trade: ActiveTrade) => {
     setClosingTrades(prev => new Set(prev).add(trade.id));
@@ -123,9 +123,9 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
             Active Trading Pairs
-            {/* Show auto-refresh indicator for dashboard */}
-            <span className="text-xs text-muted-foreground bg-green-100 px-2 py-1 rounded">
-              Auto-refresh: ON
+            {/* Show manual refresh indicator */}
+            <span className="text-xs text-muted-foreground bg-blue-100 px-2 py-1 rounded">
+              Manual refresh only
             </span>
           </div>
           <BybitSyncButton onSyncComplete={handleSyncComplete} />
