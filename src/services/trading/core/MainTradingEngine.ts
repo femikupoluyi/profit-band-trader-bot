@@ -126,20 +126,24 @@ export class MainTradingEngine {
     try {
       console.log(`\n🔄 ===== ENHANCED MAIN LOOP EXECUTION START (Cycle #${cycleId}) =====`);
       
-      // CRITICAL SAFETY CHECKS FIRST
+      // CRITICAL SAFETY CHECKS FIRST - MUST PASS BEFORE ANY PROCESSING
+      console.log('🔍 STEP 0: Critical Safety Checks...');
+      
       const shouldContinue = await this.monitor.shouldContinueTrading();
       if (!shouldContinue) {
-        console.log('🛑 SAFETY CHECK FAILED - Stopping trading engine');
+        console.error('🛑 CRITICAL: Trading should not continue - stopping engine immediately');
         await this.stop();
         return;
       }
 
       const isRunaway = await this.monitor.detectRunawayTrading();
       if (isRunaway) {
-        console.error('🚨 RUNAWAY TRADING DETECTED - Emergency stop');
+        console.error('🚨 CRITICAL: Runaway trading detected - emergency stop triggered');
         await this.stop();
         return;
       }
+      
+      console.log('✅ STEP 0: All safety checks passed');
 
       // Refresh configuration at start of each cycle
       const freshConfig = await this.configurationService.loadUserConfig();

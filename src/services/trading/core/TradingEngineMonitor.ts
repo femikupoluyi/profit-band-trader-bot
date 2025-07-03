@@ -57,13 +57,28 @@ export class TradingEngineMonitor {
         .gte('created_at', fiveMinutesAgo);
 
       const recentOrderCount = count || 0;
+      console.log(`🔍 Runaway trading check: ${recentOrderCount} orders in last 5 minutes`);
       
-      if (recentOrderCount > 10) { // More than 10 orders in 5 minutes
-        console.error(`🚨 RUNAWAY TRADING DETECTED: ${recentOrderCount} orders in last 5 minutes`);
-        await this.logger.logError('Runaway trading detected - emergency stop', {
+      if (recentOrderCount > 5) { // REDUCED THRESHOLD: More than 5 orders in 5 minutes
+        console.error(`🚨 RUNAWAY TRADING DETECTED: ${recentOrderCount} orders in last 5 minutes (threshold: 5)`);
+        await this.logger.logError('RUNAWAY TRADING DETECTED - emergency stop triggered', {
           recentOrderCount,
-          timeframe: '5 minutes'
+          threshold: 5,
+          timeframe: '5 minutes',
+          severity: 'CRITICAL'
         });
+        
+        // CRITICAL: Disable trading configuration immediately
+        try {
+          await supabase
+            .from('trading_configs')
+            .update({ is_active: false })
+            .eq('user_id', this.userId);
+          console.log('🚨 EMERGENCY: Trading configuration disabled due to runaway trading');
+        } catch (error) {
+          console.error('❌ Failed to disable trading config during emergency:', error);
+        }
+        
         return true;
       }
 

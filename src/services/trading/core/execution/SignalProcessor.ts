@@ -6,6 +6,7 @@ import { ServiceContainer } from '../ServiceContainer';
 import { PositionValidator } from '../PositionValidator';
 import { TradeValidator } from '../TradeValidator';
 import { OrderExecution } from '../OrderExecution';
+import { ConfigurationValidator } from '../ConfigurationValidator';
 import { BybitService } from '@/services/bybitService';
 import { CredentialsManager } from '../../credentialsManager';
 
@@ -24,11 +25,13 @@ export class SignalProcessorCore {
   private userId: string;
   private logger: TradingLogger;
   private positionValidator: PositionValidator;
+  private configValidator: ConfigurationValidator;
 
   constructor(userId: string) {
     this.userId = userId;
     this.logger = ServiceContainer.getLogger(userId);
     this.positionValidator = new PositionValidator(userId);
+    this.configValidator = new ConfigurationValidator(userId);
   }
 
   async processSignals(signals: any[]): Promise<SignalProcessingResult> {
@@ -121,15 +124,36 @@ export class SignalProcessorCore {
         maxPositionsPerPair: config.max_positions_per_pair
       }, null, 2)}`);
 
-      if (!config.is_active) {
-        throw new Error('Trading configuration is not active');
+      // CRITICAL: Validate configuration integrity
+      const configValidation = await this.configValidator.validateConfigurationIntegrity(config);
+      if (!configValidation.isValid) {
+        const errorMsg = `CONFIGURATION VALIDATION FAILED: ${configValidation.criticalErrors.join(', ')}`;
+        console.error(`🚨 ${errorMsg}`);
+        throw new Error(errorMsg);
       }
 
-      // Validate position limits
-      const positionValidation = await this.positionValidator.validateWithDetailedLogging(signal.symbol, config);
-      if (!positionValidation.isValid) {
-        throw new Error(positionValidation.reason || 'Position validation failed');
+      // CRITICAL: Real-time safety check
+      const safetyCheck = await this.configValidator.performRealTimeSafetyCheck();
+      if (!safetyCheck.isSafe) {
+        const errorMsg = `SAFETY CHECK FAILED: ${safetyCheck.reason}`;
+        console.error(`🚨 ${errorMsg}`);
+        throw new Error(errorMsg);
       }
+
+      // CRITICAL: Validate position limits before ANY processing
+      console.log(`🔍 CRITICAL VALIDATION: Checking position limits for ${signal.symbol}...`);
+      console.log(`📊 Config limits - Max active pairs: ${config.max_active_pairs}, Max positions per pair: ${config.max_positions_per_pair}`);
+      
+      const positionValidation = await this.positionValidator.validateWithDetailedLogging(signal.symbol, config);
+      console.log(`📋 Position validation result for ${signal.symbol}:`, positionValidation);
+      
+      if (!positionValidation.isValid) {
+        console.error(`❌ POSITION LIMITS EXCEEDED for ${signal.symbol}: ${positionValidation.reason}`);
+        console.error(`🚨 BLOCKING EXECUTION: Current positions: ${positionValidation.currentPositions}/${positionValidation.limits.maxPositionsPerPair}, Active pairs: ${positionValidation.activePairs}/${positionValidation.limits.maxActivePairs}`);
+        throw new Error(`POSITION LIMITS EXCEEDED: ${positionValidation.reason}`);
+      }
+      
+      console.log(`✅ POSITION LIMITS CHECK PASSED for ${signal.symbol}: ${positionValidation.currentPositions}/${positionValidation.limits.maxPositionsPerPair} positions, ${positionValidation.activePairs}/${positionValidation.limits.maxActivePairs} pairs`);
 
       // Calculate trade parameters
       const signalPrice = parseFloat(signal.price.toString());
