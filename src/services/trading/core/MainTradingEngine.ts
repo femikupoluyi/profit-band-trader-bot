@@ -63,20 +63,21 @@ export class MainTradingEngine {
 
   private async performInitialCleanup(): Promise<void> {
     try {
-      console.log('🧹 Performing initial position cleanup...');
+      console.log('🧹 Performing lightweight startup checks...');
       
-      // Audit current positions
+      // Quick audit without heavy cleanup during startup
       const audit = await this.positionCleanupService.auditPositions();
       
       if (audit.excessivePositions.length > 0) {
-        console.log(`⚠️ Found excessive positions in: ${audit.excessivePositions.join(', ')}`);
-        await this.positionCleanupService.cleanupAllExcessivePositions(this.config.max_positions_per_pair);
+        console.log(`⚠️ Found ${audit.excessivePositions.length} symbols with excessive positions - will clean during first cycle`);
+        // Don't block startup with cleanup - defer to main loop
       } else {
-        console.log('✅ No excessive positions found');
+        console.log('✅ Position counts look reasonable');
       }
 
     } catch (error) {
-      console.error('❌ Error in initial cleanup:', error);
+      console.error('❌ Error in startup checks:', error);
+      // Don't fail startup for audit issues
     }
   }
 
@@ -89,12 +90,7 @@ export class MainTradingEngine {
     try {
       console.log('🚀 Starting Enhanced Main Trading Engine...');
       
-      // Refresh configuration before starting
-      const freshConfig = await this.configurationService.loadUserConfig();
-      if (freshConfig) {
-        this.config = freshConfig;
-      }
-
+      // Lightweight config check - don't reload unnecessarily
       if (!this.config.is_active) {
         console.log('⚠️ Trading configuration is not active - engine will not start');
         return;
@@ -102,18 +98,16 @@ export class MainTradingEngine {
 
       this.isRunning = true;
       
-      // Execute first cycle immediately
-      await this.executeMainLoop();
-      
-      // Schedule subsequent cycles
+      // Start scheduler without immediate execution to speed up startup
       const intervalMs = this.config.main_loop_interval_seconds * 1000;
+      console.log(`✅ Enhanced Main Trading Engine started - first cycle in ${intervalMs}ms`);
+      
+      // Schedule cycles without blocking startup
       this.intervalId = setInterval(() => {
         this.executeMainLoop().catch(error => {
           console.error('❌ Error in scheduled main loop:', error);
         });
       }, intervalMs);
-
-      console.log(`✅ Enhanced Main Trading Engine started with ${intervalMs}ms interval`);
       
     } catch (error) {
       console.error('❌ Failed to start Enhanced Main Trading Engine:', error);

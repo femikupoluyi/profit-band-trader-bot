@@ -27,9 +27,10 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
+  const [autoRefresh, setAutoRefresh] = useState(false);
   
-  // Disable auto-refresh for better performance - only manual refresh
-  const { activeTrades, isLoading, refetch } = useActiveTrades(false);
+  // Use controlled auto-refresh based on user preference
+  const { activeTrades, isLoading, refetch } = useActiveTrades(autoRefresh);
 
   const handleCloseTrade = async (trade: ActiveTrade) => {
     setClosingTrades(prev => new Set(prev).add(trade.id));
@@ -123,10 +124,20 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
             Active Trading Pairs
-            {/* Show manual refresh indicator */}
-            <span className="text-xs text-muted-foreground bg-blue-100 px-2 py-1 rounded">
-              Manual refresh only
-            </span>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-xs">
+                <input 
+                  type="checkbox" 
+                  checked={autoRefresh} 
+                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                  className="rounded"
+                />
+                Auto-refresh (30s)
+              </label>
+              <span className={`text-xs px-2 py-1 rounded ${autoRefresh ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                {autoRefresh ? 'Auto-refresh: ON' : 'Manual refresh only'}
+              </span>
+            </div>
           </div>
           <BybitSyncButton onSyncComplete={handleSyncComplete} />
         </CardTitle>
