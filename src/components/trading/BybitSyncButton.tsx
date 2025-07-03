@@ -58,6 +58,13 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
       console.log('🎯 Detecting closed positions...');
       await tradeSyncService.detectAndRecordClosedPositions();
 
+      // Also run comprehensive closed position detection
+      console.log('🔍 Running comprehensive closed position detection...');
+      const { ClosedPositionDetector } = await import('@/services/trading/core/ClosedPositionDetector');
+      const closedPositionDetector = new ClosedPositionDetector(user.id, bybitService);
+      await closedPositionDetector.detectAndMarkClosedPositions();
+      await closedPositionDetector.detectClosedPositionsByBalance();
+
       console.log('✅ Sync completed successfully');
 
       toast({

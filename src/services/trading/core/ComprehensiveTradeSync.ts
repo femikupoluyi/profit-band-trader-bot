@@ -55,18 +55,31 @@ export class ComprehensiveTradeSync {
             const updated = await this.updateExistingTradeFromBybit(order);
             if (updated) updatedCount++;
           } else {
-            // Create new record for missing order
-            const created = await this.createTradeFromBybitOrder(order);
-            if (created) createdCount++;
+            // Create new record for missing order (only for filled orders)
+            if (order.orderStatus === 'Filled') {
+              const created = await this.createTradeFromBybitOrder(order);
+              if (created) createdCount++;
+            }
           }
         } catch (error) {
           console.error(`❌ Error processing order ${order.orderId}:`, error);
         }
       }
 
-      console.log(`✅ Emergency sync complete: ${createdCount} trades created, ${updatedCount} trades updated`);
+      // CRITICAL: Detect and mark closed positions
+      console.log('🔍 Starting closed position detection...');
+      const { ClosedPositionDetector } = await import('./ClosedPositionDetector');
+      const closedPositionDetector = new ClosedPositionDetector(this.userId, this.bybitService);
       
-      await this.logger.logSuccess('Emergency sync completed', {
+      // First detect by sell order matching
+      await closedPositionDetector.detectAndMarkClosedPositions();
+      
+      // Then detect by account balance
+      await closedPositionDetector.detectClosedPositionsByBalance();
+
+      console.log(`✅ Emergency sync complete: ${createdCount} trades created, ${updatedCount} trades updated + closed position detection`);
+      
+      await this.logger.logSuccess('Emergency sync completed with closed position detection', {
         totalBybitOrders: orderHistory.length,
         existingTrades: existingOrderIds.size,
         tradesCreated: createdCount,
@@ -90,13 +103,13 @@ export class ComprehensiveTradeSync {
 
       const cutoffTime = Date.now() - (lookbackHours * 60 * 60 * 1000);
       
-      // Filter orders by time and only include filled ones
+      // Filter orders by time - include ALL order statuses to detect closed positions
       const recentOrders = response.result.list.filter((order: any) => {
         const orderTime = parseInt(order.updatedTime || order.createdTime);
-        return orderTime >= cutoffTime && order.orderStatus === 'Filled';
+        return orderTime >= cutoffTime;
       });
 
-      console.log(`📊 Filtered to ${recentOrders.length} recent filled orders`);
+      console.log(`📊 Filtered to ${recentOrders.length} recent orders (all statuses)`);
       return recentOrders;
     } catch (error) {
       console.error('❌ Error fetching Bybit order history:', error);
@@ -166,24 +179,36 @@ export class ComprehensiveTradeSync {
 
       if (!existingTrade) return false;
 
-      // Check if update is needed
+      // Check if update is needed - handle closed/cancelled orders
+      const bybitStatus = order.orderStatus;
+      const shouldBeClosed = ['Cancelled', 'Rejected', 'Deactivated'].includes(bybitStatus);
+      const shouldBeFilled = bybitStatus === 'Filled';
+      
       const needsUpdate = 
-        existingTrade.status !== 'filled' ||
-        Math.abs(existingTrade.price - parseFloat(order.avgPrice || order.price)) > 0.000001 ||
-        Math.abs(existingTrade.quantity - parseFloat(order.qty)) > 0.000001;
+        (shouldBeClosed && existingTrade.status !== 'closed') ||
+        (shouldBeFilled && existingTrade.status !== 'filled') ||
+        (shouldBeFilled && Math.abs(existingTrade.price - parseFloat(order.avgPrice || order.price)) > 0.000001) ||
+        (shouldBeFilled && Math.abs(existingTrade.quantity - parseFloat(order.qty)) > 0.000001);
 
       if (!needsUpdate) return false;
 
       const updateData: any = {
-        status: 'filled',
-        price: parseFloat(order.avgPrice || order.price),
-        quantity: parseFloat(order.qty),
         updated_at: new Date().toISOString()
       };
 
-      // Add fill price for buy orders
-      if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
-        updateData.buy_fill_price = parseFloat(order.avgPrice);
+      // Handle different order statuses
+      if (shouldBeClosed) {
+        updateData.status = 'closed';
+        console.log(`🔄 Marking trade ${existingTrade.id} as closed due to Bybit status: ${bybitStatus}`);
+      } else if (shouldBeFilled) {
+        updateData.status = 'filled';
+        updateData.price = parseFloat(order.avgPrice || order.price);
+        updateData.quantity = parseFloat(order.qty);
+        
+        // Add fill price for buy orders
+        if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
+          updateData.buy_fill_price = parseFloat(order.avgPrice);
+        }
       }
 
       const { error } = await supabase
