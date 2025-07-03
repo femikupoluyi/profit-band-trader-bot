@@ -11,16 +11,17 @@ export class SignalFetcher {
     this.logger = new TradingLogger(userId);
   }
 
-  async getUnprocessedSignals(): Promise<any[]> {
+  async getUnprocessedSignals(limit: number = 3): Promise<any[]> {
     try {
-      console.log(`📡 Fetching unprocessed signals for user: ${this.userId}`);
+      console.log(`📡 Fetching max ${limit} unprocessed signals for user: ${this.userId}`);
 
       const { data: signals, error } = await supabase
         .from('trading_signals')
         .select('*')
         .eq('user_id', this.userId)
         .eq('processed', false)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(limit);
 
       if (error) {
         console.error('❌ Error fetching signals:', error);
@@ -33,7 +34,7 @@ export class SignalFetcher {
         return [];
       }
 
-      console.log(`📡 Found ${signals.length} unprocessed signals:`);
+      console.log(`📡 Found ${signals.length} unprocessed signals (limited to ${limit}):`);
       signals.forEach((signal, index) => {
         console.log(`  ${index + 1}. ${signal.symbol} - ${signal.signal_type} at $${parseFloat(signal.price.toString()).toFixed(6)} (ID: ${signal.id})`);
         console.log(`      Created: ${signal.created_at}, Confidence: ${signal.confidence}`);
@@ -104,6 +105,60 @@ export class SignalFetcher {
     } catch (error) {
       console.error('❌ Error fetching recent signals:', error);
       return [];
+    }
+  }
+
+  /**
+   * CRITICAL: Clean up excessive unprocessed signals to prevent backlog buildup
+   */
+  async cleanupExcessiveSignals(): Promise<void> {
+    try {
+      console.log('🧹 Checking for excessive unprocessed signals...');
+      
+      // Get count of unprocessed signals
+      const { count } = await supabase
+        .from('trading_signals')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', this.userId)
+        .eq('processed', false);
+
+      const unprocessedCount = count || 0;
+      console.log(`📊 Found ${unprocessedCount} unprocessed signals`);
+
+      // If we have more than 20 unprocessed signals, mark older ones as processed
+      if (unprocessedCount > 20) {
+        console.log(`🚨 EXCESSIVE SIGNALS DETECTED: ${unprocessedCount} unprocessed signals - cleaning up older ones`);
+        
+        // Mark all but the 10 most recent as processed to prevent runaway processing
+        const { error } = await supabase
+          .from('trading_signals')
+          .update({ 
+            processed: true, 
+            updated_at: new Date().toISOString() 
+          })
+          .eq('user_id', this.userId)
+          .eq('processed', false)
+          .not('id', 'in', `(
+            SELECT id FROM trading_signals 
+            WHERE user_id = '${this.userId}' AND processed = false 
+            ORDER BY created_at DESC 
+            LIMIT 10
+          )`);
+
+        if (error) {
+          console.error('❌ Error cleaning up excessive signals:', error);
+        } else {
+          console.log(`✅ Cleaned up excessive signals - kept only 10 most recent`);
+          await this.logger.logSystemInfo('Signal cleanup performed', {
+            originalCount: unprocessedCount,
+            cleanedUp: unprocessedCount - 10,
+            remaining: 10
+          });
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in signal cleanup:', error);
     }
   }
 }

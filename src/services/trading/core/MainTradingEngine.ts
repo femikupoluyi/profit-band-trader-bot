@@ -242,8 +242,12 @@ export class MainTradingEngine {
 
       await executionOrchestrator.logExecutionStart();
       
-      // Fetch signals using SignalFetcher
-      const signals = await this.signalFetcher.getUnprocessedSignals();
+      // CRITICAL: Clean up excessive signals first to prevent backlog buildup
+      await this.signalFetcher.cleanupExcessiveSignals();
+      
+      // Fetch limited signals using SignalFetcher (max 3 per cycle to prevent runaway trading)
+      const maxSignalsPerCycle = Math.min(this.config.max_positions_per_pair || 1, 3);
+      const signals = await this.signalFetcher.getUnprocessedSignals(maxSignalsPerCycle);
       
       if (signals.length === 0) {
         console.log('📭 No unprocessed signals found for execution');

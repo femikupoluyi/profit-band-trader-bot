@@ -26,6 +26,12 @@ export class SignalAnalysisProcessor {
     try {
       console.log(`\n🔍 ===== ENHANCED ANALYSIS FOR ${symbol} =====`);
       
+      // CRITICAL: Double-check trading is active before signal creation
+      if (!config.is_active) {
+        console.log(`🛑 Signal generation stopped for ${symbol}: Trading configuration is not active`);
+        return false;
+      }
+      
       // Get current market price
       const currentPrice = await this.getCurrentPrice(symbol);
       if (!currentPrice) {

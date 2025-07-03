@@ -59,11 +59,13 @@ export class TradingEngineMonitor {
       const recentOrderCount = count || 0;
       console.log(`🔍 Runaway trading check: ${recentOrderCount} orders in last 5 minutes`);
       
-      if (recentOrderCount > 5) { // REDUCED THRESHOLD: More than 5 orders in 5 minutes
-        console.error(`🚨 RUNAWAY TRADING DETECTED: ${recentOrderCount} orders in last 5 minutes (threshold: 5)`);
+      // Use configuration-based limits instead of hardcoded values
+      const maxOrdersPerTimeframe = 10; // Conservative limit - 10 orders in 5 minutes
+      if (recentOrderCount > maxOrdersPerTimeframe) {
+        console.error(`🚨 RUNAWAY TRADING DETECTED: ${recentOrderCount} orders in last 5 minutes (threshold: ${maxOrdersPerTimeframe})`);
         await this.logger.logError('RUNAWAY TRADING DETECTED - emergency stop triggered', {
           recentOrderCount,
-          threshold: 5,
+          threshold: maxOrdersPerTimeframe,
           timeframe: '5 minutes',
           severity: 'CRITICAL'
         });

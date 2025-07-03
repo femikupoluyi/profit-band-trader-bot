@@ -26,13 +26,10 @@ export class SignalAnalysisOrchestrator {
     try {
       console.log('\n🧠 ===== ENHANCED SIGNAL ANALYSIS & CREATION =====');
       
-      // Debug support analysis for BTCUSDT
-      if (config.trading_pairs.includes('BTCUSDT')) {
-        console.log('\n🔍 ===== DEBUGGING BTCUSDT SUPPORT ANALYSIS =====');
-        const { SupportAnalysisDebugger } = await import('./SupportAnalysisDebugger');
-        const supportDebugger = new SupportAnalysisDebugger();
-        await supportDebugger.debugSupportAnalysis('BTCUSDT', config);
-        console.log('\n🔍 ===== END BTCUSDT DEBUG =====');
+      // CRITICAL: Check if trading is active BEFORE any signal generation
+      if (!config.is_active) {
+        console.log('🛑 SIGNAL GENERATION STOPPED: Trading configuration is not active');
+        return;
       }
       
       await this.logger.logSystemInfo('Starting signal analysis and creation', {
