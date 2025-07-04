@@ -67,11 +67,26 @@ export const useActiveTrades = (enableAutoRefresh: boolean = false) => {
     try {
       console.log('📊 Fetching active trades for user:', user.id);
 
+      // First get current trading configuration to filter valid symbols
+      const { data: config } = await supabase
+        .from('trading_configs')
+        .select('trading_pairs')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      const validSymbols = config?.trading_pairs || [];
+      console.log('✅ Valid trading pairs from config:', validSymbols);
+
+      // Only fetch trades for currently configured symbols, exclude sell orders (they should be closed)
       const { data: trades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
         .in('status', ['pending', 'filled'])
+        .eq('side', 'buy') // CRITICAL: Only show buy orders as active
+        .in('symbol', validSymbols) // CRITICAL: Only show currently configured symbols
         .order('created_at', { ascending: false });
 
       if (error) {

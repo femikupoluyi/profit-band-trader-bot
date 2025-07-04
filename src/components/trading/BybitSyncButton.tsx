@@ -65,6 +65,12 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
       await closedPositionDetector.detectAndMarkClosedPositions();
       await closedPositionDetector.detectClosedPositionsByBalance();
 
+      // CRITICAL: Clean up stale data
+      console.log('🧹 Running stale data cleanup...');
+      const { StaleDataCleanupService } = await import('@/services/trading/core/StaleDataCleanupService');
+      const cleanupService = new StaleDataCleanupService(user.id);
+      await cleanupService.cleanupStaleData();
+
       console.log('✅ Sync completed successfully');
 
       toast({
