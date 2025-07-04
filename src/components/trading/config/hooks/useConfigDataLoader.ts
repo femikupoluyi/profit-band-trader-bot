@@ -17,7 +17,9 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
 
   const loadConfig = async () => {
     try {
+      console.log('🔧 CRITICAL: Loading config from database...');
       const data = await fetchConfig();
+      console.log('📊 CRITICAL: Raw config data from database:', data);
       if (data) {
         const loadedConfig: TradingConfigData = {
           max_active_pairs: data.max_active_pairs ?? 5,
@@ -55,11 +57,17 @@ export const useConfigDataLoader = (onConfigUpdate?: () => void) => {
           atr_multiplier: (data as any).atr_multiplier ?? 1.0
         };
         
-        console.log('Loaded config from database with validation:', loadedConfig);
         setConfig(loadedConfig);
+        console.log('✅ CRITICAL: Configuration loaded successfully:', { 
+          isActive: loadedConfig.is_active,
+          maxPositionsPerPair: loadedConfig.max_positions_per_pair,
+          maxActivePairs: loadedConfig.max_active_pairs,
+          tradingPairs: loadedConfig.trading_pairs,
+          maxOrderAmount: loadedConfig.max_order_amount_usd
+        });
       } else {
-        console.log('No existing config found, using defaults:', getDefaultConfig());
-        setConfig(getDefaultConfig());
+        console.error('❌ CRITICAL: No config data returned from database - this means the query failed!');
+        console.log('🔧 Using defaults because config load failed:', config);
       }
     } catch (error) {
       console.error('Error loading config:', error);

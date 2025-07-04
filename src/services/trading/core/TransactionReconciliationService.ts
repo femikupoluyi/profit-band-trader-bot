@@ -68,22 +68,27 @@ export class TransactionReconciliationService {
       
       console.log(`📈 Fetching Bybit execution history from ${new Date(startTime).toISOString()}`);
       
-      // Use the existing getOrderHistory method as it returns filled orders which are our executions
+      // CRITICAL: Get order history from Bybit to compare with local records
+      console.log('📊 CRITICAL: Fetching Bybit order history for reconciliation...');
       const response = await this.bybitService.getOrderHistory(100);
 
       if (response.retCode !== 0) {
-        console.error('Failed to fetch Bybit execution history:', response.retMsg);
+        console.error('❌ CRITICAL: Failed to fetch Bybit execution history:', response.retMsg);
+        await this.logger.logError('Bybit order history fetch failed', new Error(response.retMsg));
         return [];
       }
 
       // Convert order history to execution records format
       const executionRecords: BybitTransactionRecord[] = [];
       const orders = response.result?.list || [];
+      
+      console.log(`📊 CRITICAL: Found ${orders.length} orders in Bybit history`);
 
       for (const order of orders) {
         // Only include filled orders within our time window
         const orderTime = parseInt(order.updatedTime || order.createdTime);
         if (orderTime >= startTime && order.orderStatus === 'Filled') {
+          console.log(`📊 Processing Bybit order: ${order.symbol} ${order.side} ${order.qty} @ ${order.avgPrice || order.price} (ID: ${order.orderId})`);
           executionRecords.push({
             symbol: order.symbol,
             side: order.side,
@@ -99,6 +104,7 @@ export class TransactionReconciliationService {
         }
       }
 
+      console.log(`📊 CRITICAL: Created ${executionRecords.length} execution records from Bybit data`);
       return executionRecords;
     } catch (error) {
       console.error('Error fetching Bybit execution history:', error);

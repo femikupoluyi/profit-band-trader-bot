@@ -11,21 +11,22 @@ export class ConfigurationService {
 
   async loadUserConfig(): Promise<TradingConfigData | null> {
     try {
-      console.log(`🔧 Loading configuration for user: ${this.userId}`);
+      console.log(`🔧 CRITICAL: Loading configuration for user: ${this.userId}`);
       
       const { data: config, error } = await supabase
         .from('trading_configs')
         .select('*')
         .eq('user_id', this.userId)
-        .maybeSingle();
+        .single(); // Use single() instead of maybeSingle() to ensure we get the config
 
       if (error) {
-        console.error('❌ Error loading configuration:', error);
+        console.error('❌ CRITICAL: Error loading configuration:', error);
+        console.error('❌ This will cause the system to use default values instead of user config!');
         return null;
       }
 
       if (!config) {
-        console.warn('⚠️ No configuration found for user');
+        console.error('❌ CRITICAL: No configuration found for user - this should not happen!');
         return null;
       }
 

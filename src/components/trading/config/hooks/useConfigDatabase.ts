@@ -15,25 +15,37 @@ export const useConfigDatabase = (onConfigUpdate?: () => void) => {
     if (!user) return null;
 
     try {
-      console.log('🔍 Fetching trading config for user:', user.id);
+      console.log('🔍 CRITICAL: Fetching trading config for user:', user.id);
       
       const { data, error } = await supabase
         .from('trading_configs')
         .select('*')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .single(); // Changed from maybeSingle() to single() to ensure we get the config
 
       if (error) {
-        console.error('❌ Error fetching config:', error);
+        if (error.code === 'PGRST116') {
+          // No rows returned - this is expected for new users
+          console.log('ℹ️ No existing config found for user (no rows)');
+          setHasExistingConfig(false);
+          return null;
+        }
+        console.error('❌ CRITICAL: Error fetching config:', error);
         throw error;
       }
 
       if (data) {
-        console.log('✅ Found existing config:', data.id);
+        console.log('✅ CRITICAL: Found existing config:', {
+          id: data.id,
+          isActive: data.is_active,
+          maxPositionsPerPair: data.max_positions_per_pair,
+          maxActivePairs: data.max_active_pairs,
+          tradingPairs: data.trading_pairs
+        });
         setHasExistingConfig(true);
         return data;
       } else {
-        console.log('ℹ️ No existing config found');
+        console.log('ℹ️ No config data returned');
         setHasExistingConfig(false);
         return null;
       }
