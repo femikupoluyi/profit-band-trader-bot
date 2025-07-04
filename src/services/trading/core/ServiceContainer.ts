@@ -6,6 +6,7 @@ import { ConfigurationService } from './ConfigurationService';
 import { SignalFetcher } from './SignalFetcher';
 import { SignalAnalysisCore } from './SignalAnalysisCore';
 import { PositionValidator } from './PositionValidator';
+import { EnhancedBybitClient } from './bybit/EnhancedBybitClient';
 import { BybitService } from '../../bybitService';
 
 /**
@@ -20,6 +21,7 @@ export class ServiceContainer {
   private static signalFetchers: Map<string, SignalFetcher> = new Map();
   private static signalAnalysisCores: Map<string, SignalAnalysisCore> = new Map();
   private static positionValidators: Map<string, PositionValidator> = new Map();
+  private static enhancedBybitClients: Map<string, EnhancedBybitClient> = new Map();
 
   static getLogger(userId: string): TradingLogger {
     if (!this.loggers.has(userId)) {
@@ -71,6 +73,26 @@ export class ServiceContainer {
     return this.positionValidators.get(userId)!;
   }
 
+  /**
+   * PHASE 3: Get Enhanced Bybit Client with validation and retry logic
+   */
+  static getEnhancedBybitClient(
+    userId: string, 
+    apiKey: string, 
+    apiSecret: string, 
+    isDemoTrading: boolean = true, 
+    apiUrl?: string
+  ): EnhancedBybitClient {
+    const key = `${userId}_${apiKey.substring(0, 8)}_${isDemoTrading}`;
+    if (!this.enhancedBybitClients.has(key)) {
+      this.enhancedBybitClients.set(
+        key, 
+        new EnhancedBybitClient(apiKey, apiSecret, isDemoTrading, apiUrl, userId)
+      );
+    }
+    return this.enhancedBybitClients.get(key)!;
+  }
+
   static clearCache(userId?: string): void {
     if (userId) {
       this.loggers.delete(userId);
@@ -86,6 +108,13 @@ export class ServiceContainer {
           this.orderExecutions.delete(key);
         }
       }
+
+      // Clear enhanced Bybit clients for this user
+      for (const key of this.enhancedBybitClients.keys()) {
+        if (key.startsWith(userId)) {
+          this.enhancedBybitClients.delete(key);
+        }
+      }
     } else {
       this.loggers.clear();
       this.databaseHelpers.clear();
@@ -94,6 +123,7 @@ export class ServiceContainer {
       this.signalFetchers.clear();
       this.signalAnalysisCores.clear();
       this.positionValidators.clear();
+      this.enhancedBybitClients.clear();
     }
   }
 }
