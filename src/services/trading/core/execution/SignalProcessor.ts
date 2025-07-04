@@ -3,12 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from '../TradingLogger';
 import { ServiceContainer } from '../ServiceContainer';
-import { PositionValidator } from '../PositionValidator';
-import { TradeValidator } from '../TradeValidator';
-import { OrderExecution } from '../OrderExecution';
-import { ConfigurationValidator } from '../ConfigurationValidator';
-import { BybitService } from '@/services/bybitService';
-import { CredentialsManager } from '../../credentialsManager';
+import { SignalExecutor } from './SignalExecutor';
+import { ConfigValidator } from './ConfigValidator';
+import { SignalMarker } from './SignalMarker';
 
 export interface SignalProcessingResult {
   success: number;
@@ -24,14 +21,14 @@ export interface SignalProcessingResult {
 export class SignalProcessorCore {
   private userId: string;
   private logger: TradingLogger;
-  private positionValidator: PositionValidator;
-  private configValidator: ConfigurationValidator;
+  private signalExecutor: SignalExecutor;
+  private configValidator: ConfigValidator;
 
   constructor(userId: string) {
     this.userId = userId;
     this.logger = ServiceContainer.getLogger(userId);
-    this.positionValidator = new PositionValidator(userId);
-    this.configValidator = new ConfigurationValidator(userId);
+    this.signalExecutor = new SignalExecutor(userId);
+    this.configValidator = new ConfigValidator(userId);
   }
 
   async processSignals(signals: any[]): Promise<SignalProcessingResult> {
@@ -62,7 +59,10 @@ export class SignalProcessorCore {
       }, null, 2)}`);
 
       try {
-        const result = await this.processSingleSignal(signal);
+        // Load configuration for each signal
+        const config = await this.configValidator.loadConfiguration();
+        
+        const result = await this.signalExecutor.executeSingleSignal(signal, config);
         
         if (result.success) {
           results.success++;
@@ -80,7 +80,7 @@ export class SignalProcessorCore {
         });
 
         // Mark signal as processed regardless of outcome
-        await this.markSignalAsProcessed(signal.id);
+        await SignalMarker.markSignalAsProcessed(signal.id);
 
       } catch (error) {
         console.error(`❌ Signal processing failed for ${signal.symbol}:`, error);
@@ -93,7 +93,7 @@ export class SignalProcessorCore {
         });
 
         // Mark as processed even on error to prevent reprocessing
-        await this.markSignalAsProcessed(signal.id);
+        await SignalMarker.markSignalAsProcessed(signal.id);
       }
     }
 
@@ -102,169 +102,5 @@ export class SignalProcessorCore {
     console.log(`❌ Failed: ${results.failed}`);
 
     return results;
-  }
-
-  private async processSingleSignal(signal: any): Promise<{ success: boolean; error?: string }> {
-    try {
-      console.log(`🔍 Processing signal for ${signal.symbol}: ${signal.signal_type} at $${parseFloat(signal.price).toFixed(6)}`);
-
-      // Load configuration
-      const configService = ServiceContainer.getConfigurationService(this.userId);
-      const config = await configService.loadUserConfig();
-      
-      if (!config) {
-        throw new Error('Failed to load trading configuration');
-      }
-
-      console.log(`🔧 Loading configuration for user: ${this.userId}`);
-      console.log(`✅ Configuration loaded successfully: ${JSON.stringify({
-        isActive: config.is_active,
-        tradingPairs: config.trading_pairs.length,
-        maxOrderAmount: config.max_order_amount_usd,
-        maxPositionsPerPair: config.max_positions_per_pair
-      }, null, 2)}`);
-
-      // CRITICAL: Validate configuration integrity
-      const configValidation = await this.configValidator.validateConfigurationIntegrity(config);
-      if (!configValidation.isValid) {
-        const errorMsg = `CONFIGURATION VALIDATION FAILED: ${configValidation.criticalErrors.join(', ')}`;
-        console.error(`🚨 ${errorMsg}`);
-        throw new Error(errorMsg);
-      }
-
-      // CRITICAL: Real-time safety check
-      const safetyCheck = await this.configValidator.performRealTimeSafetyCheck();
-      if (!safetyCheck.isSafe) {
-        const errorMsg = `SAFETY CHECK FAILED: ${safetyCheck.reason}`;
-        console.error(`🚨 ${errorMsg}`);
-        throw new Error(errorMsg);
-      }
-
-      // CRITICAL: Validate position limits before ANY processing
-      console.log(`🔍 CRITICAL VALIDATION: Checking position limits for ${signal.symbol}...`);
-      console.log(`📊 Config limits - Max active pairs: ${config.max_active_pairs}, Max positions per pair: ${config.max_positions_per_pair}`);
-      
-      const positionValidation = await this.positionValidator.validateWithDetailedLogging(signal.symbol, config);
-      console.log(`📋 Position validation result for ${signal.symbol}:`, positionValidation);
-      
-      if (!positionValidation.isValid) {
-        console.error(`❌ POSITION LIMITS EXCEEDED for ${signal.symbol}: ${positionValidation.reason}`);
-        console.error(`🚨 BLOCKING EXECUTION: Current positions: ${positionValidation.currentPositions}/${positionValidation.limits.maxPositionsPerPair}, Active pairs: ${positionValidation.activePairs}/${positionValidation.limits.maxActivePairs}`);
-        throw new Error(`POSITION LIMITS EXCEEDED: ${positionValidation.reason}`);
-      }
-      
-      console.log(`✅ POSITION LIMITS CHECK PASSED for ${signal.symbol}: ${positionValidation.currentPositions}/${positionValidation.limits.maxPositionsPerPair} positions, ${positionValidation.activePairs}/${positionValidation.limits.maxActivePairs} pairs`);
-
-      // Calculate trade parameters
-      const signalPrice = parseFloat(signal.price.toString());
-      const entryOffsetPercent = Math.max(config.entry_offset_percent || 0.5, 0.5);
-      const takeProfitPercent = config.take_profit_percent || 1.0;
-
-      // FIXED: Calculate entry price properly (signal price should already include offset)
-      const entryPrice = signalPrice; // Signal price is already calculated with offset
-      const takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
-
-      console.log(`💰 Price calculations for ${signal.symbol}:
-        - Signal Price: $${signalPrice.toFixed(6)}
-        - Entry Price: $${entryPrice.toFixed(6)} (+${entryOffsetPercent}%)
-        - Take Profit: $${takeProfitPrice.toFixed(6)} (+${takeProfitPercent}%)`);
-
-      // Calculate optimal quantity using FIXED validation logic
-      const optimalQuantity = await TradeValidator.calculateOptimalQuantity(
-        signal.symbol,
-        config.max_order_amount_usd,
-        entryPrice
-      );
-
-      console.log(`🧮 Calculated optimal quantity for ${signal.symbol}: ${optimalQuantity}`);
-
-      // FIXED: Validate trade with corrected logic
-      const validation = await TradeValidator.validateTrade(
-        signal.symbol,
-        optimalQuantity,
-        entryPrice,
-        config.max_order_amount_usd
-      );
-
-      if (!validation.isValid) {
-        throw new Error(validation.error || 'Trade validation failed');
-      }
-
-      console.log(`✅ ${signal.symbol}: All validations passed, proceeding to order execution`);
-
-      // Execute the trade using OrderExecution
-      const credentialsManager = new CredentialsManager(this.userId);
-      const bybitService = await credentialsManager.fetchCredentials();
-      
-      if (!bybitService) {
-        throw new Error('Failed to initialize Bybit service');
-      }
-
-      const orderExecution = ServiceContainer.getOrderExecution(this.userId, bybitService);
-      
-      // Execute buy order
-      const buyResult = await orderExecution.executeBuyOrder(
-        signal.symbol,
-        parseFloat(validation.formattedQuantity),
-        parseFloat(validation.formattedPrice)
-      );
-
-      if (!buyResult.success) {
-        throw new Error(`Buy order execution failed: ${buyResult.error}`);
-      }
-
-      console.log(`✅ ${signal.symbol}: Buy order executed successfully - Order ID: ${buyResult.orderId}`);
-
-      // Execute sell order (take profit)
-      const sellResult = await orderExecution.executeSellOrder(
-        signal.symbol,
-        parseFloat(validation.formattedQuantity),
-        takeProfitPrice
-      );
-
-      if (sellResult.success) {
-        console.log(`✅ ${signal.symbol}: Take profit order placed - Order ID: ${sellResult.orderId}`);
-      } else {
-        console.warn(`⚠️ ${signal.symbol}: Take profit order failed: ${sellResult.error}`);
-      }
-
-      await this.logger.logSuccess(`Signal processed successfully for ${signal.symbol}`, {
-        signalId: signal.id,
-        symbol: signal.symbol,
-        entryPrice,
-        quantity: optimalQuantity,
-        buyOrderId: buyResult.orderId,
-        sellOrderId: sellResult.orderId
-      });
-
-      return { success: true };
-
-    } catch (error) {
-      console.error(`❌ Signal processing failed for ${signal.symbol}:`, error);
-      await this.logger.logError(`Signal processing failed for ${signal.symbol}`, error, {
-        signalId: signal.id
-      });
-      return { success: false, error: error.message };
-    }
-  }
-
-  private async markSignalAsProcessed(signalId: string): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from('trading_signals')
-        .update({ 
-          processed: true, 
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', signalId);
-
-      if (error) {
-        console.error(`❌ Error marking signal ${signalId} as processed:`, error);
-      } else {
-        console.log(`✅ Signal ${signalId} marked as processed`);
-      }
-    } catch (error) {
-      console.error(`❌ Critical error marking signal ${signalId} as processed:`, error);
-    }
   }
 }
