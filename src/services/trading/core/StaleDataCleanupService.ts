@@ -15,8 +15,8 @@ export class StaleDataCleanupService {
    */
   async cleanupStaleData(): Promise<void> {
     try {
-      console.log('🧹 Starting stale data cleanup...');
-      await this.logger.logSystemInfo('Starting stale data cleanup');
+      console.log('🧹 Starting comprehensive stale data cleanup...');
+      await this.logger.logSystemInfo('Starting comprehensive stale data cleanup');
 
       // Get current trading configuration
       const { data: config } = await supabase
@@ -39,8 +39,14 @@ export class StaleDataCleanupService {
       // 3. Mark very old pending orders as closed (older than 24 hours)
       await this.markOldPendingOrdersAsClosed();
 
-      console.log('✅ Stale data cleanup completed');
-      await this.logger.logSuccess('Stale data cleanup completed');
+      // 4. Clean up any orphaned data
+      await this.cleanupOrphanedData();
+
+      // 5. Validate data consistency
+      await this.validateDataConsistency();
+
+      console.log('✅ Comprehensive stale data cleanup completed');
+      await this.logger.logSuccess('Comprehensive stale data cleanup completed');
 
     } catch (error) {
       console.error('❌ Error during stale data cleanup:', error);
@@ -197,6 +203,100 @@ export class StaleDataCleanupService {
       }
     } catch (error) {
       console.error('❌ Error marking old pending orders as closed:', error);
+    }
+  }
+
+  private async cleanupOrphanedData(): Promise<void> {
+    try {
+      console.log('🔄 Cleaning up orphaned data...');
+
+      // Remove trades with null or empty symbols
+      const { error: deleteError } = await supabase
+        .from('trades')
+        .delete()
+        .eq('user_id', this.userId)
+        .or('symbol.is.null,symbol.eq.');
+
+      if (deleteError) {
+        console.error('❌ Error deleting orphaned trades:', deleteError);
+      } else {
+        console.log('✅ Cleaned up orphaned trades with invalid symbols');
+      }
+
+      // Remove signals with null data
+      const { error: signalError } = await supabase
+        .from('trading_signals')
+        .delete()
+        .eq('user_id', this.userId)
+        .or('symbol.is.null,signal_type.is.null,price.is.null');
+
+      if (signalError) {
+        console.error('❌ Error deleting orphaned signals:', signalError);
+      } else {
+        console.log('✅ Cleaned up orphaned trading signals');
+      }
+
+    } catch (error) {
+      console.error('❌ Error cleaning up orphaned data:', error);
+    }
+  }
+
+  private async validateDataConsistency(): Promise<void> {
+    try {
+      console.log('🔍 Validating data consistency...');
+
+      // Check for trades with invalid numeric values
+      const { data: invalidTrades } = await supabase
+        .from('trades')
+        .select('id, symbol, price, quantity')
+        .eq('user_id', this.userId)
+        .or('price.lte.0,quantity.lte.0');
+
+      if (invalidTrades && invalidTrades.length > 0) {
+        console.log(`⚠️ Found ${invalidTrades.length} trades with invalid numeric values`);
+        await this.logger.log('data_validation', `Found trades with invalid numeric values`, {
+          count: invalidTrades.length,
+          tradeIds: invalidTrades.map(t => t.id)
+        });
+
+        // Close trades with invalid values
+        const { error } = await supabase
+          .from('trades')
+          .update({ status: 'closed', updated_at: new Date().toISOString() })
+          .eq('user_id', this.userId)
+          .or('price.lte.0,quantity.lte.0');
+
+        if (!error) {
+          console.log('✅ Closed trades with invalid numeric values');
+        }
+      }
+
+      // Validate trading signals
+      const { data: invalidSignals } = await supabase
+        .from('trading_signals')
+        .select('id, symbol, price')
+        .eq('user_id', this.userId)
+        .lte('price', 0);
+
+      if (invalidSignals && invalidSignals.length > 0) {
+        console.log(`⚠️ Found ${invalidSignals.length} signals with invalid prices`);
+        
+        // Remove invalid signals
+        const { error } = await supabase
+          .from('trading_signals')
+          .delete()
+          .eq('user_id', this.userId)
+          .lte('price', 0);
+
+        if (!error) {
+          console.log('✅ Removed signals with invalid prices');
+        }
+      }
+
+      console.log('✅ Data consistency validation completed');
+
+    } catch (error) {
+      console.error('❌ Error validating data consistency:', error);
     }
   }
 }
