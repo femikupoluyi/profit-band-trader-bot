@@ -93,6 +93,22 @@ export class ServiceContainer {
     return this.enhancedBybitClients.get(key)!;
   }
 
+  // Comprehensive Testing Framework (Phase 4)
+  static getTestFrameworkOrchestrator(userId: string, bybitService: any): any {
+    const { TestFrameworkOrchestrator } = require('./testing/TestFrameworkOrchestrator');
+    return new TestFrameworkOrchestrator(userId, bybitService);
+  }
+
+  static getTestScheduler(userId: string, bybitService: any): any {
+    const { TestScheduler } = require('./testing/TestScheduler');
+    return new TestScheduler(userId, bybitService);
+  }
+
+  static getTestReportGenerator(): any {
+    const { TestReportGenerator } = require('./testing/TestReportGenerator');
+    return TestReportGenerator;
+  }
+
   static clearCache(userId?: string): void {
     if (userId) {
       this.loggers.delete(userId);
