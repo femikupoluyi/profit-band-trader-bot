@@ -1,6 +1,6 @@
 
 import { SystemHealthChecker } from './SystemHealthChecker';
-import { SignalProcessor } from './SignalProcessor';
+import { SignalProcessorCore } from './execution/SignalProcessor';
 import { ServiceContainer } from './ServiceContainer';
 import { BybitService } from '../../bybitService';
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
@@ -156,7 +156,7 @@ export class IntegrationTestRunner {
     
     try {
       // Create a test signal processor
-      const signalProcessor = new SignalProcessor(this.userId, this.bybitService);
+      const signalProcessor = new SignalProcessorCore(this.userId);
       
       // Create a mock signal for testing (don't actually process it)
       const mockSignal = {

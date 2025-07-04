@@ -2,12 +2,11 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { BybitService } from '../../bybitService';
 import { TradingLogger } from './TradingLogger';
-import { SignalProcessor } from './SignalProcessor';
+import { SignalProcessorCore } from './execution/SignalProcessor';
 import { SignalFetcher } from './SignalFetcher';
 import { ExecutionResultsTracker } from './ExecutionResultsTracker';
 import { ServiceContainer } from './ServiceContainer';
 import { ExecutionOrchestrator } from './execution/ExecutionOrchestrator';
-import { SignalProcessorCore } from './execution/SignalProcessor';
 
 interface EnhancedSignalProcessingResult {
   success: boolean;
@@ -15,23 +14,24 @@ interface EnhancedSignalProcessingResult {
   orderId?: string;
 }
 
+/**
+ * PHASE 2 CONSOLIDATED: SignalExecutionService simplified with ServiceContainer
+ */
 export class SignalExecutionService {
   private userId: string;
   private logger: TradingLogger;
-  private signalProcessor: SignalProcessor;
+  private signalProcessor: SignalProcessorCore;
   private signalFetcher: SignalFetcher;
   private resultsTracker: ExecutionResultsTracker;
   private executionOrchestrator: ExecutionOrchestrator;
-  private signalProcessorCore: SignalProcessorCore;
 
   constructor(userId: string, bybitService: BybitService) {
     this.userId = userId;
     this.logger = ServiceContainer.getLogger(userId);
-    this.signalProcessor = new SignalProcessor(userId, bybitService);
-    this.signalFetcher = new SignalFetcher(userId);
+    this.signalProcessor = new SignalProcessorCore(userId);
+    this.signalFetcher = ServiceContainer.getSignalFetcher(userId);
     this.resultsTracker = new ExecutionResultsTracker();
     this.executionOrchestrator = new ExecutionOrchestrator(userId);
-    this.signalProcessorCore = new SignalProcessorCore(userId);
   }
 
   async executeSignal(config: TradingConfigData): Promise<void> {
@@ -58,16 +58,15 @@ export class SignalExecutionService {
 
       this.resultsTracker.initializeResults(signals.length);
 
-      // Process signals using the core processor
-      const processingResults = await this.signalProcessorCore.processSignals(signals);
-      
       // Process each signal with detailed logging
       for (let i = 0; i < signals.length; i++) {
         const signal = signals[i];
         
         try {
           console.log(`⚡ Step 2: Processing signal for ${signal.symbol}...`);
-          const result = await this.signalProcessor.processSingleSignal(signal, config) as EnhancedSignalProcessingResult;
+          // Use the core processor to handle signals
+          const processingResult = await this.signalProcessor.processSignals([signal]);
+          const result = processingResult.results[0] as any;
           
           console.log(`📊 Signal processing result for ${signal.symbol}:`, {
             success: result.success,
@@ -163,7 +162,8 @@ export class SignalExecutionService {
       const testSignal = signals[0];
       console.log(`🧪 Testing signal execution for ${testSignal.symbol}`);
       
-      const result = await this.signalProcessor.processSingleSignal(testSignal, config) as EnhancedSignalProcessingResult;
+      const processingResult = await this.signalProcessor.processSignals([testSignal]);
+      const result = processingResult.results[0] as any;
       
       console.log(`🧪 Test result:`, {
         success: result.success,

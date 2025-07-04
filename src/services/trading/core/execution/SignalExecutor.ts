@@ -1,10 +1,7 @@
 import { TradingConfigData } from '@/components/trading/config/useTradingConfig';
 import { TradingLogger } from '../TradingLogger';
 import { ServiceContainer } from '../ServiceContainer';
-import { PositionValidator } from '../PositionValidator';
 import { TradeValidator } from '../TradeValidator';
-import { OrderExecution } from '../OrderExecution';
-import { BybitService } from '@/services/bybitService';
 import { CredentialsManager } from '../../credentialsManager';
 
 export interface SingleSignalExecutionResult {
@@ -12,26 +9,28 @@ export interface SingleSignalExecutionResult {
   error?: string;
 }
 
+/**
+ * PHASE 2 CONSOLIDATED: SignalExecutor using ServiceContainer pattern
+ */
 export class SignalExecutor {
   private userId: string;
   private logger: TradingLogger;
-  private positionValidator: PositionValidator;
 
   constructor(userId: string) {
     this.userId = userId;
     this.logger = ServiceContainer.getLogger(userId);
-    this.positionValidator = new PositionValidator(userId);
   }
 
   async executeSingleSignal(signal: any, config: TradingConfigData): Promise<SingleSignalExecutionResult> {
     try {
       console.log(`🔍 Processing signal for ${signal.symbol}: ${signal.signal_type} at $${parseFloat(signal.price).toFixed(6)}`);
 
-      // CRITICAL: Validate position limits before ANY processing
+      // CRITICAL: Validate position limits using ServiceContainer
       console.log(`🔍 CRITICAL VALIDATION: Checking position limits for ${signal.symbol}...`);
       console.log(`📊 Config limits - Max active pairs: ${config.max_active_pairs}, Max positions per pair: ${config.max_positions_per_pair}`);
       
-      const positionValidation = await this.positionValidator.validateWithDetailedLogging(signal.symbol, config);
+      const positionValidator = ServiceContainer.getPositionValidator(this.userId);
+      const positionValidation = await positionValidator.validateWithDetailedLogging(signal.symbol, config);
       console.log(`📋 Position validation result for ${signal.symbol}:`, positionValidation);
       
       if (!positionValidation.isValid) {

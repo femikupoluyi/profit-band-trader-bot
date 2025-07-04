@@ -5,8 +5,13 @@ import { OrderExecution } from './OrderExecution';
 import { ConfigurationService } from './ConfigurationService';
 import { SignalFetcher } from './SignalFetcher';
 import { SignalAnalysisCore } from './SignalAnalysisCore';
+import { PositionValidator } from './PositionValidator';
 import { BybitService } from '../../bybitService';
 
+/**
+ * PHASE 2 ENHANCED: Expanded ServiceContainer with proper dependency injection
+ * Centralized service management for consistent architecture
+ */
 export class ServiceContainer {
   private static loggers: Map<string, TradingLogger> = new Map();
   private static databaseHelpers: Map<string, DatabaseHelper> = new Map();
@@ -14,6 +19,7 @@ export class ServiceContainer {
   private static configurationServices: Map<string, ConfigurationService> = new Map();
   private static signalFetchers: Map<string, SignalFetcher> = new Map();
   private static signalAnalysisCores: Map<string, SignalAnalysisCore> = new Map();
+  private static positionValidators: Map<string, PositionValidator> = new Map();
 
   static getLogger(userId: string): TradingLogger {
     if (!this.loggers.has(userId)) {
@@ -58,6 +64,13 @@ export class ServiceContainer {
     return this.signalAnalysisCores.get(userId)!;
   }
 
+  static getPositionValidator(userId: string): PositionValidator {
+    if (!this.positionValidators.has(userId)) {
+      this.positionValidators.set(userId, new PositionValidator(userId));
+    }
+    return this.positionValidators.get(userId)!;
+  }
+
   static clearCache(userId?: string): void {
     if (userId) {
       this.loggers.delete(userId);
@@ -65,6 +78,7 @@ export class ServiceContainer {
       this.configurationServices.delete(userId);
       this.signalFetchers.delete(userId);
       this.signalAnalysisCores.delete(userId);
+      this.positionValidators.delete(userId);
       
       // Clear order executions for this user
       for (const key of this.orderExecutions.keys()) {
@@ -79,6 +93,7 @@ export class ServiceContainer {
       this.configurationServices.clear();
       this.signalFetchers.clear();
       this.signalAnalysisCores.clear();
+      this.positionValidators.clear();
     }
   }
 }

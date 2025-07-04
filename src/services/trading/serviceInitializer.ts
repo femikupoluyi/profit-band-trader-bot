@@ -54,7 +54,7 @@ export class ServiceInitializer {
     const marketScanner = new MarketScanner(this.userId, bybitService, validatedConfig);
     const signalAnalyzer = new SignalAnalyzer(this.userId, bybitService);
     const signalGenerator = new SignalGenerator(this.userId, validatedConfig);
-    const tradeExecutor = new TradeExecutor(this.userId, validatedConfig, bybitService);
+    const tradeExecutor = new TradeExecutor(this.userId, validatedConfig);
     const positionMonitor = new PositionMonitor(this.userId, bybitService, validatedConfig);
     const tradeSyncService = new TradeSyncService(this.userId, bybitService);
 
