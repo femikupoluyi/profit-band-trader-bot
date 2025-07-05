@@ -45,6 +45,12 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
         throw new Error('Failed to get Bybit credentials');
       }
 
+      // CRITICAL: First run comprehensive sync to import missing orders
+      console.log('🚨 Running comprehensive sync to import missing orders...');
+      const { ComprehensiveTradeSync } = await import('@/services/trading/core/ComprehensiveTradeSync');
+      const comprehensiveSync = new ComprehensiveTradeSync(user.id, bybitService);
+      await comprehensiveSync.emergencyFullSync();
+
       const positionSyncService = new PositionSyncService(user.id, bybitService);
       const tradeSyncService = new TradeSyncService(user.id, bybitService);
 

@@ -24,15 +24,27 @@ export class ComprehensiveTradeSync {
       console.log('🚨 ===== EMERGENCY COMPREHENSIVE TRADE SYNC =====');
       await this.logger.logSystemInfo('Starting emergency comprehensive trade sync');
 
-      // Get recent Bybit order history (last 7 days)
+      // CRITICAL: First get all active orders (not just history)
+      console.log('📊 Fetching ALL active orders from Bybit...');
+      const activeOrders = await this.getActiveOrdersFromBybit();
+      
+      // Then get recent order history (last 7 days) for closed positions
       const orderHistory = await this.getBybitOrderHistory(7 * 24); // 7 days in hours
       
-      if (!orderHistory || orderHistory.length === 0) {
-        console.log('📭 No recent orders found on Bybit');
+      // Combine active orders and recent history
+      const allOrders = [...activeOrders, ...orderHistory];
+      
+      // Remove duplicates based on orderId
+      const uniqueOrders = allOrders.filter((order, index, self) =>
+        index === self.findIndex(o => o.orderId === order.orderId)
+      );
+      
+      if (!uniqueOrders || uniqueOrders.length === 0) {
+        console.log('📭 No orders found on Bybit');
         return;
       }
 
-      console.log(`📊 Found ${orderHistory.length} orders on Bybit to process`);
+      console.log(`📊 Found ${uniqueOrders.length} total orders on Bybit to process (${activeOrders.length} active, ${orderHistory.length} historical)`);
 
       // Get existing trade records to avoid duplicates
       const { data: existingTrades } = await supabase
@@ -48,15 +60,15 @@ export class ComprehensiveTradeSync {
       let updatedCount = 0;
 
       // Process each Bybit order
-      for (const order of orderHistory) {
+      for (const order of uniqueOrders) {
         try {
           if (existingOrderIds.has(order.orderId)) {
             // Update existing record if needed
             const updated = await this.updateExistingTradeFromBybit(order);
             if (updated) updatedCount++;
           } else {
-            // Create new record for missing order (only for filled orders)
-            if (order.orderStatus === 'Filled') {
+            // Create new record for missing order - include ALL active orders
+            if (['New', 'PartiallyFilled', 'Filled'].includes(order.orderStatus)) {
               const created = await this.createTradeFromBybitOrder(order);
               if (created) createdCount++;
             }
@@ -80,7 +92,9 @@ export class ComprehensiveTradeSync {
       console.log(`✅ Emergency sync complete: ${createdCount} trades created, ${updatedCount} trades updated + closed position detection`);
       
       await this.logger.logSuccess('Emergency sync completed with closed position detection', {
-        totalBybitOrders: orderHistory.length,
+        totalBybitOrders: uniqueOrders.length,
+        activeOrders: activeOrders.length,
+        historicalOrders: orderHistory.length,
         existingTrades: existingOrderIds.size,
         tradesCreated: createdCount,
         tradesUpdated: updatedCount
@@ -90,6 +104,31 @@ export class ComprehensiveTradeSync {
       console.error('❌ Emergency sync failed:', error);
       await this.logger.logError('Emergency sync failed', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get active orders from Bybit (not just order history)
+   */
+  private async getActiveOrdersFromBybit(): Promise<any[]> {
+    try {
+      console.log('📋 Fetching active orders from Bybit...');
+      
+      // Get active orders using the order status API
+      const response = await this.bybitService.getActiveOrders();
+      
+      if (response.retCode !== 0 || !response.result?.list) {
+        console.log(`⚠️ Failed to fetch active orders: ${response.retMsg}`);
+        return [];
+      }
+
+      const activeOrders = response.result.list || [];
+      console.log(`📊 Found ${activeOrders.length} active orders on Bybit`);
+      
+      return activeOrders;
+    } catch (error) {
+      console.error('❌ Error fetching active orders from Bybit:', error);
+      return [];
     }
   }
 
@@ -121,6 +160,16 @@ export class ComprehensiveTradeSync {
     try {
       console.log(`📝 Creating missing trade record for ${order.symbol} order ${order.orderId}`);
 
+      // Map Bybit order status to bot status
+      let botStatus = 'pending';
+      if (order.orderStatus === 'Filled') {
+        botStatus = 'filled';
+      } else if (order.orderStatus === 'PartiallyFilled') {
+        botStatus = 'partial_filled';
+      } else if (order.orderStatus === 'New') {
+        botStatus = 'pending';
+      }
+
       const tradeData = {
         user_id: this.userId,
         symbol: order.symbol,
@@ -128,7 +177,7 @@ export class ComprehensiveTradeSync {
         order_type: order.orderType.toLowerCase() === 'market' ? 'market' : 'limit',
         price: parseFloat(order.avgPrice || order.price),
         quantity: parseFloat(order.qty),
-        status: 'filled', // Since we're only processing filled orders
+        status: botStatus,
         bybit_order_id: order.orderId,
         bybit_trade_id: order.orderId,
         created_at: new Date(parseInt(order.createdTime)).toISOString(),
@@ -179,14 +228,18 @@ export class ComprehensiveTradeSync {
 
       if (!existingTrade) return false;
 
-      // Check if update is needed - handle closed/cancelled orders
+      // Check if update is needed - handle all order status changes
       const bybitStatus = order.orderStatus;
       const shouldBeClosed = ['Cancelled', 'Rejected', 'Deactivated'].includes(bybitStatus);
       const shouldBeFilled = bybitStatus === 'Filled';
+      const shouldBePartialFilled = bybitStatus === 'PartiallyFilled';
+      const shouldBePending = bybitStatus === 'New';
       
       const needsUpdate = 
         (shouldBeClosed && existingTrade.status !== 'closed') ||
         (shouldBeFilled && existingTrade.status !== 'filled') ||
+        (shouldBePartialFilled && existingTrade.status !== 'partial_filled') ||
+        (shouldBePending && existingTrade.status !== 'pending') ||
         (shouldBeFilled && Math.abs(existingTrade.price - parseFloat(order.avgPrice || order.price)) > 0.000001) ||
         (shouldBeFilled && Math.abs(existingTrade.quantity - parseFloat(order.qty)) > 0.000001);
 
@@ -209,6 +262,17 @@ export class ComprehensiveTradeSync {
         if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
           updateData.buy_fill_price = parseFloat(order.avgPrice);
         }
+      } else if (shouldBePartialFilled) {
+        updateData.status = 'partial_filled';
+        updateData.price = parseFloat(order.avgPrice || order.price);
+        updateData.quantity = parseFloat(order.qty);
+        
+        // Add fill price for buy orders
+        if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
+          updateData.buy_fill_price = parseFloat(order.avgPrice);
+        }
+      } else if (shouldBePending) {
+        updateData.status = 'pending';
       }
 
       const { error } = await supabase

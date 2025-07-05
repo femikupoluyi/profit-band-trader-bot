@@ -198,8 +198,7 @@ export class BybitService {
         method: 'GET',
         params: {
           category: 'spot',
-          limit: limit.toString(),
-          orderStatus: 'Filled'
+          limit: limit.toString()
         }
       });
       
@@ -212,6 +211,32 @@ export class BybitService {
       return response;
     } catch (error) {
       console.error('❌ [BYBIT] Error getting order history:', error);
+      throw error;
+    }
+  }
+
+  async getActiveOrders(limit: number = 50): Promise<any> {
+    try {
+      console.log(`📋 [BYBIT] Getting active orders (limit: ${limit})...`);
+      
+      const response = await this.callBybitEdgeFunction({
+        endpoint: '/v5/order/realtime',
+        method: 'GET',
+        params: {
+          category: 'spot',
+          limit: limit.toString()
+        }
+      });
+      
+      if (response.retCode === 0) {
+        console.log(`✅ [BYBIT] Retrieved ${response.result?.list?.length || 0} active orders`);
+      } else {
+        console.error('❌ [BYBIT] Failed to get active orders:', response);
+      }
+
+      return response;
+    } catch (error) {
+      console.error('❌ [BYBIT] Error getting active orders:', error);
       throw error;
     }
   }
