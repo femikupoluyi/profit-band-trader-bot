@@ -12,18 +12,14 @@ export async function fixIncorrectlyClosedTrades(userId: string): Promise<{
   try {
     console.log('🔧 Fixing incorrectly closed trades...');
     
-    // Get all buy trades that are marked as closed from the last few days
-    // These should likely be 'filled' (active positions) instead
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - 7); // Last 7 days
-    
+    // Get ALL buy trades that are marked as closed
+    // BUY orders should NEVER be marked as 'closed' - they should be 'filled' until sold
     const { data: closedBuyTrades, error } = await supabase
       .from('trades')
       .select('*')
       .eq('user_id', userId)
       .eq('side', 'buy')
-      .eq('status', 'closed')
-      .gte('created_at', cutoffDate.toISOString());
+      .eq('status', 'closed');
     
     if (error) {
       console.error('❌ Error fetching closed trades:', error);
@@ -44,8 +40,8 @@ export async function fixIncorrectlyClosedTrades(userId: string): Promise<{
     
     console.log(`📋 Found ${closedBuyTrades.length} potentially incorrectly closed buy trades`);
     
-    // Update these trades back to 'filled' status
-    // They represent active positions unless we have evidence they were sold
+    // Update ALL closed buy trades back to 'filled' status
+    // BUY orders should be 'filled' (active) until there's evidence of a sell
     const { data: updatedTrades, error: updateError } = await supabase
       .from('trades')
       .update({
@@ -55,7 +51,6 @@ export async function fixIncorrectlyClosedTrades(userId: string): Promise<{
       .eq('user_id', userId)
       .eq('side', 'buy')
       .eq('status', 'closed')
-      .gte('created_at', cutoffDate.toISOString())
       .select('id, symbol');
     
     if (updateError) {

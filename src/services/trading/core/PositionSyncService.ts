@@ -88,24 +88,24 @@ export class PositionSyncService {
       
       console.log(`Balance check for ${baseAsset}: ${currentBalance}, Has position: ${hasPosition}`);
 
-      // CRITICAL: Only mark as closed if we have STRONG evidence of a sell
-      // Don't rely on balance checks alone as they can be unreliable
-      if (!hasPosition && localTrade.status === 'filled') {
-        // Look for matching sell orders in exchange history with strict criteria
+      // CRITICAL: BUY orders should NEVER be marked as closed based on balance alone
+      // Only close if we have DEFINITIVE evidence of a corresponding sell order
+      if (!hasPosition && localTrade.status === 'filled' && localTrade.side === 'buy') {
+        // Look for matching sell orders in exchange history with VERY strict criteria
         const matchingSellOrders = exchangeOrders.filter(order => 
           order.symbol === localTrade.symbol &&
           order.side === 'Sell' &&
           order.orderStatus === 'Filled' &&
-          Math.abs(parseFloat(order.qty) - localTrade.quantity) < localTrade.quantity * 0.05 && // Stricter 5% tolerance
-          new Date(parseInt(order.updatedTime)) > new Date(localTrade.created_at) // Sell must be after buy
+          Math.abs(parseFloat(order.qty) - localTrade.quantity) < localTrade.quantity * 0.01 && // Very strict 1% tolerance
+          new Date(parseInt(order.updatedTime)) > new Date(localTrade.created_at) && // Sell must be after buy
+          new Date(parseInt(order.updatedTime)) < new Date(Date.now() - 2 * 60 * 1000) // Sell must be at least 2 minutes old
         );
 
         if (matchingSellOrders.length > 0) {
-          console.log(`🎯 CONFIRMED position closure for ${localTrade.symbol} - found matching sell order with strict criteria`);
+          console.log(`🎯 CONFIRMED position closure for ${localTrade.symbol} - found matching sell order`);
           await this.markTradeAsClosed(localTrade, 'confirmed_sell_order_strict');
         } else {
-          console.log(`⚠️ KEEPING ${localTrade.symbol} ACTIVE - no balance but no confirmed sell order found`);
-          // DO NOT close the trade - it might be an active position
+          console.log(`⚠️ KEEPING ${localTrade.symbol} ACTIVE - BUY orders should remain active without definitive sell evidence`);
         }
         return;
       }
