@@ -118,6 +118,8 @@ export const useTradingStatsData = (userId?: string, timeRange?: TimeRange) => {
       };
 
       console.log('✅ Calculated stats with corrected P&L logic:', newStats);
+      console.log('🔍 Debug - activePairs:', activePairs, 'totalActiveCount:', totalActiveCount);
+      console.log('🔍 Debug - activeFilledTrades:', activeFilledTrades.length, 'allActiveTrades:', activeTrades.length);
       setStats(newStats);
     } catch (error) {
       console.error('❌ Error fetching trading stats:', error);

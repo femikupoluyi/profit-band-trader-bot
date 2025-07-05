@@ -25,6 +25,10 @@ interface TradingStatsProps {
 }
 
 const TradingStats = ({ stats, isLoading, timeRange, onTimeRangeChange }: TradingStatsProps) => {
+  // Debug: Log the stats being received
+  console.log('🔍 TradingStats received stats:', stats);
+  console.log('🔍 TradingStats isLoading:', isLoading);
+  
   const formatDate = (date: Date) => {
     return date.toISOString().split('T')[0];
   };
