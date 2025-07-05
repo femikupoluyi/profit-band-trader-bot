@@ -88,21 +88,24 @@ export class PositionSyncService {
       
       console.log(`Balance check for ${baseAsset}: ${currentBalance}, Has position: ${hasPosition}`);
 
-      // Only mark as closed if no balance AND we can confirm it was sold
+      // CRITICAL: Only mark as closed if we have STRONG evidence of a sell
+      // Don't rely on balance checks alone as they can be unreliable
       if (!hasPosition && localTrade.status === 'filled') {
-        // Look for matching sell orders in exchange history
+        // Look for matching sell orders in exchange history with strict criteria
         const matchingSellOrders = exchangeOrders.filter(order => 
           order.symbol === localTrade.symbol &&
           order.side === 'Sell' &&
           order.orderStatus === 'Filled' &&
-          Math.abs(parseFloat(order.qty) - localTrade.quantity) < localTrade.quantity * 0.1 // 10% tolerance
+          Math.abs(parseFloat(order.qty) - localTrade.quantity) < localTrade.quantity * 0.05 && // Stricter 5% tolerance
+          new Date(parseInt(order.updatedTime)) > new Date(localTrade.created_at) // Sell must be after buy
         );
 
         if (matchingSellOrders.length > 0) {
-          console.log(`🎯 Confirmed position closure for ${localTrade.symbol} - found matching sell order`);
-          await this.markTradeAsClosed(localTrade, 'confirmed_sell_order');
+          console.log(`🎯 CONFIRMED position closure for ${localTrade.symbol} - found matching sell order with strict criteria`);
+          await this.markTradeAsClosed(localTrade, 'confirmed_sell_order_strict');
         } else {
-          console.log(`⚠️ No balance for ${localTrade.symbol} but no matching sell order found - keeping trade active`);
+          console.log(`⚠️ KEEPING ${localTrade.symbol} ACTIVE - no balance but no confirmed sell order found`);
+          // DO NOT close the trade - it might be an active position
         }
         return;
       }

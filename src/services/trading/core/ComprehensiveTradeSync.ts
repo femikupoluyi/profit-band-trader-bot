@@ -251,11 +251,13 @@ export class ComprehensiveTradeSync {
         updated_at: new Date().toISOString()
       };
 
-      // Handle different order statuses
+      // Handle different order statuses - CRITICAL: Only close if truly cancelled/rejected
       if (shouldBeClosed) {
+        // ONLY close if the order was actually cancelled/rejected on Bybit
         updateData.status = 'closed';
-        console.log(`🔄 Marking trade ${existingTrade.id} as closed due to Bybit status: ${bybitStatus}`);
+        console.log(`🔄 Marking trade ${existingTrade.id} as CLOSED due to Bybit cancellation: ${bybitStatus}`);
       } else if (shouldBeFilled) {
+        // For filled orders, keep them as 'filled' (active positions)
         updateData.status = 'filled';
         updateData.price = parseFloat(order.avgPrice || order.price);
         updateData.quantity = parseFloat(order.qty);
@@ -264,6 +266,7 @@ export class ComprehensiveTradeSync {
         if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
           updateData.buy_fill_price = parseFloat(order.avgPrice);
         }
+        console.log(`✅ Keeping trade ${existingTrade.id} as FILLED (active position)`);
       } else if (shouldBePartialFilled) {
         updateData.status = 'partial_filled';
         updateData.price = parseFloat(order.avgPrice || order.price);
@@ -348,11 +351,10 @@ export class ComprehensiveTradeSync {
     // Run emergency sync to catch up missing trades
     await this.emergencyFullSync();
     
-    // Then run regular position sync
-    const { PositionSyncService } = await import('./PositionSyncService');
-    const positionSync = new PositionSyncService(this.userId, this.bybitService);
-    await positionSync.performStartupSync();
+    // DO NOT run aggressive position sync that closes trades
+    // Only run sync if explicitly requested by user
+    console.log('⚠️ Skipping aggressive position sync to prevent incorrect trade closures');
     
-    console.log('✅ Startup sync completed');
+    console.log('✅ Startup sync completed (conservative mode)');
   }
 }

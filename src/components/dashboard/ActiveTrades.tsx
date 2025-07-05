@@ -1,11 +1,10 @@
-
 import React from 'react';
 import { useActiveTrades } from '@/hooks/useActiveTrades';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import BybitSyncButton from '@/components/trading/BybitSyncButton';
 import EmergencySyncButton from '@/components/trading/EmergencySyncButton';
+import TradeStatusFixButton from '@/components/trading/TradeStatusFixButton';
 
 interface ActiveTradesProps {
   onTradeUpdate?: () => void;
@@ -45,6 +44,7 @@ const ActiveTrades = ({ onTradeUpdate }: ActiveTradesProps) => {
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
+            <TradeStatusFixButton onFixComplete={handleRefresh} />
             <EmergencySyncButton onSyncComplete={handleRefresh} />
           </div>
         </CardTitle>
