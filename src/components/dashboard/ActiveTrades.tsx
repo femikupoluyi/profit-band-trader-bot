@@ -45,7 +45,6 @@ const ActiveTrades = ({ onTradeUpdate }: ActiveTradesProps) => {
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <BybitSyncButton onSyncComplete={handleRefresh} />
             <EmergencySyncButton onSyncComplete={handleRefresh} />
           </div>
         </CardTitle>

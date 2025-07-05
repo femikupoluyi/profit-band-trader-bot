@@ -79,14 +79,15 @@ export const useActiveTrades = (enableAutoRefresh: boolean = false) => {
       const validSymbols = config?.trading_pairs || [];
       console.log('✅ Valid trading pairs from config:', validSymbols);
 
-      // Only fetch trades for currently configured symbols, exclude sell orders (they should be closed)
+      // Fetch ALL buy orders that are not closed, regardless of trading pairs configuration
+      // This ensures we see all active positions even if configuration changes
       const { data: trades, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
-        .in('status', ['pending', 'filled'])
+        .in('status', ['pending', 'filled', 'partial_filled'])
         .eq('side', 'buy') // CRITICAL: Only show buy orders as active
-        .in('symbol', validSymbols) // CRITICAL: Only show currently configured symbols
+        // Remove symbol filter to show all active trades regardless of current config
         .order('created_at', { ascending: false });
 
       if (error) {

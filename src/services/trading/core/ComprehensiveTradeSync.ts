@@ -67,8 +67,8 @@ export class ComprehensiveTradeSync {
             const updated = await this.updateExistingTradeFromBybit(order);
             if (updated) updatedCount++;
           } else {
-            // Create new record for missing order - include ALL active orders
-            if (['New', 'PartiallyFilled', 'Filled'].includes(order.orderStatus)) {
+            // Create new record for missing order - include ALL orders that aren't cancelled/rejected
+            if (!['Cancelled', 'Rejected', 'Deactivated'].includes(order.orderStatus)) {
               const created = await this.createTradeFromBybitOrder(order);
               if (created) createdCount++;
             }
@@ -160,7 +160,7 @@ export class ComprehensiveTradeSync {
     try {
       console.log(`📝 Creating missing trade record for ${order.symbol} order ${order.orderId}`);
 
-      // Map Bybit order status to bot status
+      // Map Bybit order status to bot status - DO NOT mark as closed unless explicitly cancelled
       let botStatus = 'pending';
       if (order.orderStatus === 'Filled') {
         botStatus = 'filled';
@@ -168,6 +168,8 @@ export class ComprehensiveTradeSync {
         botStatus = 'partial_filled';
       } else if (order.orderStatus === 'New') {
         botStatus = 'pending';
+      } else if (['Cancelled', 'Rejected', 'Deactivated'].includes(order.orderStatus)) {
+        botStatus = 'closed';
       }
 
       const tradeData = {
