@@ -5,6 +5,7 @@ import { TrendingUp, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import EmergencySyncButton from '@/components/trading/EmergencySyncButton';
 import TradeStatusFixButton from '@/components/trading/TradeStatusFixButton';
+import BybitDataFetcher from '@/components/trading/BybitDataFetcher';
 
 interface ActiveTradesProps {
   onTradeUpdate?: () => void;
@@ -34,6 +35,7 @@ const ActiveTrades = ({ onTradeUpdate }: ActiveTradesProps) => {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <BybitDataFetcher onDataFetched={handleRefresh} />
             <Button 
               variant="outline" 
               size="sm" 
