@@ -25,6 +25,7 @@ const TradingLogs = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  const [clearingLogs, setClearingLogs] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -133,6 +134,37 @@ const TradingLogs = () => {
     }
   };
 
+  const clearLogsOnly = async () => {
+    if (!user) return;
+    
+    setClearingLogs(true);
+    try {
+      console.log('🧹 Clearing trading logs...');
+      
+      // Clear only trading logs for current user
+      const { error: logsError } = await (supabase as any)
+        .from('trading_logs')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (logsError) {
+        console.error('Error clearing logs:', logsError);
+        throw logsError;
+      } else {
+        console.log('✅ Trading logs cleared');
+      }
+      
+      // Refresh the logs display
+      await fetchLogs();
+      
+      console.log('✅ Trading logs cleared successfully');
+    } catch (error) {
+      console.error('❌ Error clearing logs:', error);
+    } finally {
+      setClearingLogs(false);
+    }
+  };
+
   const clearTradingCache = async () => {
     setClearingCache(true);
     try {
@@ -213,6 +245,15 @@ const TradingLogs = () => {
             >
               <Database className="h-4 w-4 mr-2" />
               {clearingCache ? 'Clearing...' : 'Clear Cache'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearLogsOnly}
+              disabled={clearingLogs}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {clearingLogs ? 'Clearing...' : 'Clear Logs'}
             </Button>
             <Button
               variant="outline"
