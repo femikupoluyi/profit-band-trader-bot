@@ -141,23 +141,53 @@ const TradingLogs = () => {
     try {
       console.log('🧹 Starting to clear trading logs for user:', user.id);
       
-      // Clear only trading logs for current user
-      const { error: logsError } = await (supabase as any)
-        .from('trading_logs')
-        .delete()
-        .eq('user_id', user.id);
+      // Delete in smaller batches to avoid timeout
+      let totalDeleted = 0;
+      let batchSize = 100;
       
-      if (logsError) {
-        console.error('❌ Error clearing logs:', logsError);
-        throw logsError;
-      } else {
-        console.log('✅ Trading logs cleared successfully');
+      while (true) {
+        const { data: logsToDelete, error: fetchError } = await (supabase as any)
+          .from('trading_logs')
+          .select('id')
+          .eq('user_id', user.id)
+          .limit(batchSize);
+        
+        if (fetchError) {
+          console.error('❌ Error fetching logs for deletion:', fetchError);
+          throw fetchError;
+        }
+        
+        if (!logsToDelete || logsToDelete.length === 0) {
+          console.log('✅ No more logs to delete');
+          break;
+        }
+        
+        const idsToDelete = logsToDelete.map((log: any) => log.id);
+        
+        const { error: deleteError } = await (supabase as any)
+          .from('trading_logs')
+          .delete()
+          .in('id', idsToDelete);
+        
+        if (deleteError) {
+          console.error('❌ Error deleting batch:', deleteError);
+          throw deleteError;
+        }
+        
+        totalDeleted += logsToDelete.length;
+        console.log(`✅ Deleted batch of ${logsToDelete.length} logs (total: ${totalDeleted})`);
+        
+        // If we deleted fewer than the batch size, we're done
+        if (logsToDelete.length < batchSize) {
+          break;
+        }
       }
+      
+      console.log(`✅ Successfully deleted ${totalDeleted} trading logs`);
       
       // Refresh the logs display
       await fetchLogs();
       
-      console.log('✅ Trading logs operation completed');
     } catch (error) {
       console.error('❌ Error clearing logs:', error);
     } finally {
