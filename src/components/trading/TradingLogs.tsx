@@ -139,7 +139,7 @@ const TradingLogs = () => {
     
     setClearingLogs(true);
     try {
-      console.log('🧹 Clearing trading logs...');
+      console.log('🧹 Starting to clear trading logs for user:', user.id);
       
       // Clear only trading logs for current user
       const { error: logsError } = await (supabase as any)
@@ -148,16 +148,16 @@ const TradingLogs = () => {
         .eq('user_id', user.id);
       
       if (logsError) {
-        console.error('Error clearing logs:', logsError);
+        console.error('❌ Error clearing logs:', logsError);
         throw logsError;
       } else {
-        console.log('✅ Trading logs cleared');
+        console.log('✅ Trading logs cleared successfully');
       }
       
       // Refresh the logs display
       await fetchLogs();
       
-      console.log('✅ Trading logs cleared successfully');
+      console.log('✅ Trading logs operation completed');
     } catch (error) {
       console.error('❌ Error clearing logs:', error);
     } finally {
