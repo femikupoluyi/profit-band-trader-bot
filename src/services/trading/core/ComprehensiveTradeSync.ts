@@ -121,22 +121,25 @@ export class ComprehensiveTradeSync {
    */
   private async getActiveOrdersFromBybit(): Promise<any[]> {
     try {
-      console.log('📋 Fetching active orders from Bybit...');
+      console.log('📋 CRITICAL: Fetching active orders from Bybit...');
       
       // Get active orders using the order status API
       const response = await this.bybitService.getActiveOrders();
+      console.log('📋 CRITICAL: Raw response from getActiveOrders:', response);
       
       if (response.retCode !== 0 || !response.result?.list) {
-        console.log(`⚠️ Failed to fetch active orders: ${response.retMsg}`);
+        console.log(`⚠️ CRITICAL: Failed to fetch active orders: ${response.retMsg}`);
+        console.log(`⚠️ CRITICAL: Full response:`, response);
         return [];
       }
 
       const activeOrders = response.result.list || [];
-      console.log(`📊 Found ${activeOrders.length} active orders on Bybit`);
+      console.log(`📊 CRITICAL: Found ${activeOrders.length} active orders on Bybit`);
+      console.log(`📊 CRITICAL: Active orders details:`, activeOrders.map(o => `${o.symbol} ${o.side} ${o.qty} @ ${o.price} (${o.orderStatus})`));
       
       return activeOrders;
     } catch (error) {
-      console.error('❌ Error fetching active orders from Bybit:', error);
+      console.error('❌ CRITICAL: Error fetching active orders from Bybit:', error);
       return [];
     }
   }

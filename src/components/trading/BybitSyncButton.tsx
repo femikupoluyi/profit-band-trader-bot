@@ -46,6 +46,8 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
         throw new Error('Failed to get Bybit credentials');
       }
 
+      console.log('🔑 CRITICAL: Bybit credentials retrieved successfully');
+
       // CRITICAL: Calculate lookback hours from time range
       const lookbackHours = timeRange ? 
         Math.ceil((timeRange.to.getTime() - timeRange.from.getTime()) / (1000 * 60 * 60)) : 
@@ -54,11 +56,12 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
       console.log(`🚨 Running comprehensive sync for ${lookbackHours} hours (${timeRange?.from.toDateString()} to ${timeRange?.to.toDateString()})...`);
       console.log(`📊 CRITICAL: About to fetch active orders and order history from Bybit...`);
       
+      // CRITICAL: First run the comprehensive sync to get missing orders
       const { ComprehensiveTradeSync } = await import('@/services/trading/core/ComprehensiveTradeSync');
       const comprehensiveSync = new ComprehensiveTradeSync(user.id, bybitService);
       
-      // CRITICAL: Debug the sync process
-      console.log(`🔍 Starting emergency sync with timeRange lookback: ${lookbackHours} hours`);
+      console.log(`🔍 CRITICAL: Starting emergency sync with lookback: ${lookbackHours} hours`);
+      console.log(`🔍 CRITICAL: This should fetch your 88 open orders from Bybit...`);
       await comprehensiveSync.emergencyFullSyncWithTimeRange(lookbackHours);
 
       const positionSyncService = new PositionSyncService(user.id, bybitService);
