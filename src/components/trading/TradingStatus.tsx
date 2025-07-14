@@ -21,13 +21,30 @@ const TradingStatus = () => {
   useEffect(() => {
     if (user) {
       checkTradingStatus();
+      
+      // Check status every 10 seconds for real-time updates
+      const interval = setInterval(checkTradingStatus, 10000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
-  const checkTradingStatus = () => {
+  const checkTradingStatus = async () => {
     if (user) {
-      const running = tradingManager.isRunningForUser(user.id);
-      setIsRunning(running);
+      // Check actual engine status
+      const engineRunning = tradingManager.isRunningForUser(user.id);
+      
+      // Also check database config status for consistency
+      const { data: config } = await supabase
+        .from('trading_configs')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .single();
+      
+      // Engine status takes precedence over config status
+      const actualStatus = engineRunning;
+      setIsRunning(actualStatus);
+      
+      console.log(`🔍 [TradingStatus] Engine: ${engineRunning}, Config: ${config?.is_active}, Final: ${actualStatus}`);
     }
   };
 
@@ -209,64 +226,70 @@ const TradingStatus = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {!isRunning ? (
+        <div className="space-y-3">
+          {/* Primary Bot Controls */}
+          <div className="flex flex-wrap gap-2">
+            {!isRunning ? (
+              <Button 
+                onClick={handleStart} 
+                disabled={isLoading}
+                className="flex items-center gap-2"
+              >
+                <Play className="h-4 w-4" />
+                {isLoading ? "Starting..." : "Start Trading"}
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleStop} 
+                disabled={isLoading}
+                variant="destructive"
+                className="flex items-center gap-2"
+              >
+                <Square className="h-4 w-4" />
+                {isLoading ? "Stopping..." : "Emergency Stop"}
+              </Button>
+            )}
+            
             <Button 
-              onClick={handleStart} 
-              disabled={isLoading}
+              onClick={handleRestart} 
+              disabled={isLoading || !isRunning}
+              variant="outline"
               className="flex items-center gap-2"
             >
-              <Play className="h-4 w-4" />
-              {isLoading ? "Starting..." : "Start Trading"}
+              <RotateCcw className="h-4 w-4" />
+              {isLoading ? "Restarting..." : "Restart"}
             </Button>
-          ) : (
+          </div>
+
+          {/* System Utilities */}
+          <div className="flex flex-wrap gap-2">
+            <EmergencySyncButton onSyncComplete={checkTradingStatus} />
+            
             <Button 
-              onClick={handleStop} 
-              disabled={isLoading}
-              variant="destructive"
+              onClick={handleSimulateEOD} 
+              disabled={isSimulatingEOD}
+              variant="outline"
               className="flex items-center gap-2"
             >
-              <Square className="h-4 w-4" />
-              {isLoading ? "Stopping..." : "FORCE STOP"}
+              <Sunset className="h-4 w-4" />
+              {isSimulatingEOD ? "Simulating..." : "Simulate EOD"}
             </Button>
-          )}
-          
-          <Button 
-            onClick={handleRestart} 
-            disabled={isLoading}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <RotateCcw className="h-4 w-4" />
-            {isLoading ? "Restarting..." : "Restart"}
-          </Button>
 
-          <EmergencySyncButton onSyncComplete={() => console.log('Emergency sync completed')} />
-
-          <Button 
-            onClick={handleSimulateEOD} 
-            disabled={isSimulatingEOD}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <Sunset className="h-4 w-4" />
-            {isSimulatingEOD ? "Simulating..." : "Simulate EOD"}
-          </Button>
-
-          <Button 
-            onClick={handleTestConnections} 
-            disabled={isTesting}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <TestTube className="h-4 w-4" />
-            {isTesting ? "Testing..." : "Test System"}
-          </Button>
+            <Button 
+              onClick={handleTestConnections} 
+              disabled={isTesting}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <TestTube className="h-4 w-4" />
+              {isTesting ? "Testing..." : "Test System"}
+            </Button>
+          </div>
         </div>
 
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-gray-600 space-y-1">
           <p><strong>Status:</strong> {isRunning ? "⚠️ Bot is actively executing trades - Monitor carefully" : "✅ Bot is safely stopped - no trading activity"}</p>
-          <p><strong>FORCE STOP:</strong> Stops trading engine AND disables configuration for complete safety</p>
+          <p><strong>Emergency Stop:</strong> Immediately stops trading engine AND disables configuration for complete safety</p>
           <p><strong>Emergency Sync:</strong> Fixes data inconsistencies by syncing all trades with Bybit</p>
           <p><strong>EOD Simulation:</strong> Forces end-of-day logic to run and close profitable positions</p>
           <p><strong>System Test:</strong> Verifies API credentials, database connection, and configuration</p>
