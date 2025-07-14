@@ -22,9 +22,10 @@ import { useActiveTrades } from '@/hooks/useActiveTrades';
 
 interface ActivePairsTableProps {
   onTradeUpdate?: () => void;
+  timeRange?: { from: Date; to: Date };
 }
 
-const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
+const ActivePairsTable = ({ onTradeUpdate, timeRange }: ActivePairsTableProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [closingTrades, setClosingTrades] = useState<Set<string>>(new Set());
@@ -144,7 +145,7 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <BybitSyncButton onSyncComplete={handleSyncComplete} />
+            <BybitSyncButton onSyncComplete={handleSyncComplete} timeRange={timeRange} />
             <Button 
               variant="outline" 
               size="sm" 

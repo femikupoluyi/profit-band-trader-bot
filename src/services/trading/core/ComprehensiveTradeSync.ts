@@ -20,6 +20,13 @@ export class ComprehensiveTradeSync {
    * EMERGENCY SYNC: Pull all recent Bybit orders and create missing trade records
    */
   async emergencyFullSync(): Promise<void> {
+    return this.emergencyFullSyncWithTimeRange(72); // Default 72 hours
+  }
+
+  /**
+   * EMERGENCY SYNC with specific time range: Pull Bybit orders within time range
+   */
+  async emergencyFullSyncWithTimeRange(lookbackHours: number): Promise<void> {
     try {
       console.log('🚨 ===== EMERGENCY COMPREHENSIVE TRADE SYNC =====');
       await this.logger.logSystemInfo('Starting emergency comprehensive trade sync');
@@ -28,8 +35,8 @@ export class ComprehensiveTradeSync {
       console.log('📊 Fetching ALL active orders from Bybit...');
       const activeOrders = await this.getActiveOrdersFromBybit();
       
-      // Then get recent order history (last 7 days) for closed positions
-      const orderHistory = await this.getBybitOrderHistory(7 * 24); // 7 days in hours
+      // Then get recent order history based on lookback period
+      const orderHistory = await this.getBybitOrderHistory(lookbackHours);
       
       // Combine active orders and recent history
       const allOrders = [...activeOrders, ...orderHistory];

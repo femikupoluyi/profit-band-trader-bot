@@ -60,7 +60,7 @@ const DashboardWithSidebar = () => {
                 <ActiveTrades onTradeUpdate={handleDataRefresh} />
               </div>
             </div>
-            <ActivePairsTable onTradeUpdate={handleDataRefresh} />
+            <ActivePairsTable onTradeUpdate={handleDataRefresh} timeRange={timeRange} />
           </div>
         );
       case 'config':
@@ -90,7 +90,7 @@ const DashboardWithSidebar = () => {
                 <ActiveTrades onTradeUpdate={handleDataRefresh} />
               </div>
             </div>
-            <ActivePairsTable onTradeUpdate={handleDataRefresh} />
+            <ActivePairsTable onTradeUpdate={handleDataRefresh} timeRange={timeRange} />
           </div>
         );
     }

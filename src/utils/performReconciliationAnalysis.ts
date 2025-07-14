@@ -3,7 +3,7 @@ import { BybitService } from '@/services/bybitService';
 import { TradingLogger } from '@/services/trading/core/TradingLogger';
 import { ComprehensiveReconciliation } from '@/services/trading/core/reconciliation/ComprehensiveReconciliation';
 
-export async function performReconciliationAnalysis(userId: string): Promise<{
+export async function performReconciliationAnalysis(userId: string, lookbackHours: number = 168): Promise<{
   success: boolean;
   report?: any;
   error?: string;
@@ -39,8 +39,8 @@ export async function performReconciliationAnalysis(userId: string): Promise<{
     // Step 3: Perform comprehensive reconciliation
     const reconciliation = new ComprehensiveReconciliation(userId, bybitService, logger);
     
-    console.log('📊 Fetching data from Bybit and comparing with local database...');
-    const report = await reconciliation.performComprehensiveReconciliation(168); // 7 days
+    console.log(`📊 Fetching data from Bybit and comparing with local database (${lookbackHours} hours)...`);
+    const report = await reconciliation.performComprehensiveReconciliation(lookbackHours);
     
     // Step 4: Print detailed report to console
     await reconciliation.printDetailedReport(report);

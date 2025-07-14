@@ -7,9 +7,10 @@ import { performReconciliationAnalysis } from '@/utils/performReconciliationAnal
 
 interface BybitDataFetcherProps {
   onDataFetched?: () => void;
+  timeRange?: { from: Date; to: Date };
 }
 
-const BybitDataFetcher = ({ onDataFetched }: BybitDataFetcherProps) => {
+const BybitDataFetcher = ({ onDataFetched, timeRange }: BybitDataFetcherProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isFetching, setIsFetching] = useState(false);
@@ -26,14 +27,18 @@ const BybitDataFetcher = ({ onDataFetched }: BybitDataFetcherProps) => {
 
     setIsFetching(true);
     try {
-      console.log('🔍 Fetching Bybit data for reconciliation...');
+      const lookbackHours = timeRange ? 
+        Math.ceil((timeRange.to.getTime() - timeRange.from.getTime()) / (1000 * 60 * 60)) : 
+        168; // Default 7 days if no range provided
+      
+      console.log(`🔍 Fetching Bybit data for ${lookbackHours} hours (${timeRange?.from.toDateString()} to ${timeRange?.to.toDateString()})...`);
       
       toast({
         title: "Fetching Data",
-        description: "Downloading 7-day trading history from Bybit...",
+        description: `Downloading ${Math.ceil(lookbackHours/24)}-day trading history from Bybit...`,
       });
 
-      const result = await performReconciliationAnalysis(user.id);
+      const result = await performReconciliationAnalysis(user.id, lookbackHours);
       
       if (result.success) {
         console.log('📊 Bybit Data Analysis Complete:', result.report);

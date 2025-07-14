@@ -10,9 +10,10 @@ import { TradeSyncService } from '@/services/trading/tradeSyncService';
 
 interface BybitSyncButtonProps {
   onSyncComplete?: () => void;
+  timeRange?: { from: Date; to: Date };
 }
 
-const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
+const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -45,11 +46,16 @@ const BybitSyncButton = ({ onSyncComplete }: BybitSyncButtonProps) => {
         throw new Error('Failed to get Bybit credentials');
       }
 
-      // CRITICAL: First run comprehensive sync to import missing orders
-      console.log('🚨 Running comprehensive sync to import missing orders...');
+      // CRITICAL: Calculate lookback hours from time range
+      const lookbackHours = timeRange ? 
+        Math.ceil((timeRange.to.getTime() - timeRange.from.getTime()) / (1000 * 60 * 60)) : 
+        72; // Default 72 hours if no range provided
+      
+      console.log(`🚨 Running comprehensive sync for ${lookbackHours} hours (${timeRange?.from.toDateString()} to ${timeRange?.to.toDateString()})...`);
+      
       const { ComprehensiveTradeSync } = await import('@/services/trading/core/ComprehensiveTradeSync');
       const comprehensiveSync = new ComprehensiveTradeSync(user.id, bybitService);
-      await comprehensiveSync.emergencyFullSync();
+      await comprehensiveSync.emergencyFullSyncWithTimeRange(lookbackHours);
 
       const positionSyncService = new PositionSyncService(user.id, bybitService);
       const tradeSyncService = new TradeSyncService(user.id, bybitService);
