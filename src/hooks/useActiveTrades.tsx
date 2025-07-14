@@ -81,6 +81,25 @@ export const useActiveTrades = (enableAutoRefresh: boolean = false) => {
 
       // Fetch ALL buy orders that are not closed, regardless of trading pairs configuration
       // This ensures we see all active positions even if configuration changes
+      // CRITICAL: First check what statuses we actually have in the database
+      const { data: allTrades } = await supabase
+        .from('trades')
+        .select('status, symbol, side, bybit_order_id, created_at')
+        .eq('user_id', user.id)
+        .eq('side', 'buy')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      console.log('🔍 CRITICAL: Recent buy orders in database:', allTrades?.map(t => `${t.symbol} ${t.status} ID:${t.bybit_order_id} ${t.created_at}`));
+      
+      // Count by status
+      const statusCounts = allTrades?.reduce((acc, trade) => {
+        acc[trade.status] = (acc[trade.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log('🔍 CRITICAL: Status distribution:', statusCounts);
+
+      console.log('🔍 CRITICAL: Querying for active trades with statuses: pending, filled, partial_filled');
       const { data: trades, error } = await supabase
         .from('trades')
         .select('*')
@@ -89,6 +108,8 @@ export const useActiveTrades = (enableAutoRefresh: boolean = false) => {
         .eq('side', 'buy') // CRITICAL: Only show buy orders as active
         // Remove symbol filter to show all active trades regardless of current config
         .order('created_at', { ascending: false });
+
+      console.log(`🔍 CRITICAL: Database query returned ${trades?.length || 0} active trades:`, trades?.map(t => `${t.symbol} ${t.status} ${t.bybit_order_id}`));
 
       if (error) {
         console.error('❌ Error fetching active trades:', error);

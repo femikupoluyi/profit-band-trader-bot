@@ -29,11 +29,13 @@ export class ComprehensiveTradeSync {
   async emergencyFullSyncWithTimeRange(lookbackHours: number): Promise<void> {
     try {
       console.log('🚨 ===== EMERGENCY COMPREHENSIVE TRADE SYNC =====');
+      console.log(`🔍 CRITICAL: Starting sync with lookback: ${lookbackHours} hours`);
       await this.logger.logSystemInfo('Starting emergency comprehensive trade sync');
 
       // CRITICAL: First get all active orders (not just history)
-      console.log('📊 Fetching ALL active orders from Bybit...');
+      console.log('📊 CRITICAL: Fetching ALL active orders from Bybit...');
       const activeOrders = await this.getActiveOrdersFromBybit();
+      console.log(`📊 CRITICAL: Retrieved ${activeOrders.length} active orders from Bybit`);
       
       // Then get recent order history based on lookback period
       const orderHistory = await this.getBybitOrderHistory(lookbackHours);
@@ -179,19 +181,37 @@ export class ComprehensiveTradeSync {
         botStatus = 'closed';
       }
 
+      // CRITICAL: Validate price to avoid database constraint violations
+      const orderPrice = parseFloat(order.avgPrice || order.price);
+      const orderQty = parseFloat(order.qty);
+      
+      console.log(`🔍 CRITICAL: Processing order ${order.orderId} - Symbol: ${order.symbol}, Price: ${orderPrice}, Qty: ${orderQty}, Status: ${order.orderStatus}`);
+      
+      if (orderPrice <= 0 || isNaN(orderPrice)) {
+        console.log(`⚠️ SKIPPING order ${order.orderId} - Invalid price: ${orderPrice}`);
+        return false;
+      }
+      
+      if (orderQty <= 0 || isNaN(orderQty)) {
+        console.log(`⚠️ SKIPPING order ${order.orderId} - Invalid quantity: ${orderQty}`);
+        return false;
+      }
+
       const tradeData = {
         user_id: this.userId,
         symbol: order.symbol,
         side: order.side.toLowerCase(),
         order_type: order.orderType.toLowerCase() === 'market' ? 'market' : 'limit',
-        price: parseFloat(order.avgPrice || order.price),
-        quantity: parseFloat(order.qty),
+        price: orderPrice,
+        quantity: orderQty,
         status: botStatus,
         bybit_order_id: order.orderId,
         bybit_trade_id: order.orderId,
         created_at: new Date(parseInt(order.createdTime)).toISOString(),
         updated_at: new Date(parseInt(order.updatedTime)).toISOString()
       };
+      
+      console.log(`📝 CRITICAL: About to insert trade:`, tradeData);
 
       // Add fill price for buy orders
       if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
@@ -205,7 +225,9 @@ export class ComprehensiveTradeSync {
         .single();
 
       if (error) {
-        console.error(`❌ Error creating trade for order ${order.orderId}:`, error);
+        console.error(`❌ CRITICAL: Error creating trade for order ${order.orderId}:`, error);
+        console.error(`❌ CRITICAL: Failed trade data:`, tradeData);
+        console.error(`❌ CRITICAL: Database error details:`, error.details, error.hint, error.code);
         return false;
       }
 

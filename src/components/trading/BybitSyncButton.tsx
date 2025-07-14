@@ -52,9 +52,13 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
         72; // Default 72 hours if no range provided
       
       console.log(`🚨 Running comprehensive sync for ${lookbackHours} hours (${timeRange?.from.toDateString()} to ${timeRange?.to.toDateString()})...`);
+      console.log(`📊 CRITICAL: About to fetch active orders and order history from Bybit...`);
       
       const { ComprehensiveTradeSync } = await import('@/services/trading/core/ComprehensiveTradeSync');
       const comprehensiveSync = new ComprehensiveTradeSync(user.id, bybitService);
+      
+      // CRITICAL: Debug the sync process
+      console.log(`🔍 Starting emergency sync with timeRange lookback: ${lookbackHours} hours`);
       await comprehensiveSync.emergencyFullSyncWithTimeRange(lookbackHours);
 
       const positionSyncService = new PositionSyncService(user.id, bybitService);
