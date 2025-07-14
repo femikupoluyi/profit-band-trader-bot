@@ -184,6 +184,7 @@ const ActivePairsTable = ({ onTradeUpdate, timeRange }: ActivePairsTableProps) =
                   <TableHead>Unrealized P&L</TableHead>
                   <TableHead>% Change</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Date/Time</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>

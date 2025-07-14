@@ -96,6 +96,9 @@ const ActiveTradeRow = ({ trade, isClosing, onClose }: ActiveTradeRowProps) => {
           {trade.status.toUpperCase()}
         </span>
       </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {new Date(trade.created_at).toLocaleString()}
+      </TableCell>
       <TableCell>
         <CloseTradeDialog
           trade={trade}
