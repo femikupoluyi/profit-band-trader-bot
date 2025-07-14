@@ -29,8 +29,9 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
     }
 
     setIsSyncing(true);
+    
     try {
-      console.log('🔄 Starting comprehensive Bybit sync...');
+      console.log('🔄 CRITICAL: Starting comprehensive Bybit sync...');
       
       toast({
         title: "Sync Started",
@@ -38,11 +39,13 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
       });
 
       // Get credentials from CredentialsManager
+      console.log('🔑 CRITICAL: Getting credentials...');
       const { CredentialsManager } = await import('@/services/trading/credentialsManager');
       const credentialsManager = new CredentialsManager(user.id);
       const bybitService = await credentialsManager.fetchCredentials();
 
       if (!bybitService) {
+        console.error('❌ CRITICAL: Failed to get Bybit credentials');
         throw new Error('Failed to get Bybit credentials');
       }
 
@@ -53,16 +56,25 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
         Math.ceil((timeRange.to.getTime() - timeRange.from.getTime()) / (1000 * 60 * 60)) : 
         72; // Default 72 hours if no range provided
       
-      console.log(`🚨 Running comprehensive sync for ${lookbackHours} hours (${timeRange?.from.toDateString()} to ${timeRange?.to.toDateString()})...`);
-      console.log(`📊 CRITICAL: About to fetch active orders and order history from Bybit...`);
+      console.log(`🚨 CRITICAL: Running comprehensive sync for ${lookbackHours} hours (${timeRange?.from?.toDateString()} to ${timeRange?.to?.toDateString()})...`);
+      
+      // CRITICAL: First test active orders API directly
+      console.log('🧪 CRITICAL: Testing active orders API directly...');
+      const testActiveOrders = await bybitService.getActiveOrders(100);
+      console.log('🧪 CRITICAL: Direct API test result:', testActiveOrders);
+      console.log(`🧪 CRITICAL: Found ${testActiveOrders?.result?.list?.length || 0} active orders from direct API call`);
       
       // CRITICAL: First run the comprehensive sync to get missing orders
+      console.log('📦 CRITICAL: Importing ComprehensiveTradeSync...');
       const { ComprehensiveTradeSync } = await import('@/services/trading/core/ComprehensiveTradeSync');
       const comprehensiveSync = new ComprehensiveTradeSync(user.id, bybitService);
       
       console.log(`🔍 CRITICAL: Starting emergency sync with lookback: ${lookbackHours} hours`);
       console.log(`🔍 CRITICAL: This should fetch your 88 open orders from Bybit...`);
+      
+      console.log('🚀 CRITICAL: Calling emergencyFullSyncWithTimeRange...');
       await comprehensiveSync.emergencyFullSyncWithTimeRange(lookbackHours);
+      console.log('✅ CRITICAL: emergencyFullSyncWithTimeRange completed');
 
       const positionSyncService = new PositionSyncService(user.id, bybitService);
       const tradeSyncService = new TradeSyncService(user.id, bybitService);
