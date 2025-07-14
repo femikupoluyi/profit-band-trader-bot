@@ -172,16 +172,26 @@ export class ComprehensiveTradeSync {
     try {
       console.log(`📝 Creating missing trade record for ${order.symbol} order ${order.orderId}`);
 
-      // Map Bybit order status to bot status - DO NOT mark as closed unless explicitly cancelled
+      // CRITICAL: Map Bybit order status to bot status with proper active order handling
       let botStatus = 'pending';
-      if (order.orderStatus === 'Filled') {
+      
+      console.log(`🔍 CRITICAL: Mapping status for order ${order.orderId} - Bybit status: ${order.orderStatus}`);
+      
+      // CRITICAL: Handle active orders from /v5/order/realtime first
+      if (order.orderStatus === 'New' || order.orderStatus === 'Untriggered' || order.orderStatus === 'PartiallyFilled') {
+        // These are definitely active/pending orders
+        botStatus = order.orderStatus === 'PartiallyFilled' ? 'partial_filled' : 'pending';
+        console.log(`✅ CRITICAL: Active order ${order.orderId} mapped to '${botStatus}'`);
+      } else if (order.orderStatus === 'Filled') {
         botStatus = 'filled';
-      } else if (order.orderStatus === 'PartiallyFilled') {
-        botStatus = 'partial_filled';
-      } else if (order.orderStatus === 'New') {
-        botStatus = 'pending';
+        console.log(`✅ CRITICAL: Filled order ${order.orderId} mapped to 'filled'`);
       } else if (['Cancelled', 'Rejected', 'Deactivated'].includes(order.orderStatus)) {
         botStatus = 'closed';
+        console.log(`✅ CRITICAL: Cancelled order ${order.orderId} mapped to 'closed'`);
+      } else {
+        // Default for unknown statuses - log for investigation
+        console.log(`⚠️ CRITICAL: Unknown order status '${order.orderStatus}' for order ${order.orderId}, defaulting to 'pending'`);
+        botStatus = 'pending';
       }
 
       // CRITICAL: Validate price to avoid database constraint violations
@@ -283,11 +293,13 @@ export class ComprehensiveTradeSync {
         updated_at: new Date().toISOString()
       };
 
-      // Handle different order statuses - CRITICAL: Only close if truly cancelled/rejected
+      // CRITICAL: Handle different order statuses - preserve active orders properly
+      console.log(`🔍 CRITICAL: Updating trade ${existingTrade.id} from '${existingTrade.status}' based on Bybit status '${bybitStatus}'`);
+      
       if (shouldBeClosed) {
         // ONLY close if the order was actually cancelled/rejected on Bybit
         updateData.status = 'closed';
-        console.log(`🔄 Marking trade ${existingTrade.id} as CLOSED due to Bybit cancellation: ${bybitStatus}`);
+        console.log(`🔄 CRITICAL: Marking trade ${existingTrade.id} as CLOSED due to Bybit cancellation: ${bybitStatus}`);
       } else if (shouldBeFilled) {
         // For filled orders, keep them as 'filled' (active positions)
         updateData.status = 'filled';
@@ -298,7 +310,7 @@ export class ComprehensiveTradeSync {
         if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
           updateData.buy_fill_price = parseFloat(order.avgPrice);
         }
-        console.log(`✅ Keeping trade ${existingTrade.id} as FILLED (active position)`);
+        console.log(`✅ CRITICAL: Updating trade ${existingTrade.id} to FILLED (active position)`);
       } else if (shouldBePartialFilled) {
         updateData.status = 'partial_filled';
         updateData.price = parseFloat(order.avgPrice || order.price);
@@ -308,8 +320,10 @@ export class ComprehensiveTradeSync {
         if (order.side.toLowerCase() === 'buy' && order.avgPrice) {
           updateData.buy_fill_price = parseFloat(order.avgPrice);
         }
+        console.log(`✅ CRITICAL: Updating trade ${existingTrade.id} to PARTIAL_FILLED`);
       } else if (shouldBePending) {
         updateData.status = 'pending';
+        console.log(`✅ CRITICAL: Keeping/updating trade ${existingTrade.id} as PENDING (active order)`);
       }
 
       const { error } = await supabase

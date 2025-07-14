@@ -75,65 +75,7 @@ const BybitSyncButton = ({ onSyncComplete, timeRange }: BybitSyncButtonProps) =>
       await comprehensiveSync.emergencyFullSyncWithTimeRange(lookbackHours);
       console.log('✅ CRITICAL: emergencyFullSyncWithTimeRange completed');
 
-      // CRITICAL: Also test and import active orders specifically
-      console.log('🔥 CRITICAL: Testing active orders API specifically...');
-      const activeOrdersResponse = await bybitService.getActiveOrders(100);
-      console.log('🔥 CRITICAL: Active orders response:', activeOrdersResponse);
-      
-      if (activeOrdersResponse.retCode === 0 && activeOrdersResponse.result?.list) {
-        const activeOrders = activeOrdersResponse.result.list;
-        console.log(`🔥 CRITICAL: Found ${activeOrders.length} active orders to import`);
-        
-        // Import each active order as a pending trade
-        for (const order of activeOrders) {
-          console.log(`🔥 CRITICAL: Importing active order ${order.orderId} - ${order.symbol} ${order.side} ${order.qty}`);
-          
-          try {
-            const { data: existingTrade } = await supabase
-              .from('trades')
-              .select('id')
-              .eq('bybit_order_id', order.orderId)
-              .eq('user_id', user.id)
-              .single();
-
-            if (!existingTrade) {
-              // Create new trade record for active order
-              const tradeData = {
-                user_id: user.id,
-                symbol: order.symbol,
-                side: order.side.toLowerCase(),
-                quantity: parseFloat(order.qty),
-                price: parseFloat(order.price),
-                status: order.orderStatus === 'New' ? 'pending' : 
-                       order.orderStatus === 'Filled' ? 'filled' : 
-                       order.orderStatus === 'PartiallyFilled' ? 'partial_filled' : 
-                       'pending',
-                order_type: order.orderType.toLowerCase(),
-                bybit_order_id: order.orderId,
-                bybit_trade_id: order.orderId,
-                created_at: new Date(parseInt(order.createdTime)).toISOString(),
-                updated_at: new Date().toISOString()
-              };
-
-              const { error: insertError } = await supabase
-                .from('trades')
-                .insert(tradeData);
-
-              if (insertError) {
-                console.error(`❌ CRITICAL: Failed to insert active order ${order.orderId}:`, insertError);
-              } else {
-                console.log(`✅ CRITICAL: Successfully imported active order ${order.orderId}`);
-              }
-            } else {
-              console.log(`ℹ️ CRITICAL: Active order ${order.orderId} already exists in database`);
-            }
-          } catch (error) {
-            console.error(`❌ CRITICAL: Error processing active order ${order.orderId}:`, error);
-          }
-        }
-      } else {
-        console.log('⚠️ CRITICAL: No active orders returned from Bybit API');
-      }
+      console.log('✅ CRITICAL: Comprehensive sync completed successfully');
 
       const positionSyncService = new PositionSyncService(user.id, bybitService);
       const tradeSyncService = new TradeSyncService(user.id, bybitService);
