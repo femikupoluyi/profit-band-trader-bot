@@ -12,7 +12,8 @@ import {
   TableFooter,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, Loader2 } from 'lucide-react';
+import { TrendingUp, Loader2, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ActiveTrade } from '@/types/trading';
 import ActiveTradeRow from './ActiveTradeRow';
 import ActiveTradesSummary from './ActiveTradesSummary';
@@ -142,7 +143,19 @@ const ActivePairsTable = ({ onTradeUpdate }: ActivePairsTableProps) => {
               </span>
             </div>
           </div>
-          <BybitSyncButton onSyncComplete={handleSyncComplete} />
+          <div className="flex items-center gap-2">
+            <BybitSyncButton onSyncComplete={handleSyncComplete} />
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => { refetch(); handleSyncComplete(); }}
+              disabled={isLoading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh UI
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>

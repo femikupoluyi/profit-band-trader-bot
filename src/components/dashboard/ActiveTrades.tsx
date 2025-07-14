@@ -35,7 +35,6 @@ const ActiveTrades = ({ onTradeUpdate }: ActiveTradesProps) => {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <BybitDataFetcher onDataFetched={handleRefresh} />
             <Button 
               variant="outline" 
               size="sm" 
@@ -44,9 +43,8 @@ const ActiveTrades = ({ onTradeUpdate }: ActiveTradesProps) => {
               className="flex items-center gap-2"
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh Data
+              Refresh UI Data
             </Button>
-            <TradeStatusFixButton onFixComplete={handleRefresh} />
           </div>
         </CardTitle>
       </CardHeader>
