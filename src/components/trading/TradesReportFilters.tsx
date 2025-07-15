@@ -55,6 +55,7 @@ const TradesReportFilters = ({
         from = subDays(now, 7);
     }
 
+    console.log('🗓️ Quick select period:', period, 'Setting time range:', { from, to: now });
     setTimeRange({ from, to: now });
   };
 
@@ -97,7 +98,12 @@ const TradesReportFilters = ({
             <Calendar
               mode="single"
               selected={timeRange.from}
-              onSelect={(date) => date && setTimeRange({ ...timeRange, from: date })}
+              onSelect={(date) => {
+                if (date) {
+                  console.log('🗓️ Manual from date selection:', date);
+                  setTimeRange({ ...timeRange, from: date });
+                }
+              }}
               initialFocus
             />
           </PopoverContent>
@@ -124,7 +130,12 @@ const TradesReportFilters = ({
             <Calendar
               mode="single"
               selected={timeRange.to}
-              onSelect={(date) => date && setTimeRange({ ...timeRange, to: date })}
+              onSelect={(date) => {
+                if (date) {
+                  console.log('🗓️ Manual to date selection:', date);
+                  setTimeRange({ ...timeRange, to: date });
+                }
+              }}
               initialFocus
             />
           </PopoverContent>
