@@ -56,14 +56,22 @@ const TradesReport = () => {
 
     setLoading(true);
     try {
-      console.log('📊 Fetching trades for time range:', timeRange);
+      const fromISO = startOfDay(timeRange.from).toISOString();
+      const toISO = endOfDay(timeRange.to).toISOString();
+      
+      console.log('📊 Fetching trades for time range:', {
+        from: timeRange.from,
+        to: timeRange.to,
+        fromISO,
+        toISO
+      });
 
       let query = supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
-        .gte('created_at', startOfDay(timeRange.from).toISOString())
-        .lte('created_at', endOfDay(timeRange.to).toISOString())
+        .gte('created_at', fromISO)
+        .lte('created_at', toISO)
         .order('created_at', { ascending: false });
 
       if (statusFilter !== 'all') {
