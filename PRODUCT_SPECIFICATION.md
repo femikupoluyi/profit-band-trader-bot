@@ -101,7 +101,357 @@ An automated cryptocurrency trading bot that operates on **Bybit's DEMO trading 
 - **Bulk Actions**: Close multiple positions simultaneously
 - **Position History**: View all closed trades with P&L breakdown
 
-### 2.6 Real-Time Dashboard
+### 2.6 Dynamic Precision Management
+
+#### 2.6.1 Problem Statement
+Cryptocurrency trading pairs on Bybit have vastly different precision requirements that cannot be hardcoded:
+
+| Symbol | Price Precision | Quantity Precision | Min Order Value |
+|--------|----------------|-------------------|-----------------|
+| BTCUSDT | 2 decimals | 6 decimals | $10-25 USD |
+| DOGEUSDT | 5 decimals | 0-1 decimals | $5-15 USD |
+| ETHUSDT | 2 decimals | 5 decimals | $10-25 USD |
+
+**Consequences of incorrect precision:**
+- ❌ Orders rejected by exchange API
+- ❌ "Invalid price" or "Invalid quantity" errors
+- ❌ Wasted API calls and rate limit consumption
+- ❌ Failed trades and lost opportunities
+
+**Solution:** Dynamic fetching and caching of precision rules from Bybit for each symbol.
+
+#### 2.6.2 Bybit API Integration
+
+**Endpoint:** `GET /v5/market/instruments-info`
+
+**Request Parameters:**
+```typescript
+{
+  category: "spot",
+  symbol: "BTCUSDT"  // Can fetch single or multiple symbols
+}
+```
+
+**Response Structure (Critical Fields):**
+```typescript
+{
+  retCode: 0,
+  result: {
+    list: [{
+      symbol: "BTCUSDT",
+      
+      // Price precision
+      priceFilter: {
+        tickSize: "0.01",      // Minimum price increment
+        minPrice: "0.01",
+        maxPrice: "99999.99"
+      },
+      
+      // Quantity precision  
+      lotSizeFilter: {
+        basePrecision: "0.000001",  // Minimum quantity increment
+        minOrderQty: "0.000048",    // Minimum order quantity
+        maxOrderQty: "71.73956243",
+        minOrderAmt: "1"            // Minimum order value in USD
+      }
+    }]
+  }
+}
+```
+
+**Key Fields Mapping:**
+- `tickSize` → Price decimal places (e.g., "0.01" = 2 decimals)
+- `basePrecision` → Quantity decimal places (e.g., "0.000001" = 6 decimals)
+- `minOrderQty` → Minimum tradeable quantity
+- `minOrderAmt` → Minimum order value in quote currency (USD)
+
+#### 2.6.3 Decimal Calculation Logic
+
+**Price Decimals (from tickSize):**
+```typescript
+// Example: tickSize = "0.01"
+// Step 1: Convert to number: 0.01
+// Step 2: Count decimals after decimal point: 2
+// Result: priceDecimals = 2
+
+function calculateDecimalsFromTickSize(tickSize: string): number {
+  const num = parseFloat(tickSize);
+  const fixedStr = num.toFixed(20);  // Expand to capture all decimals
+  const dotIndex = fixedStr.indexOf('.');
+  
+  if (dotIndex === -1) return 0;
+  
+  // Count non-zero decimals from right
+  let decimals = 0;
+  for (let i = fixedStr.length - 1; i > dotIndex; i--) {
+    if (fixedStr[i] !== '0') {
+      decimals = i - dotIndex;
+      break;
+    }
+  }
+  
+  return Math.min(decimals, 8);  // Cap at 8 (Bybit max)
+}
+```
+
+**Quantity Decimals (from basePrecision):**
+```typescript
+// Example: basePrecision = "0.000001"  
+// Result: quantityDecimals = 6
+
+// Same logic as price decimals
+function calculateDecimalsFromBasePrecision(basePrecision: string): number {
+  return calculateDecimalsFromTickSize(basePrecision);
+}
+```
+
+**Formatting Examples:**
+```typescript
+// BTCUSDT
+formatPrice("BTCUSDT", 45678.123456)  // → "45678.12" (2 decimals)
+formatQuantity("BTCUSDT", 0.123456789) // → "0.123457" (6 decimals)
+
+// DOGEUSDT
+formatPrice("DOGEUSDT", 0.123456)     // → "0.12346" (5 decimals)
+formatQuantity("DOGEUSDT", 1000.567)  // → "1001" (0 decimals)
+```
+
+#### 2.6.4 Caching Architecture
+
+**Cache Implementation:**
+```typescript
+// src/services/trading/core/InstrumentCache.ts
+class InstrumentCache {
+  private static cache = new Map<string, CachedInstrument>();
+  private static readonly TTL = 24 * 60 * 60 * 1000;  // 24 hours
+  private static readonly MAX_SIZE = 100;              // Prevent memory leaks
+  
+  interface CachedInstrument {
+    data: BybitInstrumentInfo;
+    timestamp: number;
+  }
+}
+```
+
+**Cache Flow:**
+```
+1. Check cache for symbol
+   ↓
+2. If found AND not expired (< 24h old)
+   → Return cached data
+   ↓
+3. If missing OR expired
+   → Fetch from Bybit API
+   → Store in cache with timestamp
+   → Return fresh data
+```
+
+**LRU Eviction:**
+When cache exceeds 100 symbols, oldest entries are automatically removed to prevent memory leaks.
+
+**Cache Invalidation:**
+- Manual: `InstrumentCache.clearCache()`
+- Automatic: Entries expire after 24 hours
+- On Error: Failed fetches don't cache, retry next time
+
+#### 2.6.5 Service Layer Architecture
+
+**Flow Diagram:**
+
+```mermaid
+graph TD
+    A[Order Request] --> B[BybitPrecisionFormatter]
+    B --> C{Cache Hit?}
+    C -->|Yes| D[InstrumentCache]
+    C -->|No| E[InstrumentInfoFetcher]
+    E --> F[Bybit API<br/>/v5/market/instruments-info]
+    F --> G[Parse Response]
+    G --> H[Calculate Decimals]
+    H --> I[Validate Data]
+    I --> J[Store in Cache]
+    J --> D
+    D --> K[BybitInstrumentService]
+    K --> L[Format Price/Quantity]
+    L --> M[Validate Order]
+    M --> N[Submit to Bybit]
+    
+    style A fill:#e1f5ff
+    style F fill:#ffe1e1
+    style D fill:#e1ffe1
+    style N fill:#ffe1e1
+```
+
+**Service Responsibilities:**
+
+1. **InstrumentInfoFetcher** (`src/services/trading/core/InstrumentInfoFetcher.ts`)
+   - Fetches raw instrument data from Bybit API
+   - Handles API errors and retries
+   - Parses Bybit response structure
+   - Calculates decimal places from `tickSize` and `basePrecision`
+   - Validates fetched data integrity
+
+2. **InstrumentCache** (`src/services/trading/core/InstrumentCache.ts`)
+   - Stores instrument info with TTL (24 hours)
+   - Implements LRU eviction (max 100 entries)
+   - Provides cache statistics and cleanup
+   - Thread-safe for concurrent access
+
+3. **BybitInstrumentService** (`src/services/trading/core/BybitInstrumentService.ts`)
+   - High-level API for instrument operations
+   - Coordinates fetcher and cache
+   - Provides formatting functions
+   - Validates orders against instrument rules
+   - Supports batch operations for multiple symbols
+
+4. **BybitPrecisionFormatter** (`src/services/trading/core/BybitPrecisionFormatter.ts`)
+   - Main entry point for precision operations
+   - Delegates to BybitInstrumentService
+   - Used throughout trading system
+   - Provides unified interface
+
+**Type Definition:**
+```typescript
+export type BybitInstrumentInfo = {
+  symbol: string;
+  priceDecimals: number;      // Calculated from tickSize
+  quantityDecimals: number;   // Calculated from basePrecision
+  minOrderQty: string;        // From lotSizeFilter
+  minOrderAmt: string;        // From lotSizeFilter
+  tickSize: string;           // From priceFilter
+  basePrecision: string;      // From lotSizeFilter
+};
+```
+
+#### 2.6.6 Error Handling and Fallbacks
+
+**Graceful Degradation Strategy:**
+
+1. **Primary**: Fetch from Bybit API
+2. **Fallback 1**: Use cached data (even if expired)
+3. **Fallback 2**: Use reasonable defaults (4 decimals for both)
+
+```typescript
+async formatPrice(symbol: string, price: number): Promise<string> {
+  try {
+    // Try to get instrument info
+    const info = await BybitInstrumentService.getInstrumentInfo(symbol);
+    if (info) {
+      return formatWithPrecision(price, info.priceDecimals);
+    }
+    
+    // Fallback 1: Warn and use default
+    console.warn(`No instrument info for ${symbol}, using 4 decimal fallback`);
+    return price.toFixed(4);
+    
+  } catch (error) {
+    // Fallback 2: Error fallback
+    console.error(`Error formatting ${symbol}:`, error);
+    return price.toFixed(4);
+  }
+}
+```
+
+**Error Scenarios Handled:**
+- Network failures fetching from Bybit
+- Invalid API responses
+- Missing instrument data
+- Parsing errors in tickSize/basePrecision
+- Rate limiting from Bybit API
+
+**Logging Strategy:**
+- ✅ Success: Quiet (no spam)
+- ⚠️ Fallback: Warning with reason
+- ❌ Error: Full error with context
+
+#### 2.6.7 Batch Operations
+
+**Optimization for Multiple Symbols:**
+```typescript
+// Fetch multiple symbols in parallel
+const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+const instrumentMap = await BybitInstrumentService.getMultipleInstrumentInfo(symbols);
+
+// Use cached results for all subsequent operations
+for (const [symbol, info] of instrumentMap) {
+  const price = formatPrice(symbol, currentPrice, info);
+  const qty = formatQuantity(symbol, orderQty, info);
+}
+```
+
+**Benefits:**
+- Reduces API calls (1 call vs N calls)
+- Parallel fetching for speed
+- Shared cache warming
+- Lower rate limit consumption
+
+#### 2.6.8 Example Precision Ranges
+
+**Real-World Symbol Precision (as of 2025):**
+
+| Symbol | Price Decimals | Qty Decimals | Min Order Qty | Min Order Value |
+|--------|---------------|--------------|---------------|-----------------|
+| BTCUSDT | 2 | 6 | 0.000048 | $1 |
+| ETHUSDT | 2 | 5 | 0.00046 | $1 |
+| SOLUSDT | 3 | 2 | 0.04 | $1 |
+| BNBUSDT | 2 | 3 | 0.0016 | $1 |
+| DOGEUSDT | 5 | 0 | 1 | $1 |
+| XRPUSDT | 4 | 1 | 0.1 | $1 |
+| ADAUSDT | 4 | 0 | 1 | $1 |
+| MATICUSDT | 4 | 0 | 1 | $1 |
+
+**Why Dynamic Fetching is Critical:**
+- These values change over time (Bybit updates)
+- New symbols have different rules
+- Hardcoding would require constant maintenance
+- API provides source of truth
+
+#### 2.6.9 Integration Points
+
+**Used Throughout Trading System:**
+
+1. **Order Placement** (`src/services/trading/core/OrderExecution.ts`)
+   ```typescript
+   const formattedPrice = await BybitPrecisionFormatter.formatPrice(symbol, price);
+   const formattedQty = await BybitPrecisionFormatter.formatQuantity(symbol, qty);
+   ```
+
+2. **Order Validation** (`src/services/trading/core/OrderValidation.ts`)
+   ```typescript
+   const isValid = await BybitPrecisionFormatter.validateOrder(symbol, price, qty);
+   ```
+
+3. **Quantity Calculation** (`src/services/trading/tradeValidation.ts`)
+   ```typescript
+   const qty = await BybitPrecisionFormatter.calculateQuantity(symbol, orderAmount, price);
+   ```
+
+4. **Display Formatting** (UI components)
+   ```typescript
+   const displayPrice = await BybitInstrumentService.formatPrice(symbol, price);
+   ```
+
+#### 2.6.10 Code References
+
+**Core Files:**
+- `src/services/trading/core/InstrumentInfoFetcher.ts` - Bybit API fetching
+- `src/services/trading/core/InstrumentCache.ts` - Caching layer
+- `src/services/trading/core/BybitInstrumentService.ts` - Service orchestration
+- `src/services/trading/core/BybitPrecisionFormatter.ts` - Main interface
+- `src/services/trading/core/precision/PriceFormatter.ts` - Price formatting logic
+- `src/services/trading/core/precision/QuantityFormatter.ts` - Quantity formatting logic
+- `src/services/trading/core/precision/OrderValidator.ts` - Order validation
+
+**Related Services:**
+- `src/services/trading/tradeValidation.ts` - Uses precision for trade validation
+- `src/services/trading/core/OrderExecution.ts` - Uses precision before API calls
+- `src/components/trading/TestOrderPlacer.tsx` - UI testing of precision
+
+**Testing:**
+- Precision tested in `TradingSystemTest` component
+- Instrument info fetch tested in system validation
+- Order validation includes precision checks
+
+### 2.7 Real-Time Dashboard
 - **Active Trades Table**: Live updates of all open positions
 - **P&L Tracking**: Real-time profit/loss calculations
 - **Trading Stats**: Win rate, total profit, average profit per trade
@@ -1529,6 +1879,18 @@ const bybitBaseUrl = 'https://api.bybit.com'; // Ignores user's environment choi
 
 ### 9.2 Required API Endpoints
 
+**Instrument Information (Public - Critical for Precision):**
+```
+GET /v5/market/instruments-info
+- Fetch trading rules and precision requirements for symbols
+- Parameters: category=spot, symbol=BTCUSDT (optional, can fetch all if omitted)
+- Returns: priceFilter (tickSize), lotSizeFilter (basePrecision, minOrderQty, minOrderAmt)
+- Used by: InstrumentInfoFetcher to populate precision cache
+- Rate Limit: 20 requests/second
+- Caching: 24 hour TTL to minimize API calls
+- See: Section 2.6.2 for detailed response structure
+```
+
 **Market Data (Public):**
 ```
 GET /v5/market/tickers
@@ -2106,7 +2468,31 @@ ORDER BY hour DESC;
 
 ## 13. Key Technical Concepts
 
-### 13.1 Support Level Detection
+### 13.1 Dynamic Precision Management
+
+The trading system must handle vastly different precision requirements across symbols. This is achieved through:
+
+**Precision Fetching:**
+- Instrument rules fetched from Bybit `/v5/market/instruments-info`
+- Parsing `tickSize` for price decimals
+- Parsing `basePrecision` for quantity decimals
+- Caching for 24 hours with LRU eviction
+
+**Why This Matters:**
+- BTCUSDT requires 2 price decimals, 6 quantity decimals
+- DOGEUSDT requires 5 price decimals, 0 quantity decimals
+- Incorrect precision = rejected orders
+- Dynamic fetching = always correct, no hardcoding
+
+**See**: Section 2.6 for comprehensive documentation including:
+- Bybit API response structure
+- Decimal calculation algorithm
+- Caching architecture and eviction
+- Error handling and fallback strategies
+- Service layer architecture diagram
+- Integration points throughout the system
+
+### 13.2 Support Level Detection
 
 **Logic 1: Base Support Detection**
 
